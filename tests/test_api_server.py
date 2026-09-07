@@ -263,6 +263,68 @@ class TestPluginMarketplace:
         assert resp.status_code == 422
 
 
+class TestTools:
+    async def test_list_tools(self, app, headers, monkeypatch):
+        monkeypatch.setattr(
+            "core.registry.get_tool_definitions",
+            lambda: [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_web",
+                        "description": "Search the web",
+                        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                    },
+                },
+                {"type": "function", "function": {"name": "capture_screen", "description": "Screenshot"}},
+            ],
+        )
+        async with app.test_client() as client:
+            resp = await client.get("/api/v1/tools", headers=headers)
+            data = await resp.get_json()
+        assert resp.status_code == 200
+        assert data["count"] == 2
+        assert [t["name"] for t in data["tools"]] == ["capture_screen", "search_web"]
+        assert data["tools"][1]["parameters"]["properties"]["query"]["type"] == "string"
+        assert data["tools"][0]["parameters"] == {}
+
+    async def test_list_tools_empty(self, app, headers, monkeypatch):
+        monkeypatch.setattr("core.registry.get_tool_definitions", list)
+        async with app.test_client() as client:
+            resp = await client.get("/api/v1/tools", headers=headers)
+            data = await resp.get_json()
+        assert resp.status_code == 200
+        assert data == {"tools": [], "count": 0}
+
+
+class TestCliArgs:
+    async def test_defaults(self, app):
+        import desktop.api_server as api
+
+        args = api.parse_args([])
+        assert (args.host, args.port) == ("127.0.0.1", 8080)
+
+    async def test_flags_override_defaults(self, app):
+        import desktop.api_server as api
+
+        args = api.parse_args(["--host", "0.0.0.0", "--port", "9000"])
+        assert (args.host, args.port) == ("0.0.0.0", 9000)
+
+    async def test_env_vars_used_as_defaults(self, app, monkeypatch):
+        import desktop.api_server as api
+
+        monkeypatch.setenv("FRIDAY_HOST", "0.0.0.0")
+        monkeypatch.setenv("FRIDAY_PORT", "9100")
+        args = api.parse_args([])
+        assert (args.host, args.port) == ("0.0.0.0", 9100)
+
+    async def test_out_of_range_port_rejected(self, app):
+        import desktop.api_server as api
+
+        with pytest.raises(SystemExit):
+            api.parse_args(["--port", "70000"])
+
+
 class TestCustomTools:
     async def test_list_custom_tools(self, app, headers):
         async with app.test_client() as client:
