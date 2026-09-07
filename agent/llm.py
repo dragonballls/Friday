@@ -1,4 +1,4 @@
-﻿from collections.abc import Generator
+from collections.abc import Generator
 
 from providers import get_provider
 from config.providers import get_provider_config
@@ -45,13 +45,13 @@ def _is_retryable_provider_error(event: dict) -> bool:
     return any(marker in text for marker in retryable_markers)
 
 
-def _get_fallback_provider():
-    config = get_provider_config("openrouter")
+def _get_fallback_provider(primary_name: str):
+    config = get_provider_config(primary_name)
     fallback_name = str(
         config.get("fallback_provider", "ollama")
     ).strip()
 
-    if not fallback_name or fallback_name == "openrouter":
+    if not fallback_name or fallback_name == primary_name:
         return None, None
 
     try:
@@ -81,26 +81,40 @@ def chat(
 
     provider = _ensure_provider()
     provider_name = _provider_name or "unknown"
+    primary_events: list[dict] = []
 
-    primary_events = list(provider.chat(messages, tools=tools))
+    try:
+        for event in provider.chat(messages, tools=tools):
+            if isinstance(event, dict):
+                primary_events.append(event)
+            yield event
+    except Exception as exc:
+        primary_events.append({"type": "error", "error": str(exc)})
 
-    if _primary_failed(primary_events):
-        fallback, fallback_name = _get_fallback_provider()
+    if not _primary_failed(primary_events):
+        return
 
-        if fallback is not None:
-            _provider = fallback
-            _provider_name = fallback_name
+    fallback, fallback_name = _get_fallback_provider(provider_name)
 
-            yield {
-                "type": "tokens",
-                "content": (
-                    f"[{provider_name} unavailable; "
-                    f"switching to {fallback_name}…]\n\n"
-                ),
-            }
+    if fallback is None:
+        return
 
-            yield from fallback.chat(messages, tools=tools)
-            return
+    _provider = fallback
+    _provider_name = fallback_name
 
-    yield from primary_events
+    yield {
+        "type": "tokens",
+        "content": (
+            f"[{provider_name} unavailable; "
+            f"switching to {fallback_name}…]\n\n"
+        ),
+    }
 
+    try:
+        yield from fallback.chat(messages, tools=tools)
+    except Exception as exc:
+        yield {
+            "type": "error",
+            "content": str(exc),
+            "final": True,
+        }
