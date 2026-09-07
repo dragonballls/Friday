@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import re
@@ -19,7 +19,7 @@ def _is_retryable_err(e: Exception) -> bool:
     msg = str(e).lower()
     if any(x in msg for x in ["deadline", "timeout", "timed out", "too many requests", "rate limit"]):
         return True
-    # curl error 16 = CURLE_HTTP2_ERROR â€” HTTP/2 framing failure
+    # curl error 16 = HTTP/2 framing failure
     if "curl: (16)" in msg or "http2" in msg or "http/2" in msg:
         return True
     return False
@@ -290,7 +290,7 @@ class OpenAICompatibleProvider(BaseProvider):
         messages: list[dict],
         tools: list[dict] | None = None,
     ) -> Generator[dict, None, None]:
-        model = self.config.get("model", "gpt-4o")
+        model = self.config.get("model", "gpt-5.6-luna")
         fallback = self.config.get("fallback_model", "openai/gpt-4o-mini")
         temperature = self.config.get("temperature", 0.7)
         max_tokens = self.config.get("max_tokens", 4096)
@@ -310,4 +310,3 @@ class OpenAICompatibleProvider(BaseProvider):
 register_provider("openai", OpenAICompatibleProvider)
 register_provider("openrouter", OpenAICompatibleProvider)
 register_provider("openai_compatible", OpenAICompatibleProvider)
-
