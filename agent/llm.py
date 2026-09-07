@@ -77,8 +77,12 @@ def chat(
     messages: list[dict],
     tools: list[dict] | None = None,
 ) -> Generator[dict, None, None]:
-    global _provider, _provider_name
+    """Stream from the configured primary provider with per-request fallback.
 
+    A fallback is intentionally scoped to this request. A temporary provider
+    outage must not permanently replace the configured primary provider for
+    every later conversation.
+    """
     provider = _ensure_provider()
     provider_name = _provider_name or "unknown"
     primary_events: list[dict] = []
@@ -98,9 +102,6 @@ def chat(
 
     if fallback is None:
         return
-
-    _provider = fallback
-    _provider_name = fallback_name
 
     yield {
         "type": "tokens",
