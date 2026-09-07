@@ -62,7 +62,7 @@ class Executor:
             or "change " in str(getattr(task, "description", "")).lower()
             or "modify " in str(getattr(task, "description", "")).lower()
         )
-        coding_tool_executed = False
+        coding_steps_executed: set[str] = set()
 
         for iteration in range(max_iterations):
             collected = ""
@@ -152,7 +152,7 @@ class Executor:
                                 and func_name in coding_tools
                                 and not result.get("error")
                             ):
-                                coding_tool_executed = True
+                                coding_steps_executed.add(func_name)
                         except Exception as e:
                             result = {"error": str(e)}
                     else:
@@ -181,25 +181,39 @@ class Executor:
 
                 yield {"type": "tool_result", "tools": tool_summary}
             else:
-                if is_coding_task and not coding_tool_executed:
-                    messages.append({"role": "assistant", "content": collected})
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "Do not finish this coding task with a text response. "
-                                "You must actually execute the required coding tool and "
-                                "make the requested change before reporting completion. "
-                                "Use the available coding tools now."
-                            ),
-                        }
+                if is_coding_task:
+                    required_steps = (
+                        ("write_file", "implementation"),
+                        ("run_tests", "tests"),
+                        ("review_code_change", "review"),
                     )
-                    task.error = "Coding task attempted to finish without executing a coding tool."
-                    yield {
-                        "type": "verification",
-                        "content": "Coding task did not execute a coding tool; continuing.",
-                    }
-                    continue
+                    missing = [
+                        (tool_name, label)
+                        for tool_name, label in required_steps
+                        if tool_name in self._tool_map and tool_name not in coding_steps_executed
+                    ]
+
+                    if missing:
+                        next_tool, label = missing[0]
+                        messages.append({"role": "assistant", "content": collected})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"Do not report this coding task complete yet. "
+                                    f"The {label} gate has not passed. "
+                                    f"Execute the '{next_tool}' coding tool now, "
+                                    f"then continue through every remaining verification gate."
+                                ),
+                            }
+                        )
+                        task.error = f"Coding task attempted to finish before {label} gate."
+                        yield {
+                            "type": "verification",
+                            "content": f"Coding task blocked until {label} gate completes.",
+                            "missing_gate": label,
+                        }
+                        continue
 
                 messages.append({"role": "assistant", "content": collected})
                 task.status = "completed"
@@ -257,6 +271,7 @@ class Executor:
             }
             return
 
+        previous_error = task.error or "Unknown failure"
         task.retries += 1
         task.status = "running"
         task.error = None
@@ -264,7 +279,7 @@ class Executor:
         messages.append(
             {
                 "role": "user",
-                "content": f"The previous attempt failed: {task.error}\n\nPlease try again with a different approach.",
+                "content": f"The previous attempt failed: {previous_error}\n\nPlease try again with a different approach.",
             }
         )
         yield from self._react_loop(messages, tool_definitions, 10, task)
