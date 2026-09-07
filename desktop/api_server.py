@@ -1,4 +1,4 @@
-"""Local API server for Friday desktop - streams Agent events via SSE"""
+﻿"""Local API server for Friday desktop - streams Agent events via SSE"""
 
 import asyncio
 import base64
@@ -19,7 +19,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from quart import Quart, Response, jsonify, request
+from quart import Quart, Response, jsonify, request, make_response
 from quart_cors import cors
 
 from agent.core import Agent
@@ -28,15 +28,15 @@ from core.briefing import BriefingEngine
 from core.diary import get_diary
 from core.logger import get_metrics
 from core.memory import get_memory_manager
-from core.proactive import CalendarMonitor, EmailMonitor, ProactiveMonitor, ScreenMonitor, SystemMonitor
+from core.proactive import CalendarMonitor, EmailMonitor, ProactiveMonitor, SystemMonitor
 from core.registry import discover_plugins
 from core.security import get_approval_registry
 from core.vision import get_vision_engine
 
-# ─── API Version Prefix ──────────────────────────────────────────
+# â”€â”€â”€ API Version Prefix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 API_PREFIX = "/api/v1"
 
-# ─── Shared async HTTP client ────────────────────────────────────
+# â”€â”€â”€ Shared async HTTP client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _async_client: httpx.AsyncClient | None = None
 
 
@@ -50,7 +50,7 @@ def get_async_client() -> httpx.AsyncClient:
     return _async_client
 
 
-# ─── SSE Event Broadcaster ──────────────────────────────────────
+# â”€â”€â”€ SSE Event Broadcaster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class EventBroadcaster:
     def __init__(self):
         self._subscribers: list[asyncio.Queue] = []
@@ -83,7 +83,7 @@ class EventBroadcaster:
 _broadcaster = EventBroadcaster()
 
 
-# ─── Load env vars ───────────────────────────────────────────────
+# â”€â”€â”€ Load env vars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _load_dotenv():
     root = Path(__file__).resolve().parent.parent
     env_path = root / ".env"
@@ -102,7 +102,7 @@ def _load_dotenv():
 
 _load_dotenv()
 
-# ─── Security ────────────────────────────────────────────────────
+# â”€â”€â”€ Security â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _API_SECRET = os.environ.get("API_SECRET", "")
 _FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
 
@@ -122,7 +122,7 @@ def require_auth(f):
     return wrapper
 
 
-# ─── Validation helpers ──────────────────────────────────────────
+# â”€â”€â”€ Validation helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _MAX_MESSAGE_LENGTH = 10_000
 _VALID_LANGUAGES = {"english", "hinglish"}
 
@@ -151,13 +151,26 @@ def validate_output_path(path: str) -> str | None:
     return None
 
 
-# ─── App setup ───────────────────────────────────────────────────
+# â”€â”€â”€ App setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app = Quart(__name__)
 app = cors(
     app,
-    allow_origin=_FRONTEND_ORIGIN,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_origin={
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    },
+    allow_methods={
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS",
+    },
+    allow_headers={
+        "Content-Type",
+        "X-API-Key",
+    },
+    allow_credentials=True,
 )
 
 discover_plugins()
@@ -171,7 +184,7 @@ def get_proactive() -> ProactiveMonitor:
     global _proactive
     if _proactive is None:
         _proactive = ProactiveMonitor()
-        _proactive.add_monitor(ScreenMonitor(interval=3.0))
+        # ScreenMonitor intentionally disabled: opening/closing Friday's sidebar is a UI change, not an alert.
         _proactive.add_monitor(CalendarMonitor(interval=60.0))
         _proactive.add_monitor(EmailMonitor(interval=120.0))
         _proactive.add_monitor(SystemMonitor(interval=30.0))
@@ -221,7 +234,7 @@ def ttl_cache(seconds: int = 60):
     return decorator
 
 
-# ─── Chat ────────────────────────────────────────────────────────
+# â”€â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/chat", methods=["POST"])
 @require_auth
 async def chat():
@@ -278,10 +291,15 @@ async def chat():
         finally:
             executor.shutdown(wait=False)
 
-    return Response(generate(), mimetype="text/event-stream")
+    response = await make_response(generate())
+    response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.timeout = None
+    return response
 
 
-# ─── Autopilot ────────────────────────────────────────────────────
+# â”€â”€â”€ Autopilot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/autopilot", methods=["POST"])
 @require_auth
 async def autopilot():
@@ -338,10 +356,15 @@ async def autopilot():
         finally:
             executor.shutdown(wait=False)
 
-    return Response(generate(), mimetype="text/event-stream")
+    response = await make_response(generate())
+    response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.timeout = None
+    return response
 
 
-# ─── Sessions ────────────────────────────────────────────────────
+# â”€â”€â”€ Sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/sessions", methods=["GET"])
 @require_auth
 async def list_sessions():
@@ -370,7 +393,7 @@ async def delete_session(session_id):
     return jsonify({"status": "deleted"})
 
 
-# ─── Output directory ────────────────────────────────────────────
+# â”€â”€â”€ Output directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/output-dir", methods=["PUT"])
 @require_auth
 async def set_output_dir():
@@ -393,7 +416,7 @@ async def get_output_dir():
     return jsonify({"output_dir": agent.output_dir or ""})
 
 
-# ─── Tool call approvals ─────────────────────────────────────────
+# â”€â”€â”€ Tool call approvals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/approvals", methods=["GET"])
 @require_auth
 async def list_approvals():
@@ -411,7 +434,7 @@ async def resolve_approval(request_id):
     return jsonify({"status": "ok", "request_id": request_id, "allowed": allowed})
 
 
-# ─── Metrics & Health ────────────────────────────────────────────
+# â”€â”€â”€ Metrics & Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/metrics")
 @require_auth
 async def metrics():
@@ -423,7 +446,7 @@ async def health():
     return jsonify({"status": "ok", "sessions": len(_agents)})
 
 
-# ─── Alerts ──────────────────────────────────────────────────────
+# â”€â”€â”€ Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/alerts/stream")
 @require_auth
 async def alert_stream():
@@ -436,7 +459,12 @@ async def alert_stream():
                 yield f"data: {json.dumps(alert.to_dict(), ensure_ascii=False)}\n\n"
             await asyncio.sleep(1)
 
-    return Response(generate(), mimetype="text/event-stream")
+    response = await make_response(generate())
+    response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.timeout = None
+    return response
 
 
 @app.route(f"{API_PREFIX}/alerts")
@@ -447,7 +475,7 @@ async def alerts_list():
     return jsonify({"alerts": [a.to_dict() for a in alerts], "count": len(alerts)})
 
 
-# ─── System Info ─────────────────────────────────────────────────
+# â”€â”€â”€ System Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/system-info")
 @require_auth
 @ttl_cache(30)
@@ -470,7 +498,7 @@ async def system_info():
     )
 
 
-# ─── News ────────────────────────────────────────────────────────
+# â”€â”€â”€ News â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _NEWS_RSS = [
     "https://hnrss.org/frontpage",
     "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
@@ -516,7 +544,7 @@ async def news():
     return jsonify({"articles": items})
 
 
-# ─── Weather ─────────────────────────────────────────────────────
+# â”€â”€â”€ Weather â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _WEATHER_LAT = 33.68
 _WEATHER_LON = 73.05
 _WEATHER_LOCATION = "Islamabad"
@@ -553,7 +581,7 @@ async def weather():
         return jsonify({"error": str(e)}), 502
 
 
-# ─── Stocks ─────────────────────────────────────────────────────
+# â”€â”€â”€ Stocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/stocks")
 @require_auth
 @ttl_cache(60)
@@ -595,7 +623,7 @@ async def stocks():
         return jsonify({"error": str(e)}), 502
 
 
-# ─── GitHub Trending ─────────────────────────────────────────────
+# â”€â”€â”€ GitHub Trending â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/github-trending")
 @require_auth
 @ttl_cache(300)
@@ -633,7 +661,7 @@ async def github_trending():
         return jsonify({"error": str(e)}), 502
 
 
-# ─── Earthquakes ─────────────────────────────────────────────────
+# â”€â”€â”€ Earthquakes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/earthquakes")
 @require_auth
 @ttl_cache(120)
@@ -663,7 +691,7 @@ async def earthquakes():
         return jsonify({"earthquakes": [], "error": str(e)})
 
 
-# ─── Crypto ──────────────────────────────────────────────────────
+# â”€â”€â”€ Crypto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/crypto")
 @require_auth
 @ttl_cache(120)
@@ -692,7 +720,7 @@ async def crypto():
         return jsonify({"crypto": [], "error": str(e)})
 
 
-# ─── Space ──────────────────────────────────────────────────────
+# â”€â”€â”€ Space â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/space")
 @require_auth
 @ttl_cache(60)
@@ -719,7 +747,7 @@ async def space():
         return jsonify({"iss_lat": 0, "iss_lon": 0, "astronauts": 0, "astronaut_names": [], "error": str(e)})
 
 
-# ─── World Clocks ────────────────────────────────────────────────
+# â”€â”€â”€ World Clocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/global-time")
 @require_auth
 @ttl_cache(10)
@@ -753,7 +781,7 @@ async def global_time():
     return jsonify({"clocks": clocks})
 
 
-# ─── CVEs ────────────────────────────────────────────────────────
+# â”€â”€â”€ CVEs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/cve")
 @require_auth
 @ttl_cache(600)
@@ -792,7 +820,7 @@ async def cve():
         return jsonify({"cve": [], "error": str(e)})
 
 
-# ─── Screen Capture ──────────────────────────────────────────────
+# â”€â”€â”€ Screen Capture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _SCREEN_CACHE: tuple[float, dict] | None = None
 _SCREEN_TTL = 2.0
 
@@ -818,7 +846,7 @@ async def screen_capture():
         return jsonify({"error": str(e)}), 500
 
 
-# ─── Memory ──────────────────────────────────────────────────────
+# â”€â”€â”€ Memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/memory", methods=["GET"])
 @require_auth
 async def memory_list():
@@ -851,7 +879,7 @@ async def memory_search():
     return jsonify({"results": results, "count": len(results)})
 
 
-# ─── Knowledge Graph ─────────────────────────────────────────────
+# â”€â”€â”€ Knowledge Graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/knowledge", methods=["GET"])
 @require_auth
 async def knowledge_list():
@@ -1038,7 +1066,7 @@ async def privacy_set():
     return jsonify(set_blackout(enabled))
 
 
-# ─── Google Auth ─────────────────────────────────────────────────
+# â”€â”€â”€ Google Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/auth/google")
 @require_auth
 async def google_auth():
@@ -1066,7 +1094,7 @@ async def google_auth_callback():
     return "<html><body><p>Auth failed.</p></body></html>", 400
 
 
-# ─── Calendar ────────────────────────────────────────────────────
+# â”€â”€â”€ Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/calendar/events")
 @require_auth
 @ttl_cache(120)
@@ -1110,7 +1138,7 @@ async def calendar_events():
         return jsonify({"events": [], "error": str(ex)})
 
 
-# ─── Email ───────────────────────────────────────────────────────
+# â”€â”€â”€ Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/email/inbox")
 @require_auth
 @ttl_cache(60)
@@ -1177,7 +1205,7 @@ async def memory_delete(entry_id: str):
     return jsonify(result), 200 if result["success"] else 404
 
 
-# ─── Unified SSE Events ─────────────────────────────────────────
+# â”€â”€â”€ Unified SSE Events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/events")
 async def event_stream():
     if _API_SECRET:
@@ -1189,17 +1217,26 @@ async def event_stream():
     async def generate():
         try:
             while True:
-                msg = await queue.get()
-                yield f"data: {msg}\n\n"
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    # SSE keep-alive comment prevents idle connections from going stale.
+                    yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             pass
         finally:
             await _broadcaster.unsubscribe(queue)
 
-    return Response(generate(), mimetype="text/event-stream")
+    response = await make_response(generate())
+    response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.timeout = None
+    return response
 
 
-# ─── Briefing ─────────────────────────────────────────────────────
+# â”€â”€â”€ Briefing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/briefing")
 @require_auth
 async def get_briefing():
@@ -1239,7 +1276,7 @@ async def _push_briefing():
         await asyncio.sleep(300)
 
 
-# ─── Diary ────────────────────────────────────────────────────────
+# â”€â”€â”€ Diary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/diary")
 @require_auth
 async def get_diary_page():
@@ -1284,7 +1321,7 @@ async def _push_nightly_digest():
         await asyncio.sleep(3600)
 
 
-# ─── Automations ─────────────────────────────────────────────────
+# â”€â”€â”€ Automations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/automations", methods=["GET"])
 @require_auth
 async def list_automations():
@@ -1390,7 +1427,7 @@ async def _push_automations():
             pass
 
 
-# ─── Vision ──────────────────────────────────────────────────────
+# â”€â”€â”€ Vision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route(f"{API_PREFIX}/vision/screen")
 @require_auth
 async def vision_screen():
@@ -1571,7 +1608,7 @@ async def _push_clocks():
             pass
 
 
-# ─── Background loops ────────────────────────────────────────────
+# â”€â”€â”€ Background loops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async def _memory_consolidation_loop():
     while True:
         try:
@@ -1623,3 +1660,9 @@ if __name__ == "__main__":
     loop.create_task(_push_screen())
     loop.create_task(_push_clocks())
     loop.run_until_complete(hypercorn.asyncio.serve(app, cfg))
+
+
+
+
+
+

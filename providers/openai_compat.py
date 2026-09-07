@@ -1,5 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import json
+import re
 import time
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
@@ -17,11 +19,148 @@ def _is_retryable_err(e: Exception) -> bool:
     msg = str(e).lower()
     if any(x in msg for x in ["deadline", "timeout", "timed out", "too many requests", "rate limit"]):
         return True
-    # curl error 16 = CURLE_HTTP2_ERROR — HTTP/2 framing failure
+    # curl error 16 = CURLE_HTTP2_ERROR â€” HTTP/2 framing failure
     if "curl: (16)" in msg or "http2" in msg or "http/2" in msg:
         return True
     return False
 
+
+
+def _parse_text_tool_calls(content: str) -> list[dict]:
+    """Parse tool calls emitted as ordinary assistant text."""
+
+    if not content:
+        return []
+
+    parsed_tool_calls = []
+
+    # XML invoke format used by some OpenRouter free models.
+    invoke_pattern = re.compile(
+        r'<invoke\s+name\s*=\s*["\']([^"\']+)["\']\s*>(.*?)</invoke>',
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    parameter_pattern = re.compile(
+        r'<parameter\s+name\s*=\s*["\']([^"\']+)["\']\s*>\s*(.*?)\s*</parameter>',
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    for match in invoke_pattern.finditer(content):
+        name = match.group(1).strip()
+        body = match.group(2)
+        args = {}
+
+        for parameter in parameter_pattern.finditer(body):
+            key = parameter.group(1).strip()
+            value = parameter.group(2).strip()
+            args[key] = value
+
+        if "file_path" in args and "path" not in args:
+            args["path"] = args.pop("file_path")
+
+        parsed_tool_calls.append(
+            {
+                "id": f"text-invoke-{len(parsed_tool_calls)}",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(args),
+                },
+            }
+        )
+
+    # JSON tool-call format.
+    if not parsed_tool_calls:
+        json_pattern = re.compile(
+            r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        for match in json_pattern.finditer(content):
+            try:
+                obj = json.loads(match.group(1).strip())
+
+                if not isinstance(obj, dict):
+                    continue
+
+                name = (
+                    obj.get("name")
+                    or obj.get("tool")
+                    or obj.get("function", {}).get("name")
+                )
+
+                arguments = (
+                    obj.get("arguments")
+                    or obj.get("args")
+                    or obj.get("function", {}).get("arguments")
+                    or {}
+                )
+
+                if not name:
+                    continue
+
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except Exception:
+                        arguments = {"value": arguments}
+
+                parsed_tool_calls.append(
+                    {
+                        "id": f"text-json-{len(parsed_tool_calls)}",
+                        "type": "function",
+                        "function": {
+                            "name": str(name),
+                            "arguments": json.dumps(arguments),
+                        },
+                    }
+                )
+            except Exception:
+                continue
+
+    # Bracket tool-call format.
+    if not parsed_tool_calls:
+        bracket_pattern = re.compile(
+            r"\[TOOL_CALL\]\s*(.*?)\s*\[/TOOL_CALL\]",
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        for match in bracket_pattern.finditer(content):
+            block = match.group(1)
+
+            tool_match = re.search(
+                r'(?:tool|name)\s*=>\s*["\']([^"\']+)["\']',
+                block,
+                flags=re.IGNORECASE,
+            )
+
+            if not tool_match:
+                continue
+
+            name = tool_match.group(1).strip()
+            args = {}
+
+            for arg_match in re.finditer(
+                r'--([A-Za-z_][A-Za-z0-9_-]*)\s+["\']([^"\']*)["\']',
+                block,
+            ):
+                args[arg_match.group(1)] = arg_match.group(2)
+
+            if "file_path" in args and "path" not in args:
+                args["path"] = args.pop("file_path")
+
+            parsed_tool_calls.append(
+                {
+                    "id": f"text-bracket-{len(parsed_tool_calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    },
+                }
+            )
+
+    return parsed_tool_calls
 
 class OpenAICompatibleProvider(BaseProvider):
     @property
@@ -106,11 +245,43 @@ class OpenAICompatibleProvider(BaseProvider):
         if buffer:
             yield {"type": "tokens", "content": "".join(buffer)}
 
-        tool_calls = [v for _, v in sorted(tool_calls_acc.items())] if tool_calls_acc else None
+        content = "".join(content_parts)
+        tool_calls = (
+            [v for _, v in sorted(tool_calls_acc.items())]
+            if tool_calls_acc
+            else None
+        )
+
+        if not tool_calls and content:
+            parsed_tool_calls = _parse_text_tool_calls(content)
+
+            if parsed_tool_calls:
+                tool_calls = parsed_tool_calls
+
+                content = re.sub(
+                    r"<tool_call>.*?</tool_call>",
+                    "",
+                    content,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+
+                content = re.sub(
+                    r"\[TOOL_CALL\].*?\[/TOOL_CALL\]",
+                    "",
+                    content,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+
+                content = re.sub(
+                    r'<invoke\s+name\s*=\s*["\'][^"\']+["\']\s*>.*?</invoke>',
+                    "",
+                    content,
+                    flags=re.DOTALL | re.IGNORECASE,
+                ).strip()
 
         yield {
             "type": "done",
-            "content": "".join(content_parts),
+            "content": content,
             "tool_calls": tool_calls,
         }
 
@@ -124,22 +295,19 @@ class OpenAICompatibleProvider(BaseProvider):
         temperature = self.config.get("temperature", 0.7)
         max_tokens = self.config.get("max_tokens", 4096)
 
-        attempts = [(model, False), (fallback, True)]
-        for attempt_model, is_fallback in attempts:
-            try:
-                yield from self._stream(attempt_model, messages, tools, temperature, max_tokens)
-                return
-            except Exception as e:
-                err_msg = str(e)
-                if is_fallback or not _is_retryable_err(e):
-                    yield {"type": "done", "content": f"Error: {err_msg}", "final": True}
-                    return
-                yield {
-                    "type": "tokens",
-                    "content": f"[Primary model failed ({err_msg[:60]}), retrying with {fallback}…]\n\n",
-                }
+        try:
+            yield from self._stream(model, messages, tools, temperature, max_tokens)
+        except Exception as e:
+            err_msg = str(e)
+            yield {
+                "type": "error",
+                "error": err_msg,
+                "content": f"Error: {err_msg}",
+                "final": True,
+            }
 
 
 register_provider("openai", OpenAICompatibleProvider)
 register_provider("openrouter", OpenAICompatibleProvider)
 register_provider("openai_compatible", OpenAICompatibleProvider)
+

@@ -18,12 +18,20 @@ export const HolodeckPanel = memo(function HolodeckPanel({
   const sceneRef = useRef<HolodeckScene | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
 
   // Init scene once
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const scene = new HolodeckScene(canvas)
+    let scene: HolodeckScene
+    try {
+      scene = new HolodeckScene(canvas)
+    } catch (error) {
+      console.warn('Friday holodeck unavailable; continuing without WebGL.', error)
+      setUnavailable(true)
+      return
+    }
     sceneRef.current = scene
     setReady(true)
     return () => {
@@ -84,7 +92,12 @@ export const HolodeckPanel = memo(function HolodeckPanel({
 
       {expanded && (
         <div ref={containerRef} className="relative" style={{ height: 280 }}>
-          <canvas ref={canvasRef} className="w-full h-full block" />
+          {!unavailable && <canvas ref={canvasRef} className="w-full h-full block" />}
+          {unavailable && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: '#555' }}>
+              Holodeck unavailable
+            </div>
+          )}
 
           {/* Overlay stats */}
           <div className="absolute top-2 left-2 flex gap-2 text-[9px] font-mono" style={{ color: '#666' }}>

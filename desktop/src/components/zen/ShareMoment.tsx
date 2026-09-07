@@ -1,5 +1,6 @@
 import { memo, useCallback, useRef } from 'react'
 import type { OrbState } from '../../types'
+import { PERSONA_VISUALS } from '../center/AiCore'
 
 const ORB_STATE_LABELS: Record<string, string> = {
   idle: 'IDLE',
@@ -31,9 +32,11 @@ export const ShareMoment = memo(function ShareMoment({
   persona,
   message,
   time,
-  greeting = 'FRIDAY',
+  greeting,
 }: ShareMomentProps) {
   const cardRef = useRef<HTMLDivElement>(null)
+  const visual = PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday
+  const displayName = greeting || visual.name
 
   const handleDownload = useCallback(() => {
     const card = cardRef.current
@@ -52,10 +55,10 @@ export const ShareMoment = memo(function ShareMoment({
     ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48)
 
     const cx = canvas.width / 2
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.fillStyle = visual.color
     ctx.font = '400 88px Inter, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('FRIDAY', cx, 240)
+    ctx.fillText(displayName, cx, 240)
 
     ctx.strokeStyle = 'rgba(255,255,255,0.2)'
     ctx.lineWidth = 1.5
@@ -66,13 +69,13 @@ export const ShareMoment = memo(function ShareMoment({
     ctx.arc(cx, 520, 140, 0, Math.PI * 2)
     ctx.stroke()
 
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    ctx.fillStyle = visual.color
     ctx.font = '400 40px Inter, sans-serif'
     ctx.fillText(ORB_STATE_LABELS[orbState] ?? orbState.toUpperCase(), cx, 580)
 
     ctx.fillStyle = 'rgba(160,160,168,1)'
     ctx.font = '400 36px Inter, sans-serif'
-    const label = `${persona.toUpperCase()} · ${time}`
+    const label = `${displayName} · ${time}`
     ctx.fillText(label, cx, 800)
 
     const snippet = message.length > 120 ? message.slice(0, 120) + '…' : message
@@ -91,7 +94,7 @@ export const ShareMoment = memo(function ShareMoment({
     link.download = `friday-moment-${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-  }, [orbState, persona, message, time])
+  }, [orbState, persona, message, time, displayName, visual.color])
 
   if (!open) return null
 
@@ -108,21 +111,21 @@ export const ShareMoment = memo(function ShareMoment({
           style={{ border: '1px solid rgba(255,255,255,0.1)' }}
         >
           <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-            <div className="text-[40px] font-thin tracking-[0.3em] uppercase" style={{ color: '#e5e5e5' }}>
-              {greeting}
+            <div className="text-[40px] font-thin tracking-[0.3em] uppercase" style={{ color: visual.color }}>
+              {displayName}
             </div>
             <div
               className="mt-8 w-36 h-36 rounded-full"
               style={{
-                border: `2px solid ${orbState === 'offline' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.4)'}`,
-                boxShadow: orbState === 'offline' ? 'none' : '0 0 40px rgba(255,255,255,0.12)',
+                border: `2px solid ${orbState === 'offline' ? 'rgba(255,255,255,0.15)' : `${visual.color}66`}`,
+                boxShadow: orbState === 'offline' ? 'none' : `0 0 40px ${visual.color}33`,
               }}
             />
             <div className="mt-4 text-xs tracking-[0.25em]" style={{ color: '#a0a0a8' }}>
               {ORB_STATE_LABELS[orbState] ?? orbState.toUpperCase()}
             </div>
             <div className="mt-8 text-xs" style={{ color: '#606068' }}>
-              {persona.toUpperCase()} · {time}
+              {displayName.toUpperCase ? displayName.toUpperCase() : displayName} · {time}
             </div>
             {message && (
               <div className="mt-4 text-sm leading-relaxed max-h-28 overflow-y-auto" style={{ color: '#ccc' }}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import type { MarketplacePlugin, CustomTool } from '../../core/api'
 import { getPlugins, installPlugin, uninstallPlugin, getCustomTools, createCustomTool, deleteCustomTool, getPrivacyStatus, setPrivacy } from '../../core/api'
 
@@ -18,6 +18,8 @@ interface SettingsPanelProps {
   onGoogleConnect: () => void
   persona: string
   onSetPersona: (key: string) => void
+  personaPrompt?: string
+  onSetPersonaPrompt?: (prompt: string) => void
 }
 
 export function SettingsPanel({
@@ -36,6 +38,8 @@ export function SettingsPanel({
   onGoogleConnect,
   persona,
   onSetPersona,
+  personaPrompt = '',
+  onSetPersonaPrompt = () => {},
 }: SettingsPanelProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [plugins, setPlugins] = useState<MarketplacePlugin[] | null>(null)
@@ -147,7 +151,7 @@ export function SettingsPanel({
             className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-all hover:bg-white/[.05]"
             style={{ color: '#888' }}
           >
-            ×
+            Ã—
           </button>
         </div>
 
@@ -169,7 +173,7 @@ export function SettingsPanel({
           <div className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
             <span className="text-sm" style={{ color: '#ccc' }}>Voice Personality</span>
             <div className="flex gap-1">
-              {['friday', 'jarvis', 'cortana'].map(k => (
+              {['friday', 'jarvis', 'cortana', 'adonis'].map(k => (
                 <button
                   key={k}
                   onClick={() => onSetPersona(k)}
@@ -184,6 +188,19 @@ export function SettingsPanel({
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+            <label className="text-sm block mb-2" style={{ color: '#ccc' }}>Character prompt</label>
+            <textarea
+              value={personaPrompt}
+              onChange={event => onSetPersonaPrompt(event.target.value)}
+              placeholder="Add traits, tone, boundaries, and preferences for this persona..."
+              rows={5}
+              className="w-full rounded-lg p-2 text-xs resize-y outline-none"
+              style={{ color: '#ddd', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            />
+            <div className="mt-1 text-[10px]" style={{ color: '#666' }}>Saved locally for the selected persona and applied to new messages.</div>
           </div>
 
           {/* Section: Input */}
@@ -228,7 +245,7 @@ export function SettingsPanel({
           {/* Section: Plugins */}
           <div className="text-[10px] tracking-[0.15em] py-2" style={{ color: '#555' }}>PLUGINS</div>
           {pluginMsg && <div className="text-[11px] py-1" style={{ color: '#00a8ff' }}>{pluginMsg}</div>}
-          {plugins === null && <div className="text-xs py-3" style={{ color: '#666' }}>Loading…</div>}
+          {plugins === null && <div className="text-xs py-3" style={{ color: '#666' }}>Loadingâ€¦</div>}
           {(plugins ?? []).map(p => (
             <div key={p.name} className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <div className="min-w-0">
@@ -263,7 +280,7 @@ export function SettingsPanel({
           {toggleRow('Blackout Mode (local-only, no outbound)', blackout, () => {
             setPrivacy(!blackout).then(s => setBlackout(s.enabled)).catch(() => {})
           })}
-          {blackout && <div className="text-[11px] py-2" style={{ color: '#4ade80' }}>Local-only — network tools blocked, Ollama provider.</div>}
+          {blackout && <div className="text-[11px] py-2" style={{ color: '#4ade80' }}>Local-only â€” network tools blocked, Ollama provider.</div>}
 
           {/* Section: Custom Tools */}
           <div className="text-[10px] tracking-[0.15em] py-2" style={{ color: '#555' }}>CUSTOM TOOLS</div>
@@ -282,7 +299,7 @@ export function SettingsPanel({
               className="mt-2 px-3 py-1.5 rounded-lg text-xs transition-all disabled:opacity-40"
               style={{ color: '#00a8ff', border: '1px solid rgba(0,168,255,0.2)' }}
             >
-              {toolBusy ? 'Building…' : 'Build tool'}
+              {toolBusy ? 'Buildingâ€¦' : 'Build tool'}
             </button>
             {toolMsg && <div className="mt-2 text-[11px]" style={{ color: toolMsg.startsWith('Error') ? '#f87171' : '#4ade80' }}>{toolMsg}</div>}
           </div>
@@ -320,3 +337,4 @@ export function SettingsPanel({
     </div>
   )
 }
+

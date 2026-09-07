@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, memo } from 'react'
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
 import { QuickActions } from './QuickActions'
 
 const LANG_LABELS: Record<string, string> = { 'en-US': 'EN', 'hi-IN': 'HI', 'ur-PK': 'UR' }
@@ -20,16 +20,26 @@ interface InputBarProps {
   isVoiceSupported: boolean
   voiceLanguage: string
   onCycleLanguage: () => void
+  draft?: string
+  personaName?: string
 }
 
 export const InputBar = memo(function InputBar({
   onSend, loading, onVoiceStart, onVoiceStop, voiceStatus, voiceInterim, isVoiceSupported,
   voiceLanguage, onCycleLanguage,
+  draft,
+  personaName = 'Friday',
 }: InputBarProps) {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (draft == null) return
+    setValue(draft)
+    inputRef.current?.focus()
+  }, [draft])
 
   const send = useCallback(() => {
     const text = value.trim()
@@ -87,7 +97,7 @@ export const InputBar = memo(function InputBar({
                   send()
                 }
               }}
-              placeholder="Message Friday..."
+              placeholder={`Message ${personaName}...`}
               disabled={loading}
               className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-32 placeholder:text-neutral-600"
               style={{

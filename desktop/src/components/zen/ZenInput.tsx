@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, memo } from 'react'
+﻿import { useState, useRef, useCallback, useEffect, memo } from 'react'
 
 const LANG_LABELS: Record<string, string> = { 'en-US': 'EN', 'hi-IN': 'HI', 'ur-PK': 'UR' }
 
@@ -19,15 +19,25 @@ interface ZenInputProps {
   isVoiceSupported: boolean
   voiceLanguage: string
   onCycleLanguage: () => void
+  draft?: string
+  personaName?: string
 }
 
 export const ZenInput = memo(function ZenInput({
   onSend, loading, onVoiceStart, onVoiceStop, voiceStatus, voiceInterim, isVoiceSupported,
   voiceLanguage, onCycleLanguage,
+  draft,
+  personaName = 'Friday',
 }: ZenInputProps) {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (draft == null) return
+    setValue(draft)
+    inputRef.current?.focus()
+  }, [draft])
 
   const send = useCallback(() => {
     const text = value.trim()
@@ -45,8 +55,8 @@ export const ZenInput = memo(function ZenInput({
       : 'rgba(255,255,255,0.08)'
 
   return (
-    <div className="flex justify-center px-8 pb-6 pt-3">
-      <div className="w-full max-w-[720px]">
+    <div className="flex justify-end px-8 pb-6 pt-3">
+      <div className="w-full">
         <div
           className="rounded-2xl transition-all duration-300 glass"
           style={{
@@ -72,7 +82,7 @@ export const ZenInput = memo(function ZenInput({
                   send()
                 }
               }}
-              placeholder="Message Friday..."
+              placeholder={`Message ${personaName}...`}
               disabled={loading}
               className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-32 placeholder:text-neutral-600"
               style={{
@@ -195,3 +205,4 @@ export const ZenInput = memo(function ZenInput({
     </div>
   )
 })
+
