@@ -18,6 +18,7 @@ class CoderResult:
     success: bool
     changed_paths: tuple[str, ...]
     transaction_id: str
+    implementation_ok: bool
     tests_ok: bool
     review_ok: bool
     final_verification_ok: bool
@@ -237,6 +238,7 @@ class RealCoderController:
         changed_paths = self._get_value(execution_result, "changed_paths", [])
         changed_paths = tuple(sorted(str(path) for path in (changed_paths or [])))
 
+        implementation_ok = self._get_value(execution_result, "implementation_ok", None)
         tests_ok = self._get_value(execution_result, "tests_ok", None)
         review_ok = self._get_value(execution_result, "review_ok", None)
         final_verification_ok = self._get_value(execution_result, "final_verification_ok", None)
@@ -245,6 +247,7 @@ class RealCoderController:
             success=True,
             changed_paths=changed_paths,
             transaction_id=str(transaction_id),
+            implementation_ok=implementation_ok,
             tests_ok=tests_ok,
             review_ok=review_ok,
             final_verification_ok=final_verification_ok,
