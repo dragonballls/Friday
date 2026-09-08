@@ -70,19 +70,30 @@ def _parse_tasks(text: str) -> list[Task]:
         return [Task(id="task_1", description=text.strip()[:200], tool="none")]
     try:
         data = json.loads(match.group())
+        if not isinstance(data, list):
+            return [Task(id="task_1", description=text.strip()[:200], tool="none")]
+
         tasks = []
         for item in data:
+            if not isinstance(item, dict):
+                continue
+            args = item.get("args", {})
+            if not isinstance(args, dict):
+                args = {}
+            dependencies = item.get("dependencies", [])
+            if not isinstance(dependencies, list):
+                dependencies = []
             tasks.append(
                 Task(
                     id=item.get("id", f"task_{len(tasks) + 1}"),
-                    description=item.get("description", ""),
+                    description=str(item.get("description", "")),
                     tool=item.get("tool"),
-                    args=item.get("args", {}),
-                    dependencies=item.get("dependencies", []),
+                    args=args,
+                    dependencies=dependencies,
                 )
             )
         return tasks if tasks else [Task(id="task_1", description=text.strip()[:200], tool="none")]
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return [Task(id="task_1", description=text.strip()[:200], tool="none")]
 
 
