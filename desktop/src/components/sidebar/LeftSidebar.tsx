@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '../../types'
 
 interface LeftSidebarProps {
@@ -33,6 +33,25 @@ export const LeftSidebar = memo(function LeftSidebar({
 
   const recentSessions = sessions.slice(-3).reverse()
 
+  useEffect(() => {
+    const handleShortcut = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable
+      if (e.key.toLowerCase() === 'n' && !isTyping) {
+        e.preventDefault()
+        onNew()
+      } else if (e.key.toLowerCase() === 'f' && !isTyping) {
+        e.preventDefault()
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [onNew])
+
   return (
     <aside
       className="w-60 max-w-[22vw] min-w-[180px] flex flex-col h-full shrink-0 glass"
@@ -50,7 +69,7 @@ export const LeftSidebar = memo(function LeftSidebar({
           type="button"
           onClick={onNew}
           aria-label="Start new conversation"
-          title="New conversation"
+          title="New conversation (Ctrl/Cmd+N)"
           className="w-6 h-6 flex items-center justify-center rounded-md text-sm transition-all hover:bg-white/[.04] active:scale-95 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
           style={{ color: '#888' }}
         >
@@ -63,6 +82,7 @@ export const LeftSidebar = memo(function LeftSidebar({
         <div className="relative">
           <input
             id="session-search"
+            ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape' && query) setQuery('') }}
@@ -163,7 +183,7 @@ export const LeftSidebar = memo(function LeftSidebar({
               defaultValue={outputDir}
               className="flex-1 min-w-0 px-2 py-1 rounded text-[11px] outline-none"
               style={{ background: 'rgba(255,255,255,0.06)', color: '#ccc', border: '1px solid rgba(212,160,64,0.3)' }}
-              placeholder="C:\path\to\output"
+              placeholder="C:\\path\\to\\output"
               aria-label="Output folder path"
               onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
               autoFocus
