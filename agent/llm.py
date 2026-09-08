@@ -66,9 +66,11 @@ def _primary_failed(events: list[dict]) -> bool:
         if event.get("type") == "error" and _is_retryable_provider_error(event):
             return True
 
-        if event.get("type") == "done":
-            if event.get("error") or _is_retryable_provider_error(event):
-                return True
+        # A normal completed response may legitimately contain words such as
+        # "timeout", "connection", or "rate limit". Only a structured error
+        # field on a done event is evidence that the provider failed.
+        if event.get("type") == "done" and event.get("error"):
+            return _is_retryable_provider_error(event)
 
     return False
 
