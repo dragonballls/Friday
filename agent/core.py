@@ -60,6 +60,26 @@ def _desktop_context() -> str:
         return f"Desktop snapshot unavailable: {e}"
 
 
+def _is_coding_task(task) -> bool:
+    coding_tools = {
+        "write_file",
+        "run_tests",
+        "review_code_change",
+        "app_coding_checkpoint",
+        "run_format",
+        "run_lint",
+        "verify_coding_change",
+    }
+    description = str(getattr(task, "description", "")).lower()
+    return (
+        getattr(task, "tool", None) in coding_tools
+        or "coding" in description
+        or "edit " in description
+        or "change " in description
+        or "modify " in description
+    )
+
+
 class Agent:
     def __init__(self, language="english", persona=None, confirm_enabled=True):
         self.language = language
@@ -128,20 +148,42 @@ class Agent:
             yield {"type": "task_start", "task": task.to_dict()}
             info(f"Executing task: {task.id} - {task.description}")
 
-            for event in self._executor.execute_task(task, self.messages, self._tool_defs, MAX_ITERATIONS):
-                yield event
+            if _is_coding_task(task):
+                coding_events = self._execute_coding_task(
+                    task,
+                    max_iterations=MAX_ITERATIONS,
+                )
+                for event in coding_events:
+                    yield event
+            else:
+                for event in self._executor.execute_task(
+                    task,
+                    self.messages,
+                    self._tool_defs,
+                    MAX_ITERATIONS,
+                ):
+                    yield event
 
             if task.status == "failed" and task.retries < task.max_retries:
                 err = (task.error or "").lower()
                 if any(x in err for x in _TRANSIENT_ERRORS):
                     info(f"Retrying task: {task.id} (attempt {task.retries}/{task.max_retries})")
-                    for event in self._executor.retry_task(task, self.messages, self._tool_defs):
-                        yield event
+                    if _is_coding_task(task):
+                        for event in self._execute_coding_task(
+                            task,
+                            max_iterations=MAX_ITERATIONS,
+                        ):
+                            yield event
+                    else:
+                        for event in self._executor.retry_task(
+                            task,
+                            self.messages,
+                            self._tool_defs,
+                        ):
+                            yield event
 
             yield {"type": "task_done", "task": task.to_dict()}
 
-            # A task that is still failed after its retry gate must terminate the run.
-            # Never allow the normal final "Done." event to report false success.
             if task.status == "failed":
                 error_text = task.error or f"Task failed: {task.description}"
                 yield {"type": "error", "content": error_text, "final": True}
@@ -156,11 +198,7 @@ class Agent:
         yield {"type": "done", "content": final or "Done.", "final": True}
 
     def run_autopilot(self, goal: str, workspace: str | None = None):
-        """Run a goal through the Autopilot loop (plan -> ordered steps -> verify).
-
-        Yields executor events interleaved with ``autopilot`` orchestration
-        events for the brain-view UI.
-        """
+        """Run a goal through the Autopilot loop (plan -> ordered steps -> verify)."""
         from core.autopilot import Autopilot
 
         context = list(self.messages)
@@ -176,15 +214,11 @@ class Agent:
         )
         yield from auto.run(goal, context=context)
 
-
     def _execute_coding_task(self, task_description, max_iterations=10, expected_paths=None, **kwargs):
         """Run one coding transaction through the safe executor contract."""
-        from pathlib import Path
         from coding.executor_adapter import SafeExecutorAdapter
 
         task_args = getattr(task_description, "args", None)
-
-        # The coding target must be explicit.
         if expected_paths is None and isinstance(task_args, dict):
             task_path = task_args.get("path")
             if task_path:
@@ -192,6 +226,7 @@ class Agent:
 
         if not expected_paths:
             task_description.status = "failed"
+            task_description.error = "Coding execution requires an explicit authorized path."
 
             def rejected():
                 yield {
@@ -202,14 +237,9 @@ class Agent:
 
             return rejected()
 
-        # The integration contract requires the coding session to remain
-        # incomplete while the executor is running.
         session = getattr(self, "_coding_session", None)
         if session is None:
-            session = SimpleNamespace(
-                current_stage="executing",
-                status="running",
-            )
+            session = SimpleNamespace(current_stage="executing", status="running")
             self._coding_session = session
         else:
             session.current_stage = "executing"
@@ -229,12 +259,7 @@ class Agent:
         if executor is None:
             executor = getattr(self, "executor", None)
 
-        workspace = getattr(
-            self,
-            "workspace",
-            getattr(self, "_output_dir", Path.cwd()),
-        )
-
+        workspace = getattr(self, "workspace", getattr(self, "_output_dir", Path.cwd()))
         adapter = SafeExecutorAdapter(
             executor=executor,
             workspace=workspace,
@@ -253,12 +278,9 @@ class Agent:
             events = []
             for event in inner:
                 events.append(event)
-
                 if isinstance(event, dict):
                     yield event
 
-            # The executor may finish without success; only an explicit
-            # completed coding transaction can transition the session.
             coding_completed = any(
                 isinstance(event, dict)
                 and event.get("type") == "coding_transaction"
@@ -286,7 +308,6 @@ class Agent:
 
             session.current_stage = "complete"
             session.status = "completed"
-
             self._coding_session_state = {
                 "status": "completed",
                 "current_stage": "complete",
@@ -302,5 +323,3 @@ class Agent:
                 ] or ["coding transaction completed"],
             }
         return run()
-
-
