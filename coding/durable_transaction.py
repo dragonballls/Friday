@@ -11,7 +11,6 @@ from typing import Iterable
 
 from coding.safe_transaction import (
     CodingTransactionError,
-    SafeCodingTransaction,
     _norm,
     _relative,
     assert_safe_path,
@@ -127,6 +126,8 @@ class DurableCodingTransaction:
                 f"Unable to read transaction manifest: {self.manifest_path}"
             ) from exc
 
+        if not isinstance(manifest, dict):
+            raise DurableTransactionError("Invalid transaction manifest.")
         if manifest.get("format_version") != self.FORMAT_VERSION:
             raise DurableTransactionError("Unsupported transaction manifest version.")
         if manifest.get("transaction_id") != self.transaction_id:
