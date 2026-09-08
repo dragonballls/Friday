@@ -91,6 +91,11 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
     }
   }, [loadDirectory])
 
+  const refreshCurrent = useCallback(() => {
+    if (!current) return
+    void loadDirectory(current, currentPath)
+  }, [current, currentPath, loadDirectory])
+
   const openEntry = useCallback(async (entry: FileEntry) => {
     setError('')
     if (entry.kind === 'directory') {
@@ -165,11 +170,12 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
             <div className="text-sm font-medium text-white">Workspace Studio</div>
             <div className="text-[11px] text-white/40 mt-0.5 truncate">{rootName}</div>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[.04] border border-white/[.06]">
+          <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
+            <label className="flex flex-1 sm:flex-none items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[.04] border border-white/[.06] min-w-[150px] sm:min-w-0">
               <span className="text-white/30" aria-hidden="true">⌕</span>
-              <input ref={filterRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter files" aria-label="Filter workspace files" className="w-36 bg-transparent outline-none text-xs text-white placeholder:text-white/25" />
+              <input ref={filterRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter files" aria-label="Filter workspace files" className="w-full sm:w-36 bg-transparent outline-none text-xs text-white placeholder:text-white/25" />
             </label>
+            <button type="button" onClick={refreshCurrent} disabled={!current || loading} aria-label="Refresh current folder" title="Refresh current folder" className="w-8 h-8 rounded-lg text-white/45 hover:text-white hover:bg-white/[.06] disabled:opacity-20 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">↻</button>
             <button type="button" onClick={chooseWorkspace} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs text-[#D4A040] bg-[#D4A040]/10 hover:bg-[#D4A040]/15 disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">{loading ? 'Opening…' : root ? 'Change folder' : 'Open folder'}</button>
             <button type="button" onClick={onClose} aria-label="Close workspace" title="Close workspace (Esc)" className="w-8 h-8 rounded-lg text-white/50 hover:text-white hover:bg-white/[.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">×</button>
           </div>
@@ -204,7 +210,7 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
-            <div className="px-3 py-2 border-t border-white/[.05] text-[10px] text-white/25">{filteredEntries.length} visible {filteredEntries.length === 1 ? 'entry' : 'entries'}</div>
+            <div className="px-3 py-2 border-t border-white/[.05] text-[10px] text-white/25">{filteredEntries.length} visible {filteredEntries.length === 1 ? 'entry' : 'entries'}{query ? ` · ${entries.length} total` : ''}</div>
           </section>
 
           <section className="flex-1 min-h-0 flex flex-col bg-black/10">
