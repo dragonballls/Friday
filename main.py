@@ -21,12 +21,16 @@ BANNER = r"""
 """
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
 AUTO_UPDATE_INTERVAL = 60
+DEFAULT_UI_PORT = 5173
+
 
 def get_terminal_width() -> int:
     return shutil.get_terminal_size((80, 20)).columns
 
+
 def print_colored(text: str, color_code: str = "37"):
     print(f"\033[{color_code}m{text}\033[0m")
+
 
 def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
     """Watch origin/main while the UI supervisor is alive."""
@@ -58,6 +62,7 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
         except (OSError, subprocess.SubprocessError, ValueError):
             continue
 
+
 def _terminate_processes(procs: list[subprocess.Popen]):
     for proc in procs:
         if proc.poll() is None:
@@ -75,11 +80,12 @@ def _terminate_processes(procs: list[subprocess.Popen]):
             except OSError:
                 pass
 
-def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
+
+def _start_ui_processes(desktop: str, port: int) -> list[subprocess.Popen]:
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-    front_cmd = ["npm", "run", "dev"]
+    front_cmd = ["npm", "run", "dev", "--", "--port", str(port)]
     if sys.platform == "win32":
-        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
+        front_cmd = ["cmd", "/c", "npm", "run", "dev", "--", "--port", str(port)]
     procs: list[subprocess.Popen] = []
     api = subprocess.Popen(api_cmd, cwd=desktop)
     procs.append(api)
@@ -88,13 +94,14 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     procs.append(front)
     return procs
 
-def _launch_ui():
+
+def _launch_ui(port: int = DEFAULT_UI_PORT):
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
     root = os.path.dirname(os.path.abspath(__file__))
     desktop = os.path.join(root, "desktop")
     print_colored(BANNER, "36")
     print_colored("─" * get_terminal_width(), "90")
-    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
+    print_colored(f"Launching Friday desktop UI on port {port}…  (Ctrl+C to stop everything)", "33")
     print_colored("─" * get_terminal_width(), "90")
     update_event = threading.Event()
     stop_event = threading.Event()
@@ -102,9 +109,9 @@ def _launch_ui():
     monitor.start()
     procs: list[subprocess.Popen] = []
     try:
-        procs = _start_ui_processes(desktop)
+        procs = _start_ui_processes(desktop, port)
         time.sleep(5.0)
-        webbrowser.open("http://localhost:5173")
+        webbrowser.open(f"http://localhost:{port}")
         while True:
             time.sleep(1.0)
             if update_event.is_set():
@@ -117,7 +124,7 @@ def _launch_ui():
                     os.execv(sys.executable, [sys.executable, *sys.argv])
                 print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
                 update_event.clear()
-                procs = _start_ui_processes(desktop)
+                procs = _start_ui_processes(desktop, port)
             elif any(p.poll() is not None for p in procs):
                 break
     except KeyboardInterrupt:
@@ -126,14 +133,18 @@ def _launch_ui():
         stop_event.set()
         _terminate_processes(procs)
 
+
 def main():
     parser = argparse.ArgumentParser(description="Friday — AI Assistant")
     parser.add_argument("--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)")
     parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls")
     parser.add_argument("--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)")
+    parser.add_argument("--port", type=int, default=DEFAULT_UI_PORT, help=f"Frontend UI port when using --ui (default: {DEFAULT_UI_PORT})")
     args = parser.parse_args()
+    if args.port < 1 or args.port > 65535:
+        parser.error("--port must be between 1 and 65535")
     if args.ui:
-        _launch_ui()
+        _launch_ui(args.port)
         return
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
@@ -155,6 +166,7 @@ def main():
         except ImportError:
             return
         close_browser()
+
 
 def _repl_loop(agent: Agent):
     while True:
@@ -194,6 +206,7 @@ def _repl_loop(agent: Agent):
                     print_colored(f"  🛠 {t['name']}({t['args']})", "90")
                     print_colored(f"     Result: {t['result']}", "90")
         print("\n")
+
 
 def _voice_loop(agent: Agent):
     if not is_voice_available():
@@ -235,6 +248,7 @@ def _voice_loop(agent: Agent):
             print_colored(f"Voice error: {e}", "31")
             return
 
+
 def _handle_command(cmd: str, agent: Agent):
     cmd = cmd.lower().strip()
     if cmd in ("/exit", "/quit"):
@@ -264,6 +278,7 @@ def _handle_command(cmd: str, agent: Agent):
         _print_help(agent.language)
     else:
         print_colored(f"Unknown: {cmd}. Type /help for commands.", "31")
+
 
 def _print_help(lang: str):
     if lang == "english":
@@ -300,6 +315,7 @@ Assistant ke paas tools hain:
   - File/content search
   - System information
 """, "33")
+
 
 if __name__ == "__main__":
     main()
