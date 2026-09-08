@@ -259,7 +259,11 @@ class Agent:
         if executor is None:
             executor = getattr(self, "executor", None)
 
-        workspace = getattr(self, "workspace", getattr(self, "_output_dir", Path.cwd()))
+        configured_workspace = getattr(self, "workspace", None)
+        if configured_workspace is None:
+            configured_workspace = self._output_dir
+        workspace = Path(configured_workspace) if configured_workspace else Path.cwd()
+
         adapter = SafeExecutorAdapter(
             executor=executor,
             workspace=workspace,
