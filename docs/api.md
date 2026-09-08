@@ -2,6 +2,9 @@
 
 Base URL: `http://localhost:8080/api/v1`
 
+The port and interface are configurable: `python desktop/api_server.py --host 0.0.0.0 --port 9000`
+(or the `FRIDAY_HOST` / `FRIDAY_PORT` environment variables).
+
 All endpoints require `X-API-Key` header if `API_SECRET` is configured. Responses are JSON. Auth failures return `401`.
 
 ---
@@ -273,6 +276,18 @@ All control actions require user confirmation first (security gate). On non-Wind
 | Field | Type | Required |
 |-------|------|----------|
 | `name` | string | ✅ |
+
+---
+
+## Tools
+
+### `GET /tools` — List every tool available to the agent
+
+Returns the discovered tool definitions (built-in plugins, community plugins, and custom tools), sorted by name.
+
+```json
+{ "tools": [{ "name": "capture_screen", "description": "Take a screenshot", "parameters": { "type": "object", "properties": {} } }], "count": 1 }
+```
 
 ---
 

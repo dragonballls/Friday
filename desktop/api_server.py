@@ -1,5 +1,6 @@
 ﻿"""Local API server for Friday desktop - streams Agent events via SSE"""
 
+import argparse
 import asyncio
 import base64
 import io
@@ -985,6 +986,25 @@ async def uninstall_plugin_api():
     return jsonify(result)
 
 
+@app.route(f"{API_PREFIX}/tools", methods=["GET"])
+@require_auth
+async def list_tools():
+    from core.registry import get_tool_definitions
+
+    tools = []
+    for definition in get_tool_definitions():
+        fn = definition.get("function", definition)
+        tools.append(
+            {
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "parameters": fn.get("parameters", {}),
+            }
+        )
+    tools.sort(key=lambda t: t["name"])
+    return jsonify({"tools": tools, "count": len(tools)})
+
+
 @app.route(f"{API_PREFIX}/tools/custom", methods=["GET"])
 @require_auth
 async def list_custom_tools():
@@ -1626,7 +1646,28 @@ async def _proactive_loop():
         pass
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="friday-api", description="Friday API server")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("FRIDAY_HOST", "127.0.0.1"),
+        help="Interface to bind to (default: 127.0.0.1, env: FRIDAY_HOST)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("FRIDAY_PORT", "8080")),
+        help="Port to listen on (default: 8080, env: FRIDAY_PORT)",
+    )
+    args = parser.parse_args(argv)
+    if not 1 <= args.port <= 65535:
+        parser.error(f"port must be between 1 and 65535, got {args.port}")
+    return args
+
+
 if __name__ == "__main__":
+    args = parse_args()
+
     from core.memory.embeddings import SentenceEngine
 
     SentenceEngine.start_background_load()
@@ -1642,7 +1683,7 @@ if __name__ == "__main__":
     from hypercorn.config import Config
 
     cfg = Config()
-    cfg.bind = ["127.0.0.1:8080"]
+    cfg.bind = [f"{args.host}:{args.port}"]
     cfg.keep_alive_timeout = 300
     cfg.body_timeout = 300
     loop = asyncio.new_event_loop()
