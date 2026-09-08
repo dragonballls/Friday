@@ -23,7 +23,11 @@ class ThemeEngine {
     this.tokens = darkTokens
     if (typeof document !== 'undefined') {
       document.documentElement.classList.add('dark')
-      localStorage.setItem('friday-theme', mode)
+      try {
+        localStorage.setItem('friday-theme', mode)
+      } catch {
+        // Storage can be unavailable in private/restricted browser contexts.
+      }
     }
     this.applyCSSVariables()
     EventBus.get().emit('theme:change', mode)
