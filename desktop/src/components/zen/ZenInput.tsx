@@ -33,6 +33,7 @@ export const ZenInput = memo(function ZenInput({
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const voicePointerRef = useRef<number | null>(null)
+  const voiceKeyboardRef = useRef(false)
 
   useEffect(() => {
     if (draft == null) return
@@ -57,6 +58,28 @@ export const ZenInput = memo(function ZenInput({
       onSend(transcript.trim())
     }
   }, [onVoiceStop, onSend])
+
+  const startKeyboardVoice = useCallback(() => {
+    if (voiceKeyboardRef.current || voicePointerRef.current != null || voiceStatus === 'listening') return
+    voiceKeyboardRef.current = true
+    onVoiceStart()
+  }, [onVoiceStart, voiceStatus])
+
+  const stopKeyboardVoiceAndSend = useCallback(() => {
+    if (!voiceKeyboardRef.current) return
+    voiceKeyboardRef.current = false
+    const transcript = onVoiceStop()
+    if (transcript.trim()) {
+      setValue('')
+      onSend(transcript.trim())
+    }
+  }, [onVoiceStop, onSend])
+
+  const cancelKeyboardVoice = useCallback(() => {
+    if (!voiceKeyboardRef.current) return
+    voiceKeyboardRef.current = false
+    onVoiceStop()
+  }, [onVoiceStop])
 
   const isListening = voiceStatus === 'listening'
   const borderColor = isListening
@@ -135,6 +158,19 @@ export const ZenInput = memo(function ZenInput({
                     voicePointerRef.current = null
                     onVoiceStop()
                   }}
+                  onKeyDown={e => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+                      e.preventDefault()
+                      startKeyboardVoice()
+                    }
+                  }}
+                  onKeyUp={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      stopKeyboardVoiceAndSend()
+                    }
+                  }}
+                  onBlur={cancelKeyboardVoice}
                   className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                   style={{
                     background: isListening ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.06)',
