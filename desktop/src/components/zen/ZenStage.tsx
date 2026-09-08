@@ -78,32 +78,40 @@ export const ZenStage = memo(function ZenStage({
   const [momentOpen, setMomentOpen] = useState(false)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const end = messagesEndRef.current
+    const container = end?.parentElement
+    if (!end || !container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distanceFromBottom < 180) {
+      end.scrollIntoView({ behavior: messages.length > 1 ? 'smooth' : 'auto', block: 'end' })
+    }
   }, [messages.length, lastContent])
 
   return (
-    <div className="relative flex flex-col h-full">
+    <div className="relative flex flex-col h-full min-w-0">
       {/* Minimal monochrome top strip */}
-      <div className="flex items-center justify-between px-6 py-3 shrink-0 select-none">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-thin tracking-[0.3em] uppercase" style={{ color: '#a0a0a8' }}>
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 shrink-0 select-none overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <span className="text-[13px] font-thin tracking-[0.3em] uppercase truncate" style={{ color: '#a0a0a8' }}>
             <span style={{ color: visual.color }}>{displayName}</span>
           </span>
           {ambientActive && (
             <span
-              className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded animate-fade-in"
+              className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded animate-fade-in shrink-0"
               style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}
+              aria-label="Ambient mode active"
             >
               AMBIENT
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {blackout && (
             <span
               className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded"
               style={{ color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.06)' }}
-              title="Blackout mode Ã¢â‚¬â€ local-only, no outbound network"
+              title="Blackout mode — local-only, no outbound network"
             >
               PRIVATE
             </span>
@@ -112,18 +120,20 @@ export const ZenStage = memo(function ZenStage({
             <span
               className="text-[9px] font-mono tracking-widest px-1.5 py-0.5 rounded"
               style={{ color: '#a0a0a8', border: '1px solid rgba(255,255,255,0.08)' }}
-              title="Desktop control available Ã¢â‚¬â€ ask Friday to open apps, type, or click"
+              title="Desktop control available — ask Friday to open apps, type, or click"
             >
               CONTROL
             </span>
           )}
           <button
+            type="button"
             onClick={() => setMomentOpen(true)}
-            className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-md transition-all duration-200 hover:bg-white/[.06]"
+            className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-md transition-all duration-200 hover:bg-white/[.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             style={{ color: '#606068', border: '1px solid rgba(255,255,255,0.08)' }}
             title="Capture a Friday moment"
+            aria-label="Capture a Friday moment"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="7" width="18" height="13" rx="2" />
               <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               <circle cx="12" cy="13" r="3" />
@@ -132,17 +142,20 @@ export const ZenStage = memo(function ZenStage({
           </button>
           {onToggleHandsFree && voiceInputSupported && (
             <button
+              type="button"
               onClick={onToggleHandsFree}
-              className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-md transition-all duration-200 hover:bg-white/[.06]"
+              className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-md transition-all duration-200 hover:bg-white/[.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
               style={{
                 color: handsFree ? '#000' : '#606068',
                 background: handsFree ? 'rgba(255,255,255,0.95)' : 'transparent',
                 border: `1px solid ${handsFree ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
                 boxShadow: handsFree ? '0 0 12px rgba(255,255,255,0.25)' : 'none',
               }}
-              title={handsFree ? 'Hands-free listening on Ã¢â‚¬â€ click to disable' : 'Hands-free listening off Ã¢â‚¬â€ click to enable (auto-speaks replies)'}
+              title={handsFree ? 'Hands-free listening on — click to disable' : 'Hands-free listening off — click to enable (auto-speaks replies)'}
+              aria-label={handsFree ? 'Disable hands-free listening' : 'Enable hands-free listening'}
+              aria-pressed={handsFree}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                 <line x1="12" y1="19" x2="12" y2="23" />
@@ -151,18 +164,20 @@ export const ZenStage = memo(function ZenStage({
             </button>
           )}
           <button
+            type="button"
             onClick={onToggleDashboard}
-            className="text-[10px] font-mono tracking-widest px-2 py-1 rounded-md transition-all duration-200 hover:bg-white/[.04]"
+            className="text-[10px] font-mono tracking-widest px-2 py-1 rounded-md transition-all duration-200 hover:bg-white/[.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 shrink-0"
             style={{ color: '#606068' }}
-            title="Toggle dashboard (Ã¢Å’ËœB)"
+            title="Toggle dashboard (Ctrl/Cmd+B)"
+            aria-label="Toggle dashboard"
           >
-            {location ? `${location} Ã‚Â· ` : ''}Ã¢Å’ËœB
+            {location ? `${location} · ` : ''}⌘B
           </button>
         </div>
       </div>
 
-      {/* Orb Ã¢â‚¬â€ always full-size, owns the stage */}
-      <div className="relative flex-1 flex items-center justify-end px-8 min-h-0">
+      {/* Orb — always full-size, owns the stage */}
+      <div className="relative flex-1 flex items-center justify-end px-4 sm:px-8 min-h-0">
         <OrbCore
           orbState={orbState}
           temperature={temperature}
@@ -184,8 +199,8 @@ export const ZenStage = memo(function ZenStage({
 
       {/* Chat below the orb */}
       {messages.length === 0 && continuity && (
-        <div className="w-full px-8 pb-2 flex justify-center">
-          <div className="text-[11px] leading-relaxed text-center px-4 py-2 rounded-xl glass animate-fade-slide-up"
+        <div className="w-full px-4 sm:px-8 pb-2 flex justify-center">
+          <div className="max-w-2xl text-[11px] leading-relaxed text-center px-4 py-2 rounded-xl glass animate-fade-slide-up"
             style={{ color: '#a0a0a8', border: '1px solid rgba(255,255,255,0.06)', borderLeft: '1px solid rgba(255,255,255,0.15)' }}
           >
             {continuity}
@@ -193,7 +208,7 @@ export const ZenStage = memo(function ZenStage({
         </div>
       )}
       {messages.length > 0 && (
-        <div className="w-full flex-1 min-h-0 overflow-y-auto space-y-6 px-8 pb-4">
+        <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-4 sm:px-8 pb-4">
           {messages.map((m, idx) => (
             <MessageBubble
               key={m.id}
@@ -232,6 +247,3 @@ export const ZenStage = memo(function ZenStage({
     </div>
   )
 })
-
-
-
