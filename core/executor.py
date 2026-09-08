@@ -57,12 +57,20 @@ class Executor:
             "verify_coding_change",
         }
         implementation_tools = {"write_file"}
+        description = str(getattr(task, "description", "")).lower()
         is_coding_task = (
             getattr(task, "tool", None) in coding_tools
-            or "coding" in str(getattr(task, "description", "")).lower()
-            or "edit " in str(getattr(task, "description", "")).lower()
-            or "change " in str(getattr(task, "description", "")).lower()
-            or "modify " in str(getattr(task, "description", "")).lower()
+            or "coding" in description
+            or "edit " in description
+            or "change " in description
+            or "modify " in description
+            or "rewrite " in description
+            or "update " in description
+            or "implement " in description
+            or "add " in description
+            or "create " in description
+            or "refactor " in description
+            or "fix " in description
         )
         coding_tool_executed = False
         implementation_executed = False
