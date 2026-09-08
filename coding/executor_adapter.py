@@ -133,12 +133,14 @@ class SafeExecutorAdapter:
                 "changed_paths": changed,
             }
 
-            implementation_ok = (
+            implementation_ok = bool(
                 implementation_check() if implementation_check else bool(changed)
             )
-            tests_ok = test_check() if test_check else True
-            review_ok = review_check() if review_check else True
-            final_ok = final_verification_check() if final_verification_check else True
+            tests_ok = bool(test_check() if test_check else True)
+            review_ok = bool(review_check() if review_check else True)
+            final_ok = bool(
+                final_verification_check() if final_verification_check else True
+            )
 
             if test_fn is not None:
                 tests_ok = bool(tests_ok and test_fn())
