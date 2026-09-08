@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from coding.coding_handoff import CodingHandoff
 from coding.coding_run import CodingRunError
@@ -114,7 +114,9 @@ class RealCoderController:
             return None
 
         # The actual Agent bridge is a generator because it yields
-        # Executor/transaction events to the caller.
+        # Executor/transaction events to the caller. Consume it before
+        # evaluating completion gates so StopIteration.value becomes the
+        # execution result instead of the generator object itself.
         if hasattr(result, "__next__"):
             iterator = result
 
@@ -137,22 +139,16 @@ class RealCoderController:
         before BoundedRepairLoop starts the next attempt.
         """
 
-        last_result: Any = None
-        attempt_results: list[Any] = []
-
         def run_attempt(attempt_number: int) -> Any:
-            nonlocal last_result
-
             try:
-                result = self.execute_coder(
-                    self.handoff,
-                    self.run_tests,
-                    self.run_review,
-                    self.final_verify,
+                result = self._consume_execution_result(
+                    self.execute_coder(
+                        self.handoff,
+                        self.run_tests,
+                        self.run_review,
+                        self.final_verify,
+                    )
                 )
-
-                last_result = result
-                attempt_results.append(result)
 
                 if result is None:
                     return {
@@ -185,8 +181,6 @@ class RealCoderController:
                 }
 
             except Exception as exc:
-                last_result = None
-
                 return {
                     "success": False,
                     "error": str(exc),
@@ -322,6 +316,8 @@ class RealCoderController:
             review_ok=review_ok,
             final_verification_ok=final_verification_ok,
         )
+
+
 def create_coder_controller(
     *,
     workspace: str | Path,
