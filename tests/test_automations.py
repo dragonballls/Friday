@@ -68,6 +68,12 @@ class TestCronMatch:
         assert not _cron_match("invalid", now)
         assert not _cron_match("", now)
 
+    def test_invalid_numeric_field_fails_closed(self):
+        now = time.localtime()
+        assert not _cron_match("not-a-minute * * * *", now)
+        assert not _cron_match("*/0 * * * *", now)
+        assert not _cron_match("60 * * * *", now)
+
 
 class TestAutomationEngine:
     @pytest.fixture
@@ -120,6 +126,9 @@ class TestAutomationEngine:
         assert engine.get(auto.id).enabled is False
         engine.toggle(auto.id)
         assert engine.get(auto.id).enabled is True
+
+    def test_toggle_missing(self, engine):
+        assert engine.toggle("nope") is None
 
     def test_execute_notification(self, engine):
         auto = engine.create("Notif", "cron", {}, "notification", {"message": "test msg"})
