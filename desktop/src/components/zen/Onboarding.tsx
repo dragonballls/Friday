@@ -18,31 +18,65 @@ const FLAGSHIP_SUGGESTIONS = [
  */
 export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: OnboardingProps) {
   const [visible, setVisible] = useState(true)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const firstSuggestionRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    const seen = localStorage.getItem('friday_onboarded')
-    if (seen === '1') setVisible(false)
-  }, [])
-
-  useEffect(() => {
-    if (!visible) return
-    firstSuggestionRef.current?.focus()
-
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [visible])
-
-  if (!visible) return null
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
 
   const dismiss = () => {
     try { localStorage.setItem('friday_onboarded', '1') } catch {}
     setVisible(false)
     onDismiss()
+    requestAnimationFrame(() => restoreFocusRef.current?.focus())
   }
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('friday_onboarded') === '1') setVisible(false)
+    } catch {
+      // Storage can be unavailable in restricted/webview environments.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
+
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    requestAnimationFrame(() => firstSuggestionRef.current?.focus())
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        dismiss()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter(element => !element.hasAttribute('aria-hidden'))
+      if (focusable.length === 0) return
+
+      const currentIndex = focusable.indexOf(document.activeElement as HTMLElement)
+      if (event.shiftKey) {
+        if (currentIndex <= 0) {
+          event.preventDefault()
+          focusable[focusable.length - 1].focus()
+        }
+      } else if (currentIndex === focusable.length - 1 || currentIndex === -1) {
+        event.preventDefault()
+        focusable[0].focus()
+      }
+    }
+
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [visible])
+
+  if (!visible) return null
 
   return (
     <div
@@ -52,6 +86,7 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
       role="presentation"
     >
       <div
+        ref={dialogRef}
         className="w-[min(440px,92vw)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl glass animate-fade-slide-up p-5 sm:p-6"
         style={{ border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 25px 60px rgba(0,0,0,0.6)' }}
         role="dialog"
