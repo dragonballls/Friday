@@ -58,11 +58,7 @@ def _inventory_workspace(workspace: Path) -> dict[str, WorkspaceFileState]:
         except Exception:
             continue
 
-        # Never inspect transaction metadata or generated/runtime trees
-        # as part of the coding surface. Verification tools legitimately
-        # create caches and build output while checking a source change.
         parts = Path(relative).parts
-
         if parts and parts[0] in ignored_roots:
             continue
 
@@ -109,18 +105,8 @@ class SafeCodingRun:
         seen: set[str] = set()
 
         for raw_path in expected_paths:
-            target = assert_safe_path(
-                self.workspace,
-                raw_path,
-            )
-
-            relative = _norm(
-                _relative(
-                    self.workspace,
-                    target,
-                )
-            )
-
+            target = assert_safe_path(self.workspace, raw_path)
+            relative = _norm(_relative(self.workspace, target))
             if relative not in seen:
                 seen.add(relative)
                 normalized.append(relative)
@@ -131,12 +117,10 @@ class SafeCodingRun:
             )
 
         self.expected_paths = frozenset(normalized)
-
         self.transaction = DurableCodingTransaction(
             self.workspace,
             transaction_id=transaction_id,
         )
-
         self._baseline: dict[str, WorkspaceFileState] = {}
         self._started = False
         self._completed = False
@@ -160,45 +144,18 @@ class SafeCodingRun:
 
     def start(self) -> None:
         if self._started:
-            raise CodingRunError(
-                "Coding run has already started."
-            )
+            raise CodingRunError("Coding run has already started.")
 
-        self._baseline = _inventory_workspace(
-            self.workspace
-        )
-
-        # Snapshot only the explicitly authorized coding surface.
-        self.transaction.begin(
-            sorted(self.expected_paths)
-        )
-
+        self._baseline = _inventory_workspace(self.workspace)
+        self.transaction.begin(sorted(self.expected_paths))
         self._started = True
 
     def authorize(self, path: str | Path) -> Path:
-        """
-        Authorize an expected path.
-
-        Dynamic authorization is deliberately restricted to the
-        expected-path set established before the run.
-        """
         if not self._started:
-            raise CodingRunError(
-                "Coding run has not started."
-            )
+            raise CodingRunError("Coding run has not started.")
 
-        target = assert_safe_path(
-            self.workspace,
-            path,
-        )
-
-        relative = _norm(
-            _relative(
-                self.workspace,
-                target,
-            )
-        )
-
+        target = assert_safe_path(self.workspace, path)
+        relative = _norm(_relative(self.workspace, target))
         if relative not in self.expected_paths:
             raise CodingRunError(
                 "Path is outside the declared coding surface: "
@@ -206,43 +163,31 @@ class SafeCodingRun:
             )
 
         self.transaction.authorize(relative)
-
         return target
 
     def changed_paths(self) -> set[str]:
         if not self._started:
-            raise CodingRunError(
-                "Coding run has not started."
-            )
+            raise CodingRunError("Coding run has not started.")
 
-        current = _inventory_workspace(
-            self.workspace
-        )
-
+        current = _inventory_workspace(self.workspace)
         all_paths = set(self._baseline) | set(current)
         changed: set[str] = set()
 
         for relative in all_paths:
-            before = self._baseline.get(relative)
-            after = current.get(relative)
-
-            if before != after:
+            if self._baseline.get(relative) != current.get(relative):
                 changed.add(relative)
 
         return changed
 
     def unexpected_changes(self) -> set[str]:
-        changed = self.changed_paths()
-
         return {
             path
-            for path in changed
+            for path in self.changed_paths()
             if path not in self.expected_paths
         }
 
     def verify_surface(self) -> None:
         unexpected = self.unexpected_changes()
-
         if unexpected:
             raise CodingRunError(
                 "Coding run modified paths outside the authorized "
@@ -258,37 +203,24 @@ class SafeCodingRun:
         final_verification_passed: bool = True,
     ) -> dict[str, object]:
         if not self._started:
-            raise CodingRunError(
-                "Coding run has not started."
-            )
-
+            raise CodingRunError("Coding run has not started.")
         if self._completed:
-            raise CodingRunError(
-                "Coding run has already completed."
-            )
+            raise CodingRunError("Coding run has already completed.")
 
         if implementation_complete is not True:
             raise CodingRunError(
                 "Completion gate failed: implementation incomplete."
             )
-
         if test_passed is not True:
-            raise CodingRunError(
-                "Completion gate failed: tests did not pass."
-            )
-
+            raise CodingRunError("Completion gate failed: tests did not pass.")
         if review_passed is not True:
-            raise CodingRunError(
-                "Completion gate failed: review did not pass."
-            )
-
+            raise CodingRunError("Completion gate failed: review did not pass.")
         if final_verification_passed is not True:
             raise CodingRunError(
                 "Completion gate failed: final verification did not pass."
             )
 
         self.verify_surface()
-
         changed = self.changed_paths()
         if not changed:
             raise CodingRunError(
@@ -297,7 +229,6 @@ class SafeCodingRun:
 
         self._completed = True
         self._failed = False
-
         return {
             "success": True,
             "transaction_id": self.transaction_id,
@@ -307,21 +238,13 @@ class SafeCodingRun:
 
     def fail_and_rollback(self) -> dict[str, str]:
         if not self._started:
-            raise CodingRunError(
-                "Coding run has not started."
-            )
-
+            raise CodingRunError("Coding run has not started.")
         if self._completed:
-            raise CodingRunError(
-                "Cannot roll back a completed coding run."
-            )
+            raise CodingRunError("Cannot roll back a completed coding run.")
 
-        # Roll back only the explicitly authorized paths.
         result = self.transaction.rollback()
-
         self._failed = True
         self._completed = False
-
         return result
 
     def run(
@@ -344,18 +267,8 @@ class SafeCodingRun:
         try:
             task(self)
 
-            test_passed = (
-                True
-                if test_fn is None
-                else test_fn() is True
-            )
-
-            review_passed = (
-                True
-                if review_fn is None
-                else review_fn() is True
-            )
-
+            test_passed = True if test_fn is None else test_fn() is True
+            review_passed = True if review_fn is None else review_fn() is True
             final_verification_passed = (
                 True
                 if final_verification_fn is None
