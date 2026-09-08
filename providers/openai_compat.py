@@ -17,7 +17,19 @@ if TYPE_CHECKING:
 
 def _is_retryable_err(e: Exception) -> bool:
     msg = str(e).lower()
-    if any(x in msg for x in ["deadline", "timeout", "timed out", "too many requests", "rate limit"]):
+    if any(
+        x in msg
+        for x in (
+            "deadline",
+            "timeout",
+            "timed out",
+            "too many requests",
+            "rate limit",
+            "not found",
+            "404",
+            "no endpoints found",
+        )
+    ):
         return True
     # curl error 16 = HTTP/2 framing failure
     if "curl: (16)" in msg or "http2" in msg or "http/2" in msg:
@@ -162,6 +174,7 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
 
     return parsed_tool_calls
 
+
 class OpenAICompatibleProvider(BaseProvider):
     @property
     def name(self) -> str:
@@ -291,20 +304,41 @@ class OpenAICompatibleProvider(BaseProvider):
         tools: list[dict] | None = None,
     ) -> Generator[dict, None, None]:
         model = self.config.get("model", "gpt-5.6-luna")
-        fallback = self.config.get("fallback_model", "openai/gpt-4o-mini")
+        fallback = self.config.get("fallback_model", "")
         temperature = self.config.get("temperature", 0.7)
         max_tokens = self.config.get("max_tokens", 4096)
 
-        try:
-            yield from self._stream(model, messages, tools, temperature, max_tokens)
-        except Exception as e:
-            err_msg = str(e)
-            yield {
-                "type": "error",
-                "error": err_msg,
-                "content": f"Error: {err_msg}",
-                "final": True,
-            }
+        models = [model]
+        if fallback and fallback != model:
+            models.append(fallback)
+
+        last_error: Exception | None = None
+        for index, attempt_model in enumerate(models):
+            emitted = False
+            try:
+                for event in self._stream(
+                    attempt_model,
+                    messages,
+                    tools,
+                    temperature,
+                    max_tokens,
+                ):
+                    emitted = True
+                    yield event
+                return
+            except Exception as e:
+                last_error = e
+                has_fallback = index + 1 < len(models)
+                if not has_fallback or emitted or not _is_retryable_err(e):
+                    break
+
+        err_msg = str(last_error or "Provider request failed")
+        yield {
+            "type": "error",
+            "error": err_msg,
+            "content": f"Error: {err_msg}",
+            "final": True,
+        }
 
 
 register_provider("openai", OpenAICompatibleProvider)
