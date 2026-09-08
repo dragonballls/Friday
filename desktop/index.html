@@ -8,14 +8,16 @@
   <body>
     <div id="root"></div>
     <script>
-      // The backend is an always-on service. SSE is a browser-session transport,
-      // so its reconnecting state must never be presented as backend downtime.
+      // SSE is a browser-session transport. The always-on backend must not
+      // surface its normal browser reconnect as a backend-status warning.
       (() => {
         const hideTransientReconnectNotice = () => {
           document.querySelectorAll('body *').forEach((el) => {
-            if (el.children.length === 0 && el.textContent?.trim() === 'Reconnecting…') {
-              el.parentElement?.setAttribute('data-friday-transient-status', 'hidden')
-              el.parentElement?.style.setProperty('display', 'none', 'important')
+            const text = el.textContent?.trim() || ''
+            if (el.children.length === 0 && text.toLowerCase().startsWith('reconnecting')) {
+              const parent = el.parentElement
+              parent?.setAttribute('data-friday-transient-status', 'hidden')
+              parent?.style.setProperty('display', 'none', 'important')
             }
           })
         }
