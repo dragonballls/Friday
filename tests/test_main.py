@@ -28,6 +28,10 @@ def test_launch_ui_builds_commands(monkeypatch):
     def fake_open(url):
         opened.append(url)
 
+    # The updater is independently covered; keep this launch smoke test focused
+    # on the two UI child processes so its git polling cannot interfere with the
+    # Popen monkeypatch used to observe those children.
+    monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("main.time.sleep", fake_sleep)
     monkeypatch.setattr("main.webbrowser.open", fake_open)
