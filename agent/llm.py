@@ -6,6 +6,7 @@ from config.providers import get_provider_config
 
 _provider = None
 _provider_name = None
+_provider_cache: dict[str, object] = {}
 
 
 def _ensure_provider():
@@ -16,6 +17,14 @@ def _ensure_provider():
         _provider_name = getattr(_provider, "name", None) or "unknown"
 
     return _provider
+
+
+def _get_named_provider(name: str):
+    provider = _provider_cache.get(name)
+    if provider is None:
+        provider = get_provider(name)
+        _provider_cache[name] = provider
+    return provider
 
 
 def _is_retryable_provider_error(event: dict) -> bool:
@@ -55,7 +64,7 @@ def _get_fallback_provider(primary_name: str):
         return None, None
 
     try:
-        provider = get_provider(fallback_name)
+        provider = _get_named_provider(fallback_name)
         return provider, fallback_name
     except Exception:
         return None, None
@@ -66,9 +75,6 @@ def _primary_failed(events: list[dict]) -> bool:
         if event.get("type") == "error" and _is_retryable_provider_error(event):
             return True
 
-        # A normal completed response may legitimately contain words such as
-        # "timeout", "connection", or "rate limit". Only a structured error
-        # field on a done event is evidence that the provider failed.
         if event.get("type") == "done" and event.get("error"):
             return _is_retryable_provider_error(event)
 
@@ -83,19 +89,63 @@ def _has_partial_output(events: list[dict]) -> bool:
     )
 
 
+def _provider_has_credentials(name: str) -> bool:
+    config = get_provider_config(name)
+    return bool(str(config.get("api_key") or "").strip())
+
+
 def chat(
     messages: list[dict],
     tools: list[dict] | None = None,
+    provider_name: str | None = None,
 ) -> Generator[dict, None, None]:
-    """Stream from the configured primary provider with per-request fallback.
+    """Stream from a selected provider with safe per-request fallback.
 
-    A fallback is intentionally scoped to this request. A temporary provider
-    outage must not permanently replace the configured primary provider for
-    every later conversation. Once primary text has reached the caller, the
-    request stays on that stream to avoid duplicating visible output.
+    Existing callers continue using the configured primary provider. Coding
+    callers can explicitly select Zen Coder without changing normal chat or
+    planning. A missing Zen key is treated as an optional-provider miss.
     """
-    provider = _ensure_provider()
-    provider_name = _provider_name or "unknown"
+    provider = _ensure_provider() if provider_name is None else None
+    selected_name = provider_name or _provider_name or "unknown"
+
+    if provider_name is not None:
+        if not _provider_has_credentials(provider_name):
+            fallback, fallback_name = _get_fallback_provider(provider_name)
+            if fallback is None:
+                yield {
+                    "type": "error",
+                    "error": f"Provider '{provider_name}' is not configured",
+                    "content": f"Provider '{provider_name}' is not configured",
+                    "final": True,
+                }
+                return
+            yield {
+                "type": "tokens",
+                "content": f"[{provider_name} unavailable; switching to {fallback_name}…]\n\n",
+            }
+            try:
+                yield from fallback.chat(messages, tools=tools)
+            except Exception as exc:
+                yield {"type": "error", "content": str(exc), "final": True}
+            return
+
+        try:
+            provider = _get_named_provider(provider_name)
+        except Exception as exc:
+            fallback, fallback_name = _get_fallback_provider(provider_name)
+            if fallback is None:
+                yield {"type": "error", "content": str(exc), "final": True}
+                return
+            yield {
+                "type": "tokens",
+                "content": f"[{provider_name} unavailable; switching to {fallback_name}…]\n\n",
+            }
+            try:
+                yield from fallback.chat(messages, tools=tools)
+            except Exception as fallback_exc:
+                yield {"type": "error", "content": str(fallback_exc), "final": True}
+            return
+
     primary_events: list[dict] = []
 
     try:
@@ -109,7 +159,7 @@ def chat(
     if _has_partial_output(primary_events) or not _primary_failed(primary_events):
         return
 
-    fallback, fallback_name = _get_fallback_provider(provider_name)
+    fallback, fallback_name = _get_fallback_provider(selected_name)
 
     if fallback is None:
         return
@@ -117,7 +167,7 @@ def chat(
     yield {
         "type": "tokens",
         "content": (
-            f"[{provider_name} unavailable; "
+            f"[{selected_name} unavailable; "
             f"switching to {fallback_name}…]\n\n"
         ),
     }
