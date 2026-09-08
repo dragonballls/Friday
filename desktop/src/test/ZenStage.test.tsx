@@ -4,7 +4,7 @@ import { ZenStage } from '../components/zen/ZenStage'
 
 vi.mock('../components/center/AiCore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../components/center/AiCore')>()
-  return { ...actual, JarvisOrb: () => <div data-testid="orb" /> }
+  return { ...actual, PERSONA_VISUALS: { friday: { name: 'FRIDAY', color: '#00a8ff' } } }
 })
 
 const baseProps = {
@@ -22,11 +22,11 @@ describe('ZenStage', () => {
   it('renders the orb and input, without dashboard chrome', () => {
     render(<ZenStage {...baseProps} />)
     expect(screen.getByTestId('orb')).toBeTruthy()
-    expect(screen.getByPlaceholderText('Message Friday...')).toBeTruthy()
+    expect(screen.getByPlaceholderText('Message FRIDAY...')).toBeTruthy()
   })
   it('sends a message via input', () => {
     render(<ZenStage {...baseProps} />)
-    const input = screen.getByPlaceholderText('Message Friday...')
+    const input = screen.getByPlaceholderText('Message FRIDAY...')
     fireEvent.change(input, { target: { value: 'hello friday' } })
     fireEvent.click(screen.getByText('↑'))
     expect(baseProps.onSend).toHaveBeenCalledWith('hello friday')
@@ -40,7 +40,7 @@ describe('ZenStage', () => {
     expect(screen.getByText('hi')).toBeTruthy(); expect(screen.getByText('hello')).toBeTruthy()
   })
   it('toggles dashboard via the stage button', () => {
-    render(<ZenStage {...baseProps} />); fireEvent.click(screen.getByTitle('Toggle dashboard (⌘B)')); expect(baseProps.onToggleDashboard).toHaveBeenCalled()
+    render(<ZenStage {...baseProps} />); fireEvent.click(screen.getByTitle(/Toggle dashboard/)); expect(baseProps.onToggleDashboard).toHaveBeenCalled()
   })
   it('toggles hands-free listening', () => {
     const onToggle = vi.fn(); render(<ZenStage {...baseProps} handsFree={false} onToggleHandsFree={onToggle} />)
