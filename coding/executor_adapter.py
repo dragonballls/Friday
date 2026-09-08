@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
@@ -27,26 +27,7 @@ class CodingExecutionResult:
 
 
 class SafeExecutorAdapter:
-    """
-    Safety wrapper around Friday's existing Executor.
-
-    The existing Executor remains responsible for:
-      - LLM interaction
-      - tool selection
-      - tool execution
-      - permissions
-      - confirmations
-      - ReAct iterations
-      - existing retry behavior
-
-    This adapter adds:
-      - explicit coding surface
-      - durable pre-run snapshots
-      - authorization of expected files
-      - unexpected-change detection
-      - automatic rollback on failure
-      - completion verification
-    """
+    """Safety wrapper around Friday's existing Executor."""
 
     def __init__(
         self,
@@ -56,14 +37,11 @@ class SafeExecutorAdapter:
     ) -> None:
         self.executor = executor
         self.workspace = Path(workspace).resolve()
-
         expected = [str(path) for path in expected_paths]
-
         if not expected:
             raise CodingExecutorAdapterError(
                 "Coding execution requires at least one expected path."
             )
-
         self.run: SafeCodingRun = create_safe_coding_run(
             self.workspace,
             expected,
@@ -72,6 +50,31 @@ class SafeExecutorAdapter:
     @property
     def transaction_id(self) -> str:
         return self.run.transaction_id
+
+    def _run_repository_verification(self) -> dict[str, Any] | None:
+        """Run the complete repository gate for a real Git workspace."""
+        if not (self.workspace / ".git").exists():
+            return None
+        try:
+            from plugins.builtins.friday_verification import VerifyCodingChangePlugin
+
+            result = VerifyCodingChangePlugin().execute(
+                workspace=str(self.workspace),
+                timeout=300,
+            )
+        except Exception as exc:
+            return {
+                "success": False,
+                "all_gates_passed": False,
+                "error": f"Final verification could not run: {exc}",
+            }
+        if not isinstance(result, dict):
+            return {
+                "success": False,
+                "all_gates_passed": False,
+                "error": "Final verification returned an invalid result.",
+            }
+        return result
 
     def execute(
         self,
@@ -88,23 +91,9 @@ class SafeExecutorAdapter:
         review_fn=None,
         final_verification_fn=None,
     ) -> Generator[dict[str, Any], None, CodingExecutionResult]:
-        """
-        Execute one coding task through the existing Executor while
-        placing the workspace inside a SafeCodingRun transaction.
-
-        Any exception, failed task, unexpected workspace mutation, failed
-        test, failed review, or failed final verification causes rollback.
-        """
-
         events: list[dict[str, Any]] = []
-
         try:
             self.run.start()
-
-            # SafeCodingRun requires authorization only after the
-            # transaction has started. expected_paths is the explicit
-            # coding surface supplied by the caller, so authorize each
-            # path before the existing Executor is allowed to modify it.
             for expected_path in self.run.expected_paths:
                 self.run.authorize(expected_path)
 
@@ -130,11 +119,12 @@ class SafeExecutorAdapter:
                     or "Existing Executor reported task failure."
                 )
 
-            # Verify that the executor touched only the explicitly
-            # authorized coding surface.
             self.run.verify_surface()
-
             changed = self.run.changed_paths()
+            if not changed:
+                raise CodingExecutorAdapterError(
+                    "Completion gate failed: no authorized source change was detected."
+                )
 
             yield {
                 "type": "coding_transaction",
@@ -144,73 +134,64 @@ class SafeExecutorAdapter:
             }
 
             implementation_ok = (
-                implementation_check() if implementation_check else True
+                implementation_check() if implementation_check else bool(changed)
             )
+            tests_ok = test_check() if test_check else True
+            review_ok = review_check() if review_check else True
+            final_ok = final_verification_check() if final_verification_check else True
 
-            tests_ok = (
-                test_check() if test_check else True
-            )
+            if test_fn is not None:
+                tests_ok = bool(tests_ok and test_fn())
+            if review_fn is not None:
+                review_ok = bool(review_ok and review_fn())
+            if final_verification_fn is not None:
+                final_ok = bool(final_ok and final_verification_fn())
 
-            review_ok = (
-                review_check() if review_check else True
-            )
-
-            final_ok = (
-                final_verification_check()
-                if final_verification_check
-                else True
-            )
+            repository_verification = self._run_repository_verification()
+            if repository_verification is not None:
+                verification_passed = bool(
+                    repository_verification.get("success")
+                    and repository_verification.get("all_gates_passed")
+                )
+                final_ok = bool(final_ok and verification_passed)
+                tests_ok = bool(tests_ok and verification_passed)
+                yield {
+                    "type": "verification",
+                    "content": repository_verification.get(
+                        "message",
+                        repository_verification.get(
+                            "error",
+                            "Repository verification completed.",
+                        ),
+                    ),
+                    "success": verification_passed,
+                    "all_gates_passed": verification_passed,
+                    "gates": repository_verification.get("gates", []),
+                }
 
             if not implementation_ok:
                 raise CodingExecutorAdapterError(
                     "Completion gate failed: implementation check failed."
                 )
-
             if not tests_ok:
                 raise CodingExecutorAdapterError(
                     "Completion gate failed: tests failed."
                 )
-
             if not review_ok:
                 raise CodingExecutorAdapterError(
                     "Completion gate failed: review failed."
                 )
-
             if not final_ok:
                 raise CodingExecutorAdapterError(
                     "Completion gate failed: final verification failed."
                 )
 
-            # SafeCodingRun is responsible for the final transaction
-            # completion decision. If it rejects completion, the exception
-            # enters the rollback path below.
-
-            # Completion gates execute while the durable transaction is open.
-            # A failed gate therefore enters the exception/rollback path.
-            if test_fn is not None and not bool(test_fn()):
-                raise RuntimeError(
-                    "Coding completion gate failed: tests did not pass."
-                )
-
-            if review_fn is not None and not bool(review_fn()):
-                raise RuntimeError(
-                    "Coding completion gate failed: review did not pass."
-                )
-
-            if (
-                final_verification_fn is not None
-                and not bool(final_verification_fn())
-            ):
-                raise RuntimeError(
-                    "Coding completion gate failed: final verification did not pass."
-                )
             self.run.finish(
-                implementation_complete=implementation_ok,
+                implementation_complete=True,
                 test_passed=tests_ok,
                 review_passed=review_ok,
                 final_verification_passed=final_ok,
             )
-
             changed = self.run.changed_paths()
 
             yield {
@@ -235,12 +216,10 @@ class SafeExecutorAdapter:
 
         except Exception as exc:
             unexpected: list[str] = []
-
             try:
                 unexpected = list(self.run.unexpected_changes())
             except Exception:
                 pass
-
             try:
                 self.run.fail_and_rollback()
             except Exception as rollback_exc:
@@ -277,4 +256,3 @@ def create_safe_executor_adapter(
         workspace=workspace,
         expected_paths=expected_paths,
     )
-
