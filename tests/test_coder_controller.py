@@ -21,6 +21,10 @@ class FakeExecutionResult:
     changed_paths: list[str]
     rolled_back: bool = False
     error: str | None = None
+    implementation_ok: bool = True
+    tests_ok: bool = True
+    review_ok: bool = True
+    final_verification_ok: bool = True
 
 
 def make_handoff(tmp_path: Path) -> CodingHandoff:
@@ -84,6 +88,37 @@ def test_successful_coder_reaches_completion(tmp_path):
     assert result.changed_paths == ("feature.py",)
 
 
+def test_generator_execution_result_is_consumed(tmp_path):
+    handoff = make_handoff(tmp_path)
+    target = tmp_path / "feature.py"
+    target.write_text("implemented\n", encoding="utf-8")
+
+    execution = FakeExecutionResult(
+        completed=True,
+        transaction_id="txn-generator",
+        changed_paths=["feature.py"],
+    )
+
+    def execute(_, *gate_callbacks):
+        yield {"type": "coding_transaction", "status": "completed"}
+        return execution
+
+    controller = RealCoderController(
+        workspace=tmp_path,
+        handoff=handoff,
+        execute_coder=execute,
+        run_tests=lambda _: True,
+        run_review=lambda _: True,
+        final_verify=lambda _: True,
+    )
+
+    result = controller.run()
+
+    assert result.success is True
+    assert result.transaction_id == "txn-generator"
+    assert result.changed_paths == ("feature.py",)
+
+
 def test_failed_tests_roll_back(tmp_path):
     handoff = make_handoff(tmp_path)
 
@@ -139,8 +174,6 @@ def test_failed_review_rolls_back(tmp_path):
     with pytest.raises(CoderControllerError):
         controller.run()
 
-    # The executor/transaction owner reports the failed review
-    # and performs rollback before the controller sees the failure.
     assert execution.transaction_id == "txn-review-failed"
     assert execution.rolled_back is True
 
@@ -217,7 +250,7 @@ def test_workspace_mismatch_is_rejected(tmp_path):
         RealCoderController(
             workspace=other,
             handoff=handoff,
-            execute_coder=lambda _, test_fn, review_fn, final_verify_fn: FakeExecutionResult(
+            execute_coder=lambda _, *gate_callbacks: FakeExecutionResult(
                 completed=True,
                 transaction_id="txn",
                 changed_paths=[],
@@ -226,18 +259,15 @@ def test_workspace_mismatch_is_rejected(tmp_path):
             run_review=lambda _: True,
             final_verify=lambda _: True,
         )
+
+
 def test_repair_callback_can_prepare_bounded_retry(tmp_path):
     handoff = make_handoff(tmp_path)
 
     attempts = []
     repairs = []
 
-    def execute(
-        _,
-        test_fn,
-        review_fn,
-        final_verify_fn,
-    ):
+    def execute(_, test_fn, review_fn, final_verify_fn):
         attempt = len(attempts) + 1
         attempts.append(attempt)
 
