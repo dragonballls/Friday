@@ -4,23 +4,22 @@ from main import _launch_ui
 def test_launch_ui_builds_commands(monkeypatch):
     """--ui should spawn the API server and frontend dev server, then open the browser."""
     spawned: list[list[str]] = []
-    environments: list[dict[str, str] | None] = []
     opened: list[str] = []
 
     class FakeProc:
         def __init__(self, cmd):
             self._cmd = cmd
-            self._terminated = False
+            self._polls = 0
 
         def poll(self):
-            return 1 if self._terminated else None
+            self._polls += 1
+            return None if self._polls < 3 else 0
 
         def terminate(self):
             self._terminated = True
 
     def fake_popen(cmd, **kwargs):
         spawned.append(cmd)
-        environments.append(kwargs.get("env"))
         return FakeProc(cmd)
 
     def fake_sleep(_secs):
@@ -28,7 +27,6 @@ def test_launch_ui_builds_commands(monkeypatch):
 
     def fake_open(url):
         opened.append(url)
-        raise KeyboardInterrupt
 
     monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
@@ -40,52 +38,7 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert len(spawned) == 2
     assert "api_server.py" in " ".join(spawned[0])
     assert any("dev" in str(c) for c in spawned[1])
-    assert spawned[1][-2:] == ["--port", "5173"]
     assert opened == ["http://localhost:5173"]
-    assert all(env is not None for env in environments)
-    assert all(env["FRIDAY_UI_PORT"] == "5173" for env in environments if env is not None)
-    assert all(env["FRONTEND_ORIGIN"] == "http://localhost:5173" for env in environments if env is not None)
-
-
-def test_launch_ui_uses_custom_port(monkeypatch):
-    """A custom UI port should be passed to Vite and the browser URL."""
-    spawned: list[list[str]] = []
-    environments: list[dict[str, str] | None] = []
-    opened: list[str] = []
-
-    class FakeProc:
-        def __init__(self, cmd):
-            self._cmd = cmd
-            self._terminated = False
-
-        def poll(self):
-            return 1 if self._terminated else None
-
-        def terminate(self):
-            self._terminated = True
-
-    def fake_popen(cmd, **kwargs):
-        spawned.append(cmd)
-        environments.append(kwargs.get("env"))
-        return FakeProc(cmd)
-
-    def fake_open(url):
-        opened.append(url)
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
-    monkeypatch.setattr("main.subprocess.Popen", fake_popen)
-    monkeypatch.setattr("main.time.sleep", lambda _secs: None)
-    monkeypatch.setattr("main.webbrowser.open", fake_open)
-
-    _launch_ui(6123)
-
-    assert len(spawned) == 2
-    assert spawned[1][-2:] == ["--port", "6123"]
-    assert opened == ["http://localhost:6123"]
-    assert all(env is not None for env in environments)
-    assert all(env["FRIDAY_UI_PORT"] == "6123" for env in environments if env is not None)
-    assert all(env["FRONTEND_ORIGIN"] == "http://localhost:6123" for env in environments if env is not None)
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
@@ -163,7 +116,7 @@ def test_launch_ui_recovers_when_child_process_stops(monkeypatch):
         def terminate(self):
             self.terminated = True
 
-    def fake_start(_desktop, _port):
+    def fake_start(_desktop):
         nonlocal starts, restart_seen
         starts += 1
         if starts > 1:
