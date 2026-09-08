@@ -215,31 +215,43 @@ class SafeExecutorAdapter:
             )
 
         except Exception as exc:
-            unexpected: list[str] = []
+            error_text = str(exc)
             try:
-                unexpected = list(self.run.unexpected_changes())
+                task.status = "failed"
+                task.error = error_text
             except Exception:
                 pass
-            try:
-                self.run.fail_and_rollback()
-            except Exception as rollback_exc:
-                raise CodingExecutorAdapterError(
-                    "Coding task failed and rollback also failed: "
-                    f"{rollback_exc}"
-                ) from exc
+
+            unexpected: list[str] = []
+            if self.run.started:
+                try:
+                    unexpected = list(self.run.unexpected_changes())
+                except Exception:
+                    pass
+
+            rolled_back = False
+            if self.run.started:
+                try:
+                    self.run.fail_and_rollback()
+                    rolled_back = True
+                except Exception as rollback_exc:
+                    raise CodingExecutorAdapterError(
+                        "Coding task failed and rollback also failed: "
+                        f"{rollback_exc}"
+                    ) from exc
 
             yield {
                 "type": "coding_transaction",
-                "status": "rolled_back",
+                "status": "rolled_back" if rolled_back else "failed",
                 "transaction_id": self.transaction_id,
-                "error": str(exc),
+                "error": error_text,
                 "unexpected_changes": unexpected,
             }
 
             return CodingExecutionResult(
                 events=events,
                 completed=False,
-                rolled_back=True,
+                rolled_back=rolled_back,
                 changed_paths=[],
                 unexpected_changes=unexpected,
                 transaction_id=self.transaction_id,
