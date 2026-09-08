@@ -48,6 +48,7 @@ html, body, #root {
 }
 
 html {
+  color-scheme: dark;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -59,6 +60,25 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
+}
+
+button, [role="button"], a, input, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue-bright);
+  outline-offset: 2px;
 }
 
 #root::before {
