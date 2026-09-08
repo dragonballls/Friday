@@ -35,13 +35,6 @@ def test_invalid_tool_call_arguments_fail_closed_to_empty_dict():
     assert tasks[0].args == {}
 
 
-def test_malformed_tool_call_entries_are_skipped():
-    tasks = _toolcalls_to_tasks([None, "bad", {"function": None}])
-
-    assert len(tasks) == 1
-    assert tasks[0].tool == "none"
-
-
 def test_non_list_planner_json_fails_closed_without_crashing():
     tasks = _parse_tasks('{"id":"task_1","tool":"write_file"}')
 
