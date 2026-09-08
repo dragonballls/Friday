@@ -81,6 +81,7 @@ def test_successful_coder_reaches_completion(tmp_path):
     result = controller.run()
 
     assert result.success is True
+    assert result.implementation_ok is True
     assert result.tests_ok is True
     assert result.review_ok is True
     assert result.final_verification_ok is True
@@ -115,6 +116,7 @@ def test_generator_execution_result_is_consumed(tmp_path):
     result = controller.run()
 
     assert result.success is True
+    assert result.implementation_ok is True
     assert result.transaction_id == "txn-generator"
     assert result.changed_paths == ("feature.py",)
 
@@ -358,6 +360,7 @@ def test_repair_callback_can_prepare_bounded_retry(tmp_path):
     result = controller.run()
 
     assert result.success is True
+    assert result.implementation_ok is True
     assert result.transaction_id == "txn-2"
     assert attempts == [1, 2]
     assert repairs == [1]
@@ -398,6 +401,7 @@ def test_failed_gate_can_prepare_bounded_retry(tmp_path):
     result = controller.run()
 
     assert result.success is True
+    assert result.implementation_ok is True
     assert result.transaction_id == "txn-recovered"
     assert attempts == [1, 2]
     assert repairs == [1]
