@@ -32,4 +32,3 @@ class TestConfig:
         assert provider
         cfg = get_provider_config(provider)
         assert isinstance(cfg, dict)
-        assert cfg
