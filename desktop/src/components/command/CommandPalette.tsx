@@ -90,7 +90,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Type a command..."
-            className="w-full bg-transparent outline-none text-sm"
+            className="w-full bg-transparent outline-none text-sm focus-visible:ring-1 focus-visible:ring-[#D4A040]/50 rounded px-1"
             style={{ color: '#e5e5e5' }}
             role="combobox"
             aria-controls={listId}
@@ -111,7 +111,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                 role="option"
                 aria-selected={i === selected}
                 onClick={() => execute(i)}
-                className="w-full text-left px-4 py-2.5 text-sm transition-colors duration-75 focus-visible:outline-none"
+                className="w-full text-left px-4 py-2.5 text-sm transition-colors duration-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#D4A040]/60"
                 style={{
                   background: i === selected ? 'rgba(245,158,11,0.12)' : 'transparent',
                   color: i === selected ? '#f59e0b' : '#bbb',
@@ -123,7 +123,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
             ))
           )}
         </div>
-        <div className="flex items-center gap-4 px-4 py-2.5 text-[11px]" style={{ color: '#555', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[11px]" style={{ color: '#555', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <span><kbd className="font-mono" style={{ color: '#777' }}>↑↓</kbd> navigate</span>
           <span><kbd className="font-mono" style={{ color: '#777' }}>↵</kbd> select</span>
           <span><kbd className="font-mono" style={{ color: '#777' }}>esc</kbd> close</span>
