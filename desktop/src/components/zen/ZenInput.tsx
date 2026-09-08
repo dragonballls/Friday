@@ -150,6 +150,17 @@ export const ZenInput = memo(function ZenInput({
               </div>
             )}
 
+            {voiceStatus === 'error' && isVoiceSupported && (
+              <div
+                className="absolute left-4 sm:left-5 right-20 sm:right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-[11px] truncate pointer-events-none glass"
+                style={{ color: '#fca5a5', border: '1px solid rgba(248,113,113,0.18)' }}
+                role="status"
+                aria-live="polite"
+              >
+                Voice input unavailable — try again
+              </div>
+            )}
+
             <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
               {isVoiceSupported && (
                 <button
