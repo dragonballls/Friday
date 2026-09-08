@@ -51,6 +51,11 @@ class SafeExecutorAdapter:
     def transaction_id(self) -> str:
         return self.run.transaction_id
 
+    @staticmethod
+    def _gate_passed(value: Any) -> bool:
+        """Only the literal boolean True may satisfy a completion gate."""
+        return value is True
+
     def _run_repository_verification(self) -> dict[str, Any] | None:
         """Run the complete repository gate for a real Git workspace."""
         if not (self.workspace / ".git").exists():
@@ -133,30 +138,42 @@ class SafeExecutorAdapter:
                 "changed_paths": changed,
             }
 
-            implementation_ok = bool(
-                implementation_check() if implementation_check else bool(changed)
+            implementation_ok = (
+                self._gate_passed(implementation_check())
+                if implementation_check
+                else bool(changed)
             )
-            tests_ok = bool(test_check() if test_check else True)
-            review_ok = bool(review_check() if review_check else True)
-            final_ok = bool(
-                final_verification_check() if final_verification_check else True
+            tests_ok = (
+                self._gate_passed(test_check())
+                if test_check
+                else True
+            )
+            review_ok = (
+                self._gate_passed(review_check())
+                if review_check
+                else True
+            )
+            final_ok = (
+                self._gate_passed(final_verification_check())
+                if final_verification_check
+                else True
             )
 
             if test_fn is not None:
-                tests_ok = bool(tests_ok and test_fn())
+                tests_ok = tests_ok and self._gate_passed(test_fn())
             if review_fn is not None:
-                review_ok = bool(review_ok and review_fn())
+                review_ok = review_ok and self._gate_passed(review_fn())
             if final_verification_fn is not None:
-                final_ok = bool(final_ok and final_verification_fn())
+                final_ok = final_ok and self._gate_passed(final_verification_fn())
 
             repository_verification = self._run_repository_verification()
             if repository_verification is not None:
-                verification_passed = bool(
-                    repository_verification.get("success")
-                    and repository_verification.get("all_gates_passed")
+                verification_passed = (
+                    repository_verification.get("success") is True
+                    and repository_verification.get("all_gates_passed") is True
                 )
-                final_ok = bool(final_ok and verification_passed)
-                tests_ok = bool(tests_ok and verification_passed)
+                final_ok = final_ok and verification_passed
+                tests_ok = tests_ok and verification_passed
                 yield {
                     "type": "verification",
                     "content": repository_verification.get(
