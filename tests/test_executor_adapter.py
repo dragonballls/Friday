@@ -58,7 +58,6 @@ def test_safe_executor_success(tmp_path):
         ["feature.py"],
     )
 
-
     events, result = collect(
         adapter.execute(
             FakeTask(),
@@ -120,7 +119,6 @@ def test_failed_executor_rolls_back_existing_file(tmp_path):
         ["feature.py"],
     )
 
-
     events, result = collect(
         adapter.execute(
             FakeTask(),
@@ -160,7 +158,6 @@ def test_failed_tests_roll_back(tmp_path):
         ["feature.py"],
     )
 
-
     events, result = collect(
         adapter.execute(
             FakeTask(),
@@ -173,6 +170,40 @@ def test_failed_tests_roll_back(tmp_path):
     assert result.completed is False
     assert result.rolled_back is True
     assert target.read_text(encoding="utf-8") == "ORIGINAL\n"
+
+
+def test_non_boolean_gate_result_fails_closed(tmp_path):
+    target = tmp_path / "feature.py"
+
+    executor = FakeExecutor(
+        lambda: target.write_text(
+            "NEW\n",
+            encoding="utf-8",
+        )
+    )
+
+    adapter = SafeExecutorAdapter(
+        executor,
+        tmp_path,
+        ["feature.py"],
+    )
+
+    events, result = collect(
+        adapter.execute(
+            FakeTask(),
+            [],
+            [],
+            implementation_check=lambda: "false",
+        )
+    )
+
+    assert result.completed is False
+    assert result.rolled_back is True
+    assert any(
+        event.get("type") == "coding_transaction"
+        and event.get("status") == "rolled_back"
+        for event in events
+    )
 
 
 def test_unexpected_change_is_detected(tmp_path):
@@ -210,7 +241,6 @@ def test_unexpected_change_is_detected(tmp_path):
         tmp_path,
         ["feature.py"],
     )
-
 
     events, result = collect(
         adapter.execute(
