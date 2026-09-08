@@ -47,12 +47,18 @@ html, body, #root {
   overflow: hidden;
 }
 
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root::before {
@@ -319,3 +325,15 @@ input::placeholder, textarea::placeholder {
 }
 
 .markdown-body strong { color: #e5e5e5; }
+
+/* Respect OS-level motion preferences without changing interaction behavior. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
