@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 interface OnboardingProps {
   onDismiss: () => void
@@ -18,6 +18,7 @@ const FLAGSHIP_SUGGESTIONS = [
  */
 export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: OnboardingProps) {
   const [visible, setVisible] = useState(true)
+  const firstSuggestionRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const seen = localStorage.getItem('friday_onboarded')
@@ -26,6 +27,8 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
 
   useEffect(() => {
     if (!visible) return
+    firstSuggestionRef.current?.focus()
+
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') dismiss()
     }
@@ -64,13 +67,15 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
         </div>
 
         <div className="space-y-2 mb-5">
-          {FLAGSHIP_SUGGESTIONS.map(s => (
+          {FLAGSHIP_SUGGESTIONS.map((s, index) => (
             <button
               key={s}
+              ref={index === 0 ? firstSuggestionRef : undefined}
               type="button"
               onClick={() => { onSuggest(s); dismiss() }}
               className="w-full text-left px-3 py-2 rounded-lg text-[12px] transition-all duration-200 hover:bg-white/[.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
               style={{ color: '#ccc', border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}
+              aria-label={`Try suggestion: ${s}`}
             >
               {s}
             </button>
