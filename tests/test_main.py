@@ -38,7 +38,43 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert len(spawned) == 2
     assert "api_server.py" in " ".join(spawned[0])
     assert any("dev" in str(c) for c in spawned[1])
+    assert spawned[1][-2:] == ["--port", "5173"]
     assert opened == ["http://localhost:5173"]
+
+
+def test_launch_ui_uses_custom_port(monkeypatch):
+    """A custom UI port should be passed to Vite and the browser URL."""
+    spawned: list[list[str]] = []
+    opened: list[str] = []
+
+    class FakeProc:
+        def __init__(self, cmd):
+            self._cmd = cmd
+            self._terminated = False
+
+        def poll(self):
+            return 1 if self._terminated else None
+
+        def terminate(self):
+            self._terminated = True
+
+    def fake_popen(cmd, **kwargs):
+        spawned.append(cmd)
+        return FakeProc(cmd)
+
+    monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
+    monkeypatch.setattr("main.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("main.time.sleep", lambda _secs: None)
+    monkeypatch.setattr("main.webbrowser.open", opened.append)
+
+    def stop_after_launch(_secs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("main.time.sleep", stop_after_launch)
+    _launch_ui(6123)
+
+    assert spawned[1][-2:] == ["--port", "6123"]
+    assert opened == ["http://localhost:6123"]
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
@@ -116,7 +152,7 @@ def test_launch_ui_recovers_when_child_process_stops(monkeypatch):
         def terminate(self):
             self.terminated = True
 
-    def fake_start(_desktop):
+    def fake_start(_desktop, _port):
         nonlocal starts, restart_seen
         starts += 1
         if starts > 1:
