@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from coding.durable_transaction import (
@@ -149,10 +151,68 @@ def test_manifest_rejects_non_list_snapshots(tmp_path):
     transaction = DurableCodingTransaction(tmp_path)
     transaction.storage_root.mkdir(parents=True)
     transaction.manifest_path.write_text(
-        '{"format_version": 1, "transaction_id": "' + transaction.transaction_id
-        + '", "workspace": "' + str(tmp_path.resolve()).replace('\\', '\\\\')
-        + '", "snapshots": {}}',
+        json.dumps(
+            {
+                "format_version": 1,
+                "transaction_id": transaction.transaction_id,
+                "workspace": str(tmp_path.resolve()),
+                "snapshots": {},
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(DurableTransactionError, match="snapshot manifest"):
+        DurableCodingTransaction.recover(tmp_path, transaction.transaction_id)
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        "not-a-dict",
+        {"relative_path": "code.py"},
+        {
+            "relative_path": "code.py",
+            "existed": "yes",
+            "is_file": True,
+            "sha256": "a" * 64,
+            "content_file": "00000000.bin",
+        },
+        {
+            "relative_path": "code.py",
+            "existed": True,
+            "is_file": False,
+            "sha256": "a" * 64,
+            "content_file": "00000000.bin",
+        },
+        {
+            "relative_path": "code.py",
+            "existed": True,
+            "is_file": True,
+            "sha256": "not-a-hash",
+            "content_file": "00000000.bin",
+        },
+        {
+            "relative_path": "code.py",
+            "existed": False,
+            "is_file": False,
+            "sha256": "a" * 64,
+            "content_file": "00000000.bin",
+        },
+    ],
+)
+def test_manifest_rejects_malformed_snapshot_entries(tmp_path, snapshot):
+    transaction = DurableCodingTransaction(tmp_path)
+    transaction.storage_root.mkdir(parents=True)
+    transaction.manifest_path.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "transaction_id": transaction.transaction_id,
+                "workspace": str(tmp_path.resolve()),
+                "snapshots": [snapshot],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(DurableTransactionError, match="snapshot"):
         DurableCodingTransaction.recover(tmp_path, transaction.transaction_id)
