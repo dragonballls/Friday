@@ -51,8 +51,8 @@ export function MarkdownBlock({ content }: { content: string }) {
       <button
         type="button"
         onClick={copy}
-        aria-label={copied ? 'Copied message' : 'Copy message'}
-        title={copied ? 'Copied' : 'Copy message'}
+        aria-label={copied ? 'Copied markdown' : 'Copy markdown'}
+        title={copied ? 'Copied' : 'Copy markdown'}
         className="absolute right-0 top-0 rounded-lg px-2 py-1 text-[10px] opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
         style={{ color: copied ? '#4ade80' : '#777', border: '1px solid rgba(255,255,255,0.08)' }}
       >
