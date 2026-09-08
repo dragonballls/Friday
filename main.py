@@ -58,6 +58,11 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
         except (OSError, subprocess.SubprocessError, ValueError):
             continue
 
+def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
+    monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
+    monitor.start()
+    return monitor
+
 def _terminate_processes(procs: list[subprocess.Popen]):
     for proc in procs:
         if proc.poll() is None:
@@ -117,6 +122,7 @@ def _launch_ui():
                     os.execv(sys.executable, [sys.executable, *sys.argv])
                 print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
                 update_event.clear()
+                _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
             elif any(p.poll() is not None for p in procs):
                 break

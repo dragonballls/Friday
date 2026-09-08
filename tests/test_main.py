@@ -42,3 +42,60 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert "api_server.py" in " ".join(spawned[0])
     assert any("dev" in str(c) for c in spawned[1])
     assert opened == ["http://localhost:5173"]
+
+
+def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
+    """A failed update must not permanently disable future update detection."""
+    monitor_calls: list[int] = []
+    spawned: list[list[str]] = []
+
+    class FakeProc:
+        def __init__(self, cmd):
+            self._polls = 0
+            self._cmd = cmd
+
+        def poll(self):
+            self._polls += 1
+            return None if self._polls < 3 else 0
+
+        def terminate(self):
+            pass
+
+    class FakeThread:
+        starts: list["FakeThread"] = []
+
+        def __init__(self, target, args, **_kwargs):
+            self._target = target
+            self._args = args
+
+        def start(self):
+            self.starts.append(self)
+            # Simulate the initial monitor discovering an update. The restarted
+            # monitor is allowed to start without running synchronously in the
+            # caller, matching threading.Thread's real asynchronous behavior.
+            if len(self.starts) == 1:
+                self._target(*self._args)
+
+    def fake_monitor(_root, update_event, _stop_event):
+        monitor_calls.append(1)
+        update_event.set()
+
+    def fake_popen(cmd, **_kwargs):
+        spawned.append(cmd)
+        return FakeProc(cmd)
+
+    monkeypatch.setattr("main.threading.Thread", FakeThread)
+    monkeypatch.setattr("main._auto_update_monitor", fake_monitor)
+    monkeypatch.setattr("main.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "main.subprocess.run",
+        lambda *_args, **_kwargs: type("Result", (), {"returncode": 4})(),
+    )
+    monkeypatch.setattr("main.time.sleep", lambda _secs: None)
+    monkeypatch.setattr("main.webbrowser.open", lambda _url: None)
+
+    _launch_ui()
+
+    assert len(spawned) == 4
+    assert len(monitor_calls) == 1
+    assert len(FakeThread.starts) == 2
