@@ -267,22 +267,22 @@ class SafeCodingRun:
                 "Coding run has already completed."
             )
 
-        if not implementation_complete:
+        if implementation_complete is not True:
             raise CodingRunError(
                 "Completion gate failed: implementation incomplete."
             )
 
-        if not test_passed:
+        if test_passed is not True:
             raise CodingRunError(
                 "Completion gate failed: tests did not pass."
             )
 
-        if not review_passed:
+        if review_passed is not True:
             raise CodingRunError(
                 "Completion gate failed: review did not pass."
             )
 
-        if not final_verification_passed:
+        if final_verification_passed is not True:
             raise CodingRunError(
                 "Completion gate failed: final verification did not pass."
             )
@@ -290,6 +290,10 @@ class SafeCodingRun:
         self.verify_surface()
 
         changed = self.changed_paths()
+        if not changed:
+            raise CodingRunError(
+                "Completion gate failed: no workspace change was detected."
+            )
 
         self._completed = True
         self._failed = False
@@ -343,19 +347,19 @@ class SafeCodingRun:
             test_passed = (
                 True
                 if test_fn is None
-                else bool(test_fn())
+                else test_fn() is True
             )
 
             review_passed = (
                 True
                 if review_fn is None
-                else bool(review_fn())
+                else review_fn() is True
             )
 
             final_verification_passed = (
                 True
                 if final_verification_fn is None
-                else bool(final_verification_fn())
+                else final_verification_fn() is True
             )
 
             return self.finish(
