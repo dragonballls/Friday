@@ -60,6 +60,7 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
 
 def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
     monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
+    monitor.start()
     return monitor
 
 def _terminate_processes(procs: list[subprocess.Popen]):
