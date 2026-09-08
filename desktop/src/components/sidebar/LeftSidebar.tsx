@@ -17,10 +17,11 @@ export const LeftSidebar = memo(function LeftSidebar({
 }: LeftSidebarProps) {
   const [editing, setEditing] = useState(false)
   const [query, setQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const outputRef = useRef<HTMLInputElement>(null)
 
   const handleSave = () => {
-    const val = inputRef.current?.value.trim() || ''
+    const val = outputRef.current?.value.trim() || ''
     onSetOutputDir(val)
     setEditing(false)
   }
@@ -44,8 +45,8 @@ export const LeftSidebar = memo(function LeftSidebar({
         onNew()
       } else if (e.key.toLowerCase() === 'f' && !isTyping) {
         e.preventDefault()
-        inputRef.current?.focus()
-        inputRef.current?.select()
+        searchRef.current?.focus()
+        searchRef.current?.select()
       }
     }
     window.addEventListener('keydown', handleShortcut)
@@ -82,7 +83,7 @@ export const LeftSidebar = memo(function LeftSidebar({
         <div className="relative">
           <input
             id="session-search"
-            ref={inputRef}
+            ref={searchRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape' && query) setQuery('') }}
@@ -179,7 +180,7 @@ export const LeftSidebar = memo(function LeftSidebar({
         {editing ? (
           <div className="flex gap-1">
             <input
-              ref={inputRef}
+              ref={outputRef}
               defaultValue={outputDir}
               className="flex-1 min-w-0 px-2 py-1 rounded text-[11px] outline-none"
               style={{ background: 'rgba(255,255,255,0.06)', color: '#ccc', border: '1px solid rgba(212,160,64,0.3)' }}
