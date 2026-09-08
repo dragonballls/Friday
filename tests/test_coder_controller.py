@@ -149,6 +149,31 @@ def test_completed_execution_cannot_bypass_failed_gate(tmp_path, failed_gate):
         controller.run()
 
 
+def test_non_boolean_gate_cannot_bypass_completion(tmp_path):
+    handoff = make_handoff(tmp_path)
+    target = tmp_path / "feature.py"
+    target.write_text("implemented\n", encoding="utf-8")
+
+    execution = FakeExecutionResult(
+        completed=True,
+        transaction_id="txn-string-gate",
+        changed_paths=["feature.py"],
+    )
+    execution.tests_ok = "false"
+
+    controller = RealCoderController(
+        workspace=tmp_path,
+        handoff=handoff,
+        execute_coder=lambda _, *gate_callbacks: execution,
+        run_tests=lambda _: True,
+        run_review=lambda _: True,
+        final_verify=lambda _: True,
+    )
+
+    with pytest.raises(CoderControllerError):
+        controller.run()
+
+
 def test_failed_tests_roll_back(tmp_path):
     handoff = make_handoff(tmp_path)
 
