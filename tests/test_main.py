@@ -4,6 +4,7 @@ from main import _launch_ui
 def test_launch_ui_builds_commands(monkeypatch):
     """--ui should spawn the API server and frontend dev server, then open the browser."""
     spawned: list[list[str]] = []
+    environments: list[dict[str, str] | None] = []
     opened: list[str] = []
 
     class FakeProc:
@@ -19,6 +20,7 @@ def test_launch_ui_builds_commands(monkeypatch):
 
     def fake_popen(cmd, **kwargs):
         spawned.append(cmd)
+        environments.append(kwargs.get("env"))
         return FakeProc(cmd)
 
     def fake_sleep(_secs):
@@ -40,11 +42,15 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert any("dev" in str(c) for c in spawned[1])
     assert spawned[1][-2:] == ["--port", "5173"]
     assert opened == ["http://localhost:5173"]
+    assert all(env is not None for env in environments)
+    assert all(env["FRIDAY_UI_PORT"] == "5173" for env in environments if env is not None)
+    assert all(env["FRONTEND_ORIGIN"] == "http://localhost:5173" for env in environments if env is not None)
 
 
 def test_launch_ui_uses_custom_port(monkeypatch):
     """A custom UI port should be passed to Vite and the browser URL."""
     spawned: list[list[str]] = []
+    environments: list[dict[str, str] | None] = []
     opened: list[str] = []
 
     class FakeProc:
@@ -60,6 +66,7 @@ def test_launch_ui_uses_custom_port(monkeypatch):
 
     def fake_popen(cmd, **kwargs):
         spawned.append(cmd)
+        environments.append(kwargs.get("env"))
         return FakeProc(cmd)
 
     def fake_open(url):
@@ -76,6 +83,9 @@ def test_launch_ui_uses_custom_port(monkeypatch):
     assert len(spawned) == 2
     assert spawned[1][-2:] == ["--port", "6123"]
     assert opened == ["http://localhost:6123"]
+    assert all(env is not None for env in environments)
+    assert all(env["FRIDAY_UI_PORT"] == "6123" for env in environments if env is not None)
+    assert all(env["FRONTEND_ORIGIN"] == "http://localhost:6123" for env in environments if env is not None)
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
