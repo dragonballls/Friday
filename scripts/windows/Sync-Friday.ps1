@@ -40,10 +40,7 @@ function Invoke-Sync {
 
         $local = (& git rev-parse HEAD).Trim()
         $remote = (& git rev-parse origin/main).Trim()
-        if ($local -eq $remote) {
-            Write-Log "already current: $local"
-            return
-        }
+        if ($local -eq $remote) { return }
 
         $changed = @(git diff --name-only "$local..$remote")
         Write-Log "updating $local -> $remote ($($changed.Count) files)"
@@ -95,10 +92,10 @@ function Invoke-Sync {
 }
 
 if ($Daemon) {
-    Write-Log 'sync daemon started'
+    Write-Log 'sync daemon started (10-second polling)'
     while ($true) {
         Invoke-Sync
-        Start-Sleep -Seconds 120
+        Start-Sleep -Seconds 10
     }
 }
 else {
