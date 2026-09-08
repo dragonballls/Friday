@@ -106,6 +106,14 @@ class Agent:
         tool_map = get_tool_map()
         self._planner = Planner(llm_chat, tool_definitions=self._tool_defs)
         self._executor = Executor(llm_chat, tool_map)
+        self._coding_executor = Executor(
+            lambda messages, tools=None: llm_chat(
+                messages,
+                tools=tools,
+                provider_name="zen_coder",
+            ),
+            tool_map,
+        )
         self._output_dir: str | None = None
 
     def resolve_approval(self, request_id: str, allowed: bool) -> bool:
@@ -130,6 +138,7 @@ class Agent:
     def set_output_dir(self, path: str | None):
         self._output_dir = path
         self._executor.output_dir = path
+        self._coding_executor.output_dir = path
 
     def set_language(self, lang):
         self.language = lang
@@ -140,6 +149,7 @@ class Agent:
 
     def run(self, user_input: str):
         self._executor.output_dir = self._output_dir
+        self._coding_executor.output_dir = self._output_dir
 
         memory = get_memory_manager()
         context = memory.inject_context(user_input)
@@ -270,7 +280,9 @@ class Agent:
             "tests": [],
         }
 
-        executor = getattr(self, "_executor", None)
+        executor = getattr(self, "_coding_executor", None)
+        if executor is None:
+            executor = getattr(self, "_executor", None)
         if executor is None:
             executor = getattr(self, "executor", None)
 

@@ -33,17 +33,36 @@ def _resolve_api_key(toml_key: str, env_var: str) -> str:
 
 def load_provider_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        return {"default": {"provider": "openai"}}
-    with open(CONFIG_PATH, "rb") as f:
-        cfg = tomllib.load(f)
+        cfg: dict[str, Any] = {"default": {"provider": "openai"}}
+    else:
+        with open(CONFIG_PATH, "rb") as f:
+            cfg = tomllib.load(f)
 
-    # Override API keys from environment variables
+    # Keep the optional Zen coding provider available even when an older local
+    # providers.toml predates this integration. The secret remains environment-only.
+    cfg.setdefault(
+        "zen_coder",
+        {
+            "api_key": "",
+            "base_url": "https://opencode.ai/zen/v1",
+            "model": "mimo-v2.5-free",
+            "fallback_provider": "openrouter",
+            "timeout": 60,
+            "temperature": 0.2,
+            "max_tokens": 8192,
+            "provider_name": "zen_coder",
+        },
+    )
+
+    # Override API keys from environment variables. Secrets never need to be
+    # committed to the repository; user-level environment variables are preferred.
     env_map = {
         "openai": ("api_key", "OPENAI_API_KEY"),
         "openrouter": ("api_key", "OPENROUTER_API_KEY"),
+        "zen_coder": ("api_key", "ZEN_CODER_API_KEY"),
     }
     for section, (field, env_var) in env_map.items():
-        if section in cfg and field in cfg[section]:
+        if section in cfg:
             resolved = _resolve_api_key(field, env_var)
             if resolved:
                 cfg[section][field] = resolved
