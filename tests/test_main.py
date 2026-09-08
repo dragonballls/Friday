@@ -9,11 +9,10 @@ def test_launch_ui_builds_commands(monkeypatch):
     class FakeProc:
         def __init__(self, cmd):
             self._cmd = cmd
-            self._polls = 0
+            self._terminated = False
 
         def poll(self):
-            self._polls += 1
-            return None
+            return 1 if self._terminated else None
 
         def terminate(self):
             self._terminated = True
@@ -27,19 +26,19 @@ def test_launch_ui_builds_commands(monkeypatch):
 
     def fake_open(url):
         opened.append(url)
+        raise KeyboardInterrupt
 
     monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("main.time.sleep", fake_sleep)
     monkeypatch.setattr("main.webbrowser.open", fake_open)
 
-    def stop_after_start(*_args):
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("main._start_ui_processes", lambda desktop: (spawned.clear() or [FakeProc(["api_server.py"]), FakeProc(["npm", "run", "dev"])]))
-    monkeypatch.setattr("main.time.sleep", stop_after_start)
-
     _launch_ui()
+
+    assert len(spawned) == 2
+    assert "api_server.py" in " ".join(spawned[0])
+    assert any("dev" in str(c) for c in spawned[1])
+    assert opened == ["http://localhost:5173"]
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
@@ -106,13 +105,16 @@ def test_launch_ui_recovers_when_child_process_stops(monkeypatch):
         def __init__(self, alive_polls: int):
             self.polls = 0
             self.alive_polls = alive_polls
+            self.terminated = False
 
         def poll(self):
+            if self.terminated:
+                return 0
             self.polls += 1
             return None if self.polls <= self.alive_polls else 1
 
         def terminate(self):
-            pass
+            self.terminated = True
 
     def fake_start(_desktop):
         nonlocal starts, restart_seen
