@@ -60,7 +60,7 @@ export function ToastContainer() {
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2 pointer-events-none w-[min(20rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain" aria-live="polite" aria-atomic="false" aria-label="Notifications">
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[90] flex flex-col gap-2 pointer-events-none w-[min(20rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain" aria-live="polite" aria-atomic="false" aria-label="Notifications">
         {toasts.map(t => {
           const s = KIND_STYLES[t.kind]
           return (
@@ -73,7 +73,7 @@ export function ToastContainer() {
         })}
       </div>
 
-      <div className="fixed bottom-4 left-4 z-[89] pointer-events-auto">
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-[89] pointer-events-auto">
         <button
           ref={activityButtonRef}
           type="button"
