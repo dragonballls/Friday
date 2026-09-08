@@ -62,17 +62,18 @@ def test_launch_ui_uses_custom_port(monkeypatch):
         spawned.append(cmd)
         return FakeProc(cmd)
 
+    def fake_open(url):
+        opened.append(url)
+        raise KeyboardInterrupt
+
     monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("main.time.sleep", lambda _secs: None)
-    monkeypatch.setattr("main.webbrowser.open", opened.append)
+    monkeypatch.setattr("main.webbrowser.open", fake_open)
 
-    def stop_after_launch(_secs):
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("main.time.sleep", stop_after_launch)
     _launch_ui(6123)
 
+    assert len(spawned) == 2
     assert spawned[1][-2:] == ["--port", "6123"]
     assert opened == ["http://localhost:6123"]
 
