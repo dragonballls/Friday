@@ -39,6 +39,18 @@ def _inventory_workspace(workspace: Path) -> dict[str, WorkspaceFileState]:
     coding surface. It never modifies the workspace.
     """
     result: dict[str, WorkspaceFileState] = {}
+    ignored_roots = {
+        ".git",
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        ".pytest_cache",
+        "node_modules",
+        "dist",
+        "coverage",
+        "htmlcov",
+    }
 
     for path in workspace.rglob("*"):
         try:
@@ -46,11 +58,12 @@ def _inventory_workspace(workspace: Path) -> dict[str, WorkspaceFileState]:
         except Exception:
             continue
 
-        # Never inspect transaction metadata or protected runtime trees
-        # as part of the coding surface.
+        # Never inspect transaction metadata or generated/runtime trees
+        # as part of the coding surface. Verification tools legitimately
+        # create caches and build output while checking a source change.
         parts = Path(relative).parts
 
-        if parts and parts[0] in {".git", ".venv", "venv", "env"}:
+        if parts and parts[0] in ignored_roots:
             continue
 
         if path.is_file():
