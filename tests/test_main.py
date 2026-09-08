@@ -9,11 +9,10 @@ def test_launch_ui_builds_commands(monkeypatch):
     class FakeProc:
         def __init__(self, cmd):
             self._cmd = cmd
-            self._polls = 0
+            self._terminated = False
 
         def poll(self):
-            self._polls += 1
-            return None if self._polls < 3 else 0
+            return 1 if self._terminated else None
 
         def terminate(self):
             self._terminated = True
@@ -27,10 +26,8 @@ def test_launch_ui_builds_commands(monkeypatch):
 
     def fake_open(url):
         opened.append(url)
+        raise KeyboardInterrupt
 
-    # The updater is independently covered; keep this launch smoke test focused
-    # on the two UI child processes so its git polling cannot interfere with the
-    # Popen monkeypatch used to observe those children.
     monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("main.time.sleep", fake_sleep)
@@ -41,7 +38,44 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert len(spawned) == 2
     assert "api_server.py" in " ".join(spawned[0])
     assert any("dev" in str(c) for c in spawned[1])
+    assert spawned[1][-2:] == ["--port", "5173"]
     assert opened == ["http://localhost:5173"]
+
+
+def test_launch_ui_uses_custom_port(monkeypatch):
+    """A custom UI port should be passed to Vite and the browser URL."""
+    spawned: list[list[str]] = []
+    opened: list[str] = []
+
+    class FakeProc:
+        def __init__(self, cmd):
+            self._cmd = cmd
+            self._terminated = False
+
+        def poll(self):
+            return 1 if self._terminated else None
+
+        def terminate(self):
+            self._terminated = True
+
+    def fake_popen(cmd, **kwargs):
+        spawned.append(cmd)
+        return FakeProc(cmd)
+
+    def fake_open(url):
+        opened.append(url)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
+    monkeypatch.setattr("main.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("main.time.sleep", lambda _secs: None)
+    monkeypatch.setattr("main.webbrowser.open", fake_open)
+
+    _launch_ui(6123)
+
+    assert len(spawned) == 2
+    assert spawned[1][-2:] == ["--port", "6123"]
+    assert opened == ["http://localhost:6123"]
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
@@ -70,9 +104,6 @@ def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
 
         def start(self):
             self.starts.append(self)
-            # Simulate the initial monitor discovering an update. The restarted
-            # monitor is allowed to start without running synchronously in the
-            # caller, matching threading.Thread's real asynchronous behavior.
             if len(self.starts) == 1:
                 self._target(*self._args)
 
@@ -99,3 +130,53 @@ def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
     assert len(spawned) == 4
     assert len(monitor_calls) == 1
     assert len(FakeThread.starts) == 2
+
+
+def test_launch_ui_recovers_when_child_process_stops(monkeypatch):
+    """A dead API/frontend child should restart without stopping the updater monitor."""
+    starts = 0
+    monitor_starts = 0
+    restart_seen = False
+
+    class FakeProc:
+        def __init__(self, alive_polls: int):
+            self.polls = 0
+            self.alive_polls = alive_polls
+            self.terminated = False
+
+        def poll(self):
+            if self.terminated:
+                return 0
+            self.polls += 1
+            return None if self.polls <= self.alive_polls else 1
+
+        def terminate(self):
+            self.terminated = True
+
+    def fake_start(_desktop, _port):
+        nonlocal starts, restart_seen
+        starts += 1
+        if starts > 1:
+            restart_seen = True
+        if starts == 1:
+            return [FakeProc(0), FakeProc(0)]
+        return [FakeProc(10_000), FakeProc(10_000)]
+
+    def fake_monitor(*_args):
+        nonlocal monitor_starts
+        monitor_starts += 1
+
+    def fake_sleep(_secs):
+        if restart_seen:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("main._start_ui_processes", fake_start)
+    monkeypatch.setattr("main._start_auto_update_monitor", fake_monitor)
+    monkeypatch.setattr("main._auto_update_monitor", fake_monitor)
+    monkeypatch.setattr("main.time.sleep", fake_sleep)
+    monkeypatch.setattr("main.webbrowser.open", lambda _url: None)
+
+    _launch_ui()
+
+    assert starts == 2
+    assert monitor_starts == 1
