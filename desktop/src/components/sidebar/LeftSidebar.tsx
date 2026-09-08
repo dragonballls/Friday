@@ -51,7 +51,7 @@ export const LeftSidebar = memo(function LeftSidebar({
           onClick={onNew}
           aria-label="Start new conversation"
           title="New conversation"
-          className="w-6 h-6 flex items-center justify-center rounded-md text-sm transition-all hover:bg-white/[.04] active:scale-95"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-sm transition-all hover:bg-white/[.04] active:scale-95 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
           style={{ color: '#888' }}
         >
           +
@@ -60,17 +60,32 @@ export const LeftSidebar = memo(function LeftSidebar({
 
       <div className="px-3 pt-2 pb-1 shrink-0">
         <label className="sr-only" htmlFor="session-search">Search conversations</label>
-        <input
-          id="session-search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search conversations"
-          className="w-full px-2.5 py-1.5 rounded-lg text-[11px] outline-none placeholder:text-white/20"
-          style={{ background: 'rgba(255,255,255,0.03)', color: '#bbb', border: '1px solid rgba(255,255,255,0.05)' }}
-        />
+        <div className="relative">
+          <input
+            id="session-search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape' && query) setQuery('') }}
+            placeholder="Search conversations"
+            className="w-full px-2.5 py-1.5 pr-8 rounded-lg text-[11px] outline-none placeholder:text-white/20 focus-visible:ring-1 focus-visible:ring-[#D4A040]/40"
+            style={{ background: 'rgba(255,255,255,0.03)', color: '#bbb', border: '1px solid rgba(255,255,255,0.05)' }}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear conversation search"
+              title="Clear search"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded text-[12px] transition-colors hover:bg-white/[.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
+              style={{ color: '#777' }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1.5 px-2 space-y-0.5" aria-label="Conversations">
+      <div className="flex-1 overflow-y-auto py-1.5 px-2 space-y-0.5 overscroll-contain" aria-label="Conversations">
         {filteredSessions.length === 0 ? (
           <div className="px-3 py-6 text-center text-[11px]" style={{ color: '#555' }}>
             {query ? 'No conversations match your search.' : 'No conversations yet.'}
@@ -98,7 +113,7 @@ export const LeftSidebar = memo(function LeftSidebar({
               onMouseEnter={e => { if (!act) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
               onMouseLeave={e => { if (!act) e.currentTarget.style.background = 'transparent' }}
             >
-              <span className="truncate flex-1 text-sm" style={{
+              <span className="truncate flex-1 min-w-0 text-sm" style={{
                 color: act ? '#D4A040' : '#9E9E9E',
                 fontWeight: act ? 450 : 350,
                 letterSpacing: '0.01em',
@@ -153,7 +168,7 @@ export const LeftSidebar = memo(function LeftSidebar({
               onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
               autoFocus
             />
-            <button type="button" onClick={handleSave} className="px-2 py-1 rounded text-[11px]" style={{ background: 'rgba(212,160,64,0.15)', color: '#D4A040' }}>ok</button>
+            <button type="button" onClick={handleSave} aria-label="Save output folder" className="px-2 py-1 rounded text-[11px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ background: 'rgba(212,160,64,0.15)', color: '#D4A040' }}>ok</button>
           </div>
         ) : (
           <button
@@ -169,7 +184,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       </div>
 
       <div className="px-4 py-3 flex items-center justify-between shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-        <button type="button" onClick={onSettings} className="text-xs transition-all hover:text-white/80 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ color: '#666' }}>
+        <button type="button" onClick={onSettings} aria-label="Open settings" className="text-xs transition-all hover:text-white/80 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ color: '#666' }}>
           settings
         </button>
         <span className="text-[11px]" style={{ color: '#444' }}>v0.4</span>
