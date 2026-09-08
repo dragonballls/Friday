@@ -17,3 +17,19 @@ if (!globalThis.localStorage) {
 if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = () => {}
 }
+
+if (!HTMLCanvasElement.prototype.getContext) {
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext
+}
+
+const canvasContext = {
+  createRadialGradient: () => ({ addColorStop: () => {} }),
+  fillStyle: '',
+  fillRect: () => {},
+}
+
+const originalGetContext = HTMLCanvasElement.prototype.getContext
+HTMLCanvasElement.prototype.getContext = function (contextId: string, ...args: unknown[]) {
+  if (contextId === '2d') return canvasContext as unknown as CanvasRenderingContext2D
+  return originalGetContext.call(this, contextId as never, ...args as never[])
+} as typeof HTMLCanvasElement.prototype.getContext
