@@ -54,7 +54,9 @@ class Executor:
             "app_coding_checkpoint",
             "run_format",
             "run_lint",
+            "verify_coding_change",
         }
+        implementation_tools = {"write_file"}
         is_coding_task = (
             getattr(task, "tool", None) in coding_tools
             or "coding" in str(getattr(task, "description", "")).lower()
@@ -63,6 +65,8 @@ class Executor:
             or "modify " in str(getattr(task, "description", "")).lower()
         )
         coding_tool_executed = False
+        implementation_executed = False
+        verification_passed = False
 
         for iteration in range(max_iterations):
             collected = ""
@@ -153,6 +157,20 @@ class Executor:
                                 and not result.get("error")
                             ):
                                 coding_tool_executed = True
+                            if (
+                                is_coding_task
+                                and func_name in implementation_tools
+                                and not result.get("error")
+                                and result.get("success", True) is not False
+                            ):
+                                implementation_executed = True
+                            if (
+                                is_coding_task
+                                and func_name == "verify_coding_change"
+                                and result.get("success")
+                                and result.get("all_gates_passed")
+                            ):
+                                verification_passed = True
                         except Exception as e:
                             result = {"error": str(e)}
                     else:
@@ -200,6 +218,21 @@ class Executor:
                         "content": "Coding task did not execute a coding tool; continuing.",
                     }
                     continue
+
+                if is_coding_task and (not implementation_executed or not verification_passed):
+                    missing = []
+                    if not implementation_executed:
+                        missing.append("implementation")
+                    if not verification_passed:
+                        missing.append("verification")
+                    task.status = "failed"
+                    task.error = "Required coding gates did not pass: " + ", ".join(missing)
+                    yield {
+                        "type": "done",
+                        "content": "Coding task failed closed: required gates did not pass (" + ", ".join(missing) + ").",
+                        "final": True,
+                    }
+                    return
 
                 messages.append({"role": "assistant", "content": collected})
                 task.status = "completed"
@@ -257,6 +290,7 @@ class Executor:
             }
             return
 
+        previous_error = task.error or "Unknown failure"
         task.retries += 1
         task.status = "running"
         task.error = None
@@ -264,7 +298,7 @@ class Executor:
         messages.append(
             {
                 "role": "user",
-                "content": f"The previous attempt failed: {task.error}\n\nPlease try again with a different approach.",
+                "content": f"The previous attempt failed: {previous_error}\n\nPlease try again with a different approach.",
             }
         )
         yield from self._react_loop(messages, tool_definitions, 10, task)
