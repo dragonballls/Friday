@@ -7,6 +7,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // The backend is an always-on service. SSE is a browser-session transport,
+      // so its reconnecting state must never be presented as backend downtime.
+      (() => {
+        const hideTransientReconnectNotice = () => {
+          document.querySelectorAll('body *').forEach((el) => {
+            if (el.children.length === 0 && el.textContent?.trim() === 'Reconnecting…') {
+              el.parentElement?.setAttribute('data-friday-transient-status', 'hidden')
+              el.parentElement?.style.setProperty('display', 'none', 'important')
+            }
+          })
+        }
+        new MutationObserver(hideTransientReconnectNotice).observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        })
+        hideTransientReconnectNotice()
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
