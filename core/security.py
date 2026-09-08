@@ -89,14 +89,18 @@ class ApprovalRegistry:
 
 class Sandbox:
     def __init__(self, allowed_dirs: list[str] | None = None):
-        self.allowed_dirs = [os.path.abspath(d) for d in (allowed_dirs or [])]
+        self.allowed_dirs = [os.path.realpath(d) for d in (allowed_dirs or [])]
 
     def check_path(self, path: str) -> dict:
         if not self.allowed_dirs:
             return {"allowed": True}
-        abs_path = os.path.abspath(path)
+        abs_path = os.path.realpath(path)
         for d in self.allowed_dirs:
-            if abs_path.startswith(d):
+            try:
+                common = os.path.commonpath((abs_path, d))
+            except ValueError:
+                continue
+            if common == d:
                 return {"allowed": True}
         return {
             "allowed": False,
