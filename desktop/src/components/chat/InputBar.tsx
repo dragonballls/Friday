@@ -1,49 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, KeyboardEvent } from 'react'
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
+import { QuickActions } from './QuickActions'
+
+const LANG_LABELS: Record<string, string> = { 'en-US': 'EN', 'hi-IN': 'HI', 'ur-PK': 'UR' }
+
+const SUGGESTIONS = [
+  { label: 'Explain', action: 'Explain this concept in simple terms' },
+  { label: 'Search', action: 'Search the web for' },
+  { label: 'Code', action: 'Write code to' },
+  { label: 'Summarize', action: 'Summarize the key points about' },
+]
 
 interface InputBarProps {
-  value: string
-  onChange: (value: string) => void
-  onSend: () => void
-  loading?: boolean
-  voiceStatus?: 'idle' | 'listening' | 'processing'
+  onSend: (text: string) => void
+  loading: boolean
+  onVoiceStart: () => void
+  onVoiceStop: () => string
+  voiceStatus: 'idle' | 'listening' | 'error'
+  voiceInterim: string
+  isVoiceSupported: boolean
+  voiceLanguage: string
+  onCycleLanguage: () => void
+  draft?: string
+  personaName?: string
 }
 
-export default function InputBar({ value, onChange, onSend, loading = false, voiceStatus = 'idle' }: InputBarProps) {
+export const InputBar = memo(function InputBar({
+  onSend, loading, onVoiceStart, onVoiceStop, voiceStatus, voiceInterim, isVoiceSupported,
+  voiceLanguage, onCycleLanguage,
+  draft,
+  personaName = 'Friday',
+}: InputBarProps) {
+  const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
-        event.preventDefault()
-        inputRef.current?.focus()
-      }
-    }
-    window.addEventListener('keydown', handler as unknown as EventListener)
-    return () => window.removeEventListener('keydown', handler as unknown as EventListener)
-  }, [])
+    if (draft == null) return
+    setValue(draft)
+    inputRef.current?.focus()
+  }, [draft])
 
-  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (value.trim() && !loading) onSend()
+  const send = useCallback(() => {
+    const text = value.trim()
+    if (text && !loading) {
+      setValue('')
+      onSend(text)
     }
   }, [value, loading, onSend])
 
   const clear = useCallback(() => {
-    onChange('')
+    setValue('')
     inputRef.current?.focus()
-  }, [onChange])
+  }, [])
 
-  const handleFilePick = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+  const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
       const text = reader.result as string
       const header = `[File: ${file.name}]\n~~~\n${text}\n~~~\n\n`
-      onChange(value + header)
+      setValue(v => v + header)
       if (inputRef.current) {
         inputRef.current.focus()
         inputRef.current.selectionStart = inputRef.current.selectionEnd = inputRef.current.value.length
@@ -51,33 +69,198 @@ export default function InputBar({ value, onChange, onSend, loading = false, voi
     }
     reader.readAsText(file)
     e.target.value = ''
-  }, [onChange, value])
+  }, [])
 
   const isListening = voiceStatus === 'listening'
   const borderColor = isListening ? 'rgba(245,158,11,0.4)' : focused ? 'rgba(245,158,11,0.2)' : 'var(--glass-border)'
 
   return (
-    <div style={{ position: 'relative', border: `1px solid ${borderColor}`, borderRadius: 14, background: 'var(--glass-bg)', transition: 'border-color 150ms ease' }}>
-      <textarea
-        ref={inputRef}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        disabled={loading}
-        rows={1}
-        placeholder={loading ? 'Thinking…' : 'Message Friday…'}
-        style={{ width: '100%', minHeight: 52, maxHeight: 180, resize: 'vertical', border: 0, outline: 0, background: 'transparent', color: 'var(--text-primary)', padding: '15px 92px 15px 16px', boxSizing: 'border-box', font: 'inherit' }}
-      />
-      {value && !loading && (
-        <button type="button" onClick={clear} aria-label="Clear message" title="Clear message" style={{ position: 'absolute', right: 52, bottom: 10, border: 0, background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', padding: 8 }}>×</button>
-      )}
-      <label style={{ position: 'absolute', right: 48, bottom: 10, padding: 8, cursor: 'pointer', color: 'var(--text-secondary)' }} title="Attach file" aria-label="Attach file">
-        <input type="file" hidden onChange={handleFilePick} />
-        📎
-      </label>
-      <button type="button" onClick={onSend} disabled={!value.trim() || loading} aria-label="Send message" title="Send message" style={{ position: 'absolute', right: 10, bottom: 10, border: 0, borderRadius: 8, padding: '8px 11px', background: 'var(--accent)', color: 'var(--accent-contrast)', cursor: value.trim() && !loading ? 'pointer' : 'not-allowed', opacity: value.trim() && !loading ? 1 : 0.5 }}>↑</button>
+    <div className="flex justify-center px-8 pb-6 pt-3">
+      <div className="w-full max-w-[720px]">
+        <div
+          className="rounded-2xl transition-all duration-300 glass"
+          style={{
+            border: `1px solid ${borderColor}`,
+            boxShadow: isListening
+              ? '0 8px 40px rgba(0,0,0,0.5), 0 0 60px rgba(245,158,11,0.06)'
+              : focused
+                ? '0 8px 40px rgba(0,0,0,0.5), 0 0 40px rgba(245,158,11,0.03)'
+                : '0 4px 24px rgba(0,0,0,0.3)',
+          }}
+        >
+          <div className="relative flex items-end">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              placeholder={`Message ${personaName}...`}
+              disabled={loading}
+              className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-40 placeholder:text-neutral-600"
+              style={{
+                color: '#e5e5e5',
+                minHeight: '56px',
+                maxHeight: '160px',
+                fontWeight: 350,
+                letterSpacing: '0.01em',
+              }}
+            />
+
+            {isListening && voiceInterim && (
+              <div
+                className="absolute left-5 right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-xs truncate pointer-events-none glass blue-border"
+                style={{ color: 'var(--blue-bright)' }}
+              >
+                {voiceInterim}
+              </div>
+            )}
+
+            <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
+              {isVoiceSupported && (
+                <button
+                  onMouseDown={onVoiceStart}
+                  onMouseUp={() => {
+                    const transcript = onVoiceStop()
+                    if (transcript.trim()) {
+                      setValue('')
+                      onSend(transcript.trim())
+                    }
+                  }}
+                  onTouchStart={onVoiceStart}
+                  onTouchEnd={() => {
+                    const transcript = onVoiceStop()
+                    if (transcript.trim()) {
+                      setValue('')
+                      onSend(transcript.trim())
+                    }
+                  }}
+                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90"
+                  style={{
+                    background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)',
+                    color: isListening ? '#fff' : '#a0a0a8',
+                    boxShadow: isListening ? '0 0 16px rgba(239,68,68,0.3)' : 'none',
+                    border: isListening ? 'none' : '1px solid var(--glass-border)',
+                  }}
+                  title={isListening ? 'Release to send' : 'Hold to speak'}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
+              )}
+
+              {isVoiceSupported && (
+                <button
+                  onClick={onCycleLanguage}
+                  className="h-9 w-8 rounded-xl flex items-center justify-center transition-all duration-200 text-[10px] font-bold tracking-wider"
+                  style={{
+                    color: isListening ? 'var(--gold)' : '#606068',
+                    border: `1px solid ${isListening ? 'rgba(245,158,11,0.25)' : 'var(--glass-border)'}`,
+                    background: 'transparent',
+                  }}
+                  title={`Voice language: ${voiceLanguage}. Click to cycle.`}
+                >
+                  {LANG_LABELS[voiceLanguage] || 'EN'}
+                </button>
+              )}
+
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".txt,.md,.json,.csv,.py,.js,.ts,.jsx,.tsx,.html,.css,.yaml,.yml,.xml,.sh,.env,.toml,.ini,.cfg,.log"
+                onChange={handleFilePick}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
+                style={{
+                  background: 'var(--surface)',
+                  color: '#a0a0a8',
+                  border: '1px solid var(--glass-border)',
+                }}
+                title="Attach file"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+
+              {value && (
+                <button
+                  onClick={clear}
+                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
+                  style={{
+                    background: 'var(--surface)',
+                    color: '#a0a0a8',
+                    border: '1px solid var(--glass-border)',
+                  }}
+                  title="Clear message"
+                  aria-label="Clear message"
+                >
+                  ×
+                </button>
+              )}
+
+              <button
+                onClick={send}
+                disabled={!value.trim() || loading}
+                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-500 hover:scale-105 active:scale-95 disabled:opacity-25 disabled:hover:scale-100"
+                style={{
+                  background: 'linear-gradient(135deg, var(--blue), var(--blue-bright))',
+                  color: '#000',
+                  fontWeight: 600,
+                  fontSize: '16px',
+                  boxShadow: value.trim() ? '0 2px 12px var(--blue-glow)' : 'none',
+                }}
+              >
+                {'\u2191'}
+              </button>
+            </div>
+          </div>
+
+          {!value.trim() && !loading && (
+            <div className="flex items-center gap-1.5 px-5 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {SUGGESTIONS.map(s => (
+                <button
+                  key={s.label}
+                  onClick={() => { setValue(s.action); inputRef.current?.focus() }}
+                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-150 active:scale-95"
+                  style={{
+                    color: '#777',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    background: 'rgba(255,255,255,0.02)',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(245,158,11,0.08)'
+                    e.currentTarget.style.borderColor = 'rgba(245,158,11,0.2)'
+                    e.currentTarget.style.color = '#f59e0b'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'
+                    e.currentTarget.style.color = '#777'
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <QuickActions onAction={onSend} disabled={loading} />
+        </div>
+      </div>
     </div>
   )
-}
+})
