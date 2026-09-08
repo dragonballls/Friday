@@ -18,20 +18,29 @@ export function ToastContainer() {
   }, [])
 
   return (
-    <div className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2 pointer-events-none w-80 max-w-[calc(100vw-2rem)]">
+    <div
+      className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2 pointer-events-none w-80 max-w-[calc(100vw-2rem)]"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-label="Notifications"
+    >
       {toasts.map(t => {
         const s = KIND_STYLES[t.kind]
         return (
           <div
             key={t.id}
-            className="rounded-xl px-3.5 py-2.5 text-xs backdrop-blur-sm flex items-start gap-2.5"
+            role={t.kind === 'error' ? 'alert' : 'status'}
+            className="rounded-xl px-3.5 py-2.5 text-xs backdrop-blur-sm flex items-start gap-2.5 pointer-events-auto"
             style={{ background: s.bg, border: `1px solid ${s.border}` }}
           >
-            <span className="mt-0.5 shrink-0">{s.icon}</span>
+            <span className="mt-0.5 shrink-0" aria-hidden="true">{s.icon}</span>
             <span className="min-w-0 flex-1 leading-relaxed" style={{ color: '#e5e5e5' }}>{t.message}</span>
             <button
-              onClick={() => { dismissToast(t.id) }}
-              className="shrink-0 -mr-1 -mt-0.5 h-5 w-5 rounded flex items-center justify-center transition-colors hover:bg-white/[.06]"
+              type="button"
+              onClick={() => dismissToast(t.id)}
+              aria-label="Dismiss notification"
+              title="Dismiss"
+              className="shrink-0 -mr-1 -mt-0.5 h-5 w-5 rounded flex items-center justify-center transition-colors hover:bg-white/[.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
               style={{ color: '#666' }}
             >
               {'\u2715'}
