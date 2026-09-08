@@ -363,6 +363,46 @@ def test_repair_callback_can_prepare_bounded_retry(tmp_path):
     assert repairs == [1]
 
 
+def test_failed_gate_can_prepare_bounded_retry(tmp_path):
+    handoff = make_handoff(tmp_path)
+
+    attempts = []
+    repairs = []
+
+    def execute(_, *gate_callbacks):
+        attempt = len(attempts) + 1
+        attempts.append(attempt)
+        if attempt == 1:
+            return FakeExecutionResult(
+                completed=True,
+                transaction_id="txn-gate-failed",
+                changed_paths=["feature.py"],
+                tests_ok=False,
+            )
+        return FakeExecutionResult(
+            completed=True,
+            transaction_id="txn-recovered",
+            changed_paths=["feature.py"],
+        )
+
+    controller = RealCoderController(
+        workspace=tmp_path,
+        handoff=handoff,
+        execute_coder=execute,
+        run_tests=lambda _: True,
+        run_review=lambda _: True,
+        final_verify=lambda _: True,
+        repair_coder=lambda _, attempt, result: repairs.append(attempt),
+    )
+
+    result = controller.run()
+
+    assert result.success is True
+    assert result.transaction_id == "txn-recovered"
+    assert attempts == [1, 2]
+    assert repairs == [1]
+
+
 def test_repair_without_callback_fails_closed(tmp_path):
     handoff = make_handoff(tmp_path)
 
