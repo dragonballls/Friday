@@ -61,7 +61,6 @@ export const StatusRibbon = memo(function StatusRibbon({
         scrollbarWidth: 'none',
         color: '#a0a0a8',
       }}
-      role="status"
       aria-label="Friday system status"
     >
       <span className="font-mono shrink-0 tracking-wider" style={{ color: '#ccc' }} aria-label={`Current time ${time}`}>{time}</span>
@@ -108,7 +107,7 @@ export const StatusRibbon = memo(function StatusRibbon({
 
       {/* Ambient mode indicator */}
       {ambientActive && (
-        <span className="flex items-center gap-1.5 shrink-0 mr-2">
+        <span className="flex items-center gap-1.5 shrink-0 mr-2" aria-live="polite">
           <span
             className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
             style={{
