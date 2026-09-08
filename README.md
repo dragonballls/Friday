@@ -236,6 +236,17 @@ cd desktop && python api_server.py &
 cd .. && npm install && npm run dev
 ```
 
+### ♾️ Always-on backend (Windows)
+
+Keep the API server running in the background from logon, so the UI connects
+instantly and never sits in "Reconnecting…" after a reload:
+
+```powershell
+pwsh -File scripts\windows\Install-FridayService.ps1 -StartNow
+```
+
+See [docs/always-on.md](docs/always-on.md) for logs, options, and removal.
+
 <div align="right">
   <a href="#readme-top">▲ back to top</a>
 </div>
