@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
 import type { OrbState } from '../../types'
 import { PERSONA_VISUALS } from '../center/AiCore'
 
@@ -35,8 +35,22 @@ export const ShareMoment = memo(function ShareMoment({
   greeting,
 }: ShareMomentProps) {
   const cardRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
   const visual = PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday
   const displayName = greeting || visual.name
+
+  useEffect(() => {
+    if (!open) return
+    closeButtonRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
 
   const handleDownload = useCallback(() => {
     const card = cardRef.current
@@ -100,22 +114,25 @@ export const ShareMoment = memo(function ShareMoment({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 animate-fade-in"
       style={{ background: 'rgba(0,0,0,0.7)' }}
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share Friday moment"
     >
-      <div className="flex flex-col items-center gap-4" onClick={e => e.stopPropagation()}>
+      <div className="flex flex-col items-center gap-4 max-h-full max-w-full" onClick={e => e.stopPropagation()}>
         <div
           ref={cardRef}
-          className="relative w-[320px] aspect-[4/5] rounded-2xl overflow-hidden glass animate-fade-slide-up"
+          className="relative w-[min(320px,calc(100vw-2rem))] max-h-[calc(100vh-9rem)] aspect-[4/5] rounded-2xl overflow-hidden glass animate-fade-slide-up"
           style={{ border: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-            <div className="text-[40px] font-thin tracking-[0.3em] uppercase" style={{ color: visual.color }}>
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-6 sm:px-8 text-center min-h-0">
+            <div className="text-[clamp(24px,8vw,40px)] font-thin tracking-[0.3em] uppercase break-words" style={{ color: visual.color }}>
               {displayName}
             </div>
             <div
-              className="mt-8 w-36 h-36 rounded-full"
+              className="mt-6 sm:mt-8 w-28 h-28 sm:w-36 sm:h-36 shrink-0 rounded-full"
               style={{
                 border: `2px solid ${orbState === 'offline' ? 'rgba(255,255,255,0.15)' : `${visual.color}66`}`,
                 boxShadow: orbState === 'offline' ? 'none' : `0 0 40px ${visual.color}33`,
@@ -124,24 +141,25 @@ export const ShareMoment = memo(function ShareMoment({
             <div className="mt-4 text-xs tracking-[0.25em]" style={{ color: '#a0a0a8' }}>
               {ORB_STATE_LABELS[orbState] ?? orbState.toUpperCase()}
             </div>
-            <div className="mt-8 text-xs" style={{ color: '#606068' }}>
+            <div className="mt-6 sm:mt-8 text-xs" style={{ color: '#606068' }}>
               {displayName.toUpperCase ? displayName.toUpperCase() : displayName} · {time}
             </div>
             {message && (
-              <div className="mt-4 text-sm leading-relaxed max-h-28 overflow-y-auto" style={{ color: '#ccc' }}>
+              <div className="mt-4 text-sm leading-relaxed max-h-24 overflow-y-auto overscroll-contain break-words" style={{ color: '#ccc' }}>
                 {message}
               </div>
             )}
-            <div className="mt-auto pb-6 text-[10px] tracking-widest" style={{ color: '#404048' }}>
+            <div className="mt-auto pt-4 pb-4 sm:pb-6 text-[9px] sm:text-[10px] tracking-widest break-all" style={{ color: '#404048' }}>
               github.com/alimaandev/Friday
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
           <button
+            type="button"
             onClick={handleDownload}
-            className="px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95"
+            className="px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
             style={{
               background: 'linear-gradient(135deg, #e5e5e5, #ffffff)',
               color: '#000',
@@ -150,8 +168,10 @@ export const ShareMoment = memo(function ShareMoment({
             Download PNG
           </button>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-sm transition-all duration-200 hover:bg-white/[.06] glass"
+            className="px-5 py-2.5 rounded-xl text-sm transition-all duration-200 hover:bg-white/[.06] glass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
             style={{ color: '#a0a0a8' }}
           >
             Close
