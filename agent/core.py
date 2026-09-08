@@ -61,23 +61,27 @@ def _desktop_context() -> str:
 
 
 def _is_coding_task(task) -> bool:
-    coding_tools = {
-        "write_file",
-        "run_tests",
-        "review_code_change",
-        "app_coding_checkpoint",
-        "run_format",
-        "run_lint",
-        "verify_coding_change",
-    }
+    """Return True only when the task is a file mutation with an explicit path.
+
+    Validation/inspection tools such as run_tests, review_code_change, lint,
+    formatting, and final verification must remain on the normal Executor path.
+    The safe transaction wrapper is reserved for actual coding mutations so a
+    validation task without a file path is never rejected by the transaction
+    boundary.
+    """
+    mutation_tools = {"write_file"}
+    tool = getattr(task, "tool", None)
+    args = getattr(task, "args", None)
+    has_path = isinstance(args, dict) and bool(args.get("path"))
+    if tool in mutation_tools:
+        return has_path
+
     description = str(getattr(task, "description", "")).lower()
-    return (
-        getattr(task, "tool", None) in coding_tools
-        or "coding" in description
-        or "edit " in description
-        or "change " in description
-        or "modify " in description
+    mutation_language = any(
+        marker in description
+        for marker in ("edit ", "change ", "modify ", "rewrite ", "update ")
     )
+    return mutation_language and has_path
 
 
 class Agent:
