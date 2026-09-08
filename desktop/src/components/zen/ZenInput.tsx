@@ -41,6 +41,16 @@ export const ZenInput = memo(function ZenInput({
     inputRef.current?.focus()
   }, [draft])
 
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+
+    input.style.height = '0px'
+    const nextHeight = Math.min(input.scrollHeight, 160)
+    input.style.height = `${Math.max(56, nextHeight)}px`
+    input.style.overflowY = input.scrollHeight > 160 ? 'auto' : 'hidden'
+  }, [value])
+
   const send = useCallback(() => {
     const text = value.trim()
     if (text && !loading) {
