@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ZenStage } from '../components/zen/ZenStage'
 
-vi.mock('../components/center/AiCore', () => ({
-  JarvisOrb: () => <div data-testid="orb" />,
-}))
+vi.mock('../components/center/AiCore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/center/AiCore')>()
+  return {
+    ...actual,
+    JarvisOrb: () => <div data-testid="orb" />,
+  }
+})
 
 const baseProps = {
   orbState: 'idle' as const,
