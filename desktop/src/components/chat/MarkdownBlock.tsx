@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { marked } from 'marked'
+import { marked, type RendererObject } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import 'highlight.js/styles/atom-one-dark.css'
 import hljs from 'highlight.js/lib/core'
@@ -30,6 +30,23 @@ marked.use(markedHighlight({
   },
 }))
 
+// Assistant output is rendered into the DOM, so raw HTML from a response must
+// remain text rather than becoming executable markup. Markdown formatting and
+// fenced code blocks continue to work normally.
+const escapeHtml = (value: string) => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const safeMarkdownRenderer: RendererObject = {
+  html({ raw }: { raw: string }) {
+    return escapeHtml(raw)
+  },
+}
+
+marked.use({ renderer: safeMarkdownRenderer })
 marked.setOptions({ breaks: true, gfm: true })
 
 export function MarkdownBlock({ content }: { content: string }) {
