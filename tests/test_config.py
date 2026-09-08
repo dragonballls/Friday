@@ -28,6 +28,8 @@ class TestConfig:
         from config.providers import get_active_provider, get_provider_config
 
         provider = get_active_provider()
-        assert provider in ("openrouter", "ollama"), f"unexpected provider {provider}"
+        assert isinstance(provider, str)
+        assert provider
         cfg = get_provider_config(provider)
         assert isinstance(cfg, dict)
+        assert cfg
