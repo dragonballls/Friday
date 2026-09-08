@@ -22,11 +22,14 @@ BANNER = r"""
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
 AUTO_UPDATE_INTERVAL = 60
 
+
 def get_terminal_width() -> int:
     return shutil.get_terminal_size((80, 20)).columns
 
+
 def print_colored(text: str, color_code: str = "37"):
     print(f"\033[{color_code}m{text}\033[0m")
+
 
 def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
     """Watch origin/main while the UI supervisor is alive."""
@@ -58,10 +61,12 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
         except (OSError, subprocess.SubprocessError, ValueError):
             continue
 
+
 def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
     monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
     monitor.start()
     return monitor
+
 
 def _terminate_processes(procs: list[subprocess.Popen]):
     for proc in procs:
@@ -80,6 +85,7 @@ def _terminate_processes(procs: list[subprocess.Popen]):
             except OSError:
                 pass
 
+
 def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
     front_cmd = ["npm", "run", "dev"]
@@ -93,6 +99,7 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     procs.append(front)
     return procs
 
+
 def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
     root = os.path.dirname(os.path.abspath(__file__))
@@ -103,8 +110,7 @@ def _launch_ui():
     print_colored("─" * get_terminal_width(), "90")
     update_event = threading.Event()
     stop_event = threading.Event()
-    monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
-    monitor.start()
+    _start_auto_update_monitor(root, update_event, stop_event)
     procs: list[subprocess.Popen] = []
     try:
         procs = _start_ui_processes(desktop)
@@ -125,7 +131,12 @@ def _launch_ui():
                 _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
             elif any(p.poll() is not None for p in procs):
-                break
+                print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
+                _terminate_processes(procs)
+                procs.clear()
+                time.sleep(2.0)
+                procs = _start_ui_processes(desktop)
+                webbrowser.open("http://localhost:5173")
     except KeyboardInterrupt:
         print_colored("\nShutting down Friday UI…", "33")
     finally:
