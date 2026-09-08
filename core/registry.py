@@ -106,6 +106,9 @@ def _register_plugins_from_module(module):
             try:
                 instance = obj()
                 name = instance.name
+                if not _is_tool_allowed(name):
+                    warn(f"Excluded plugin tool '{name}', skipping registration")
+                    continue
                 if name in _TOOL_MAP:
                     warn(f"Plugin '{name}' already registered, skipping duplicate")
                     continue
@@ -169,10 +172,14 @@ def _register_functions_from_module(module):
 
 
 def register_tool(name: str, func: callable, definition: dict | None = None):
+    if not _is_tool_allowed(name):
+        warn(f"Excluded legacy tool '{name}', skipping registration")
+        return False
     _TOOL_MAP[name] = func
     if definition:
         _TOOL_DEFINITIONS.append(definition)
     info(f"Registered legacy tool: {name}")
+    return True
 
 
 def get_tool_definitions() -> list[dict[str, Any]]:
