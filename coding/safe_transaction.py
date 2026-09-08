@@ -36,7 +36,7 @@ PROTECTED_DIRS = {
 
 
 def _norm(path: str | Path) -> str:
-    return str(path).replace("\\", "/").strip("/").lower()
+    return str(path).replace("\\", "/").strip("/")
 
 
 def _relative(root: Path, path: str | Path) -> Path:
@@ -53,7 +53,7 @@ def _relative(root: Path, path: str | Path) -> Path:
 
 def is_protected_path(root: Path, path: str | Path) -> bool:
     rel = _relative(root, path)
-    normalized = _norm(rel)
+    normalized = _norm(rel).lower()
 
     if normalized in PROTECTED_PATHS:
         return True
