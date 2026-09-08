@@ -58,20 +58,36 @@ function PlanDisplay({ tasks }: { tasks: string }) {
 function useCopyButton(content: string) {
   const [copied, setCopied] = useState(false)
   const handleCopy = useCallback(async () => {
+    let success = false
     try {
-      await navigator.clipboard.writeText(content)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content)
+        success = true
+      }
     } catch {
-      const ta = document.createElement('textarea')
-      ta.value = content
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
+      // Fall back below for browsers or contexts without clipboard permission.
     }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+
+    if (!success) {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = content
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        ta.setAttribute('readonly', '')
+        document.body.appendChild(ta)
+        ta.select()
+        success = document.execCommand('copy')
+        document.body.removeChild(ta)
+      } catch {
+        success = false
+      }
+    }
+
+    if (success) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
   }, [content])
   return { copied, handleCopy }
 }
