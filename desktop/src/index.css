@@ -243,6 +243,9 @@ input::placeholder, textarea::placeholder {
   padding: 12px 14px;
   margin: 8px 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .markdown-body pre code {
@@ -252,6 +255,7 @@ input::placeholder, textarea::placeholder {
   font-size: 12px;
   line-height: 1.6;
   color: #e5e5e5;
+  white-space: pre;
 }
 
 .markdown-body code {
@@ -266,6 +270,7 @@ input::placeholder, textarea::placeholder {
 .markdown-body p {
   margin: 6px 0;
   line-height: 1.7;
+  text-wrap: pretty;
 }
 
 .markdown-body p:first-child { margin-top: 0; }
@@ -278,6 +283,7 @@ input::placeholder, textarea::placeholder {
   margin: 16px 0 8px;
   color: #e5e5e5;
   font-weight: 600;
+  text-wrap: balance;
 }
 
 .markdown-body h1 { font-size: 18px; }
@@ -315,6 +321,12 @@ input::placeholder, textarea::placeholder {
   margin: 8px 0;
   width: 100%;
   font-size: 12px;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .markdown-body th,
@@ -322,6 +334,7 @@ input::placeholder, textarea::placeholder {
   border: 1px solid rgba(255,255,255,0.06);
   padding: 6px 10px;
   text-align: left;
+  white-space: nowrap;
 }
 
 .markdown-body th {
@@ -340,6 +353,7 @@ input::placeholder, textarea::placeholder {
 
 .markdown-body img {
   max-width: 100%;
+  height: auto;
   border-radius: 8px;
   margin: 8px 0;
 }
