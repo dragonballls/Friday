@@ -34,6 +34,25 @@ def _run(command: list[str], cwd: Path, timeout: int) -> dict:
     }
 
 
+def _parse_git_status(output: str) -> list[str]:
+    """Extract changed paths conservatively from porcelain status output."""
+    paths: list[str] = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        path_text = line[3:].strip()
+        if not path_text:
+            continue
+        # Renames are represented as "old -> new". Use the destination because
+        # that is the path that must exist as the resulting source file.
+        if " -> " in path_text:
+            path_text = path_text.rsplit(" -> ", 1)[1].strip()
+        if path_text.startswith('"') and path_text.endswith('"'):
+            path_text = path_text[1:-1]
+        paths.append(path_text)
+    return paths
+
+
 class VerifyCodingChangePlugin(ToolPlugin):
     name = "verify_coding_change"
     description = (
@@ -71,11 +90,7 @@ class VerifyCodingChangePlugin(ToolPlugin):
         changed = [line for line in status["output"].splitlines() if line.strip()]
 
         changed_paths: list[Path] = []
-        for line in changed:
-            path_text = line[3:].strip() if len(line) >= 3 else ""
-            if not path_text:
-                continue
-            # Git may quote unusual paths; only use safe relative paths here.
+        for path_text in _parse_git_status(status["output"]):
             candidate = (root / path_text).resolve()
             if candidate != root and root in candidate.parents:
                 changed_paths.append(candidate)
@@ -86,13 +101,14 @@ class VerifyCodingChangePlugin(ToolPlugin):
         gates.append(
             {
                 "name": "implementation",
-                "passed": status["passed"] and source_changed,
+                "passed": status["passed"] is True and source_changed,
                 "details": changed[-100:],
             }
         )
 
         python_files = [
-            path for path in changed_paths if path.suffix.lower() == ".py" and path.is_file()
+            path for path in changed_paths
+            if path.suffix.lower() == ".py" and path.is_file()
         ]
         if python_files:
             python_gate = _run(
@@ -138,7 +154,7 @@ class VerifyCodingChangePlugin(ToolPlugin):
             frontend_build = _run([npm, "run", "build"], frontend, timeout)
             gates.append({"name": "frontend_build", **frontend_build})
 
-        all_passed = bool(gates) and all(gate.get("passed") for gate in gates)
+        all_passed = bool(gates) and all(gate.get("passed") is True for gate in gates)
         return {
             "success": all_passed,
             "all_gates_passed": all_passed,
