@@ -122,14 +122,16 @@ def _launch_ui():
                 print_colored("\nFriday update detected — restarting safely…", "33")
                 _terminate_processes(procs)
                 procs.clear()
-                result = subprocess.run([sys.executable, os.path.join(root, "scripts", "update.py")], cwd=root, check=False)
+                result = subprocess.run([sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False)
                 if result.returncode == 0:
                     stop_event.set()
                     os.execv(sys.executable, [sys.executable, *sys.argv])
-                print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
+                print_colored("Update could not be fully applied; restarting Friday on the latest source available.", "31")
                 update_event.clear()
+                stop_event.clear()
                 _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
+                webbrowser.open("http://localhost:5173")
             elif any(p.poll() is not None for p in procs):
                 print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
                 _terminate_processes(procs)
