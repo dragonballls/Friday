@@ -15,12 +15,12 @@ _PLUGIN_INSTANCES: dict[str, ToolPlugin] = {}
 _EXCLUDED_TOOLS = {
     "close_browser",
     "is_voice_available",
-    "browse_",  # prefix for internal browser helpers
 }
+_EXCLUDED_TOOL_PREFIXES = ("browse_",)
 
 
 def _is_tool_allowed(name: str) -> bool:
-    if name in _EXCLUDED_TOOLS:
+    if name in _EXCLUDED_TOOLS or name.startswith(_EXCLUDED_TOOL_PREFIXES):
         return False
     if name.startswith("_"):
         return False
@@ -61,8 +61,6 @@ def _scan_community_packages():
             return
         if not path:
             return
-
-        import pkgutil
 
         for importer, modname, is_pkg in pkgutil.walk_packages(path, "plugins.community."):
             base = modname.rsplit(".", 1)[-1]
