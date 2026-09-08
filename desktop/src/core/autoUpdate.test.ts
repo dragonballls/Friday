@@ -22,7 +22,8 @@ describe('watchForUpdates', () => {
     const onUpdate = vi.fn()
 
     const stop = watchForUpdates({ intervalMs: 60_000, onUpdate })
-    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(onUpdate).not.toHaveBeenCalled()
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
@@ -36,12 +37,13 @@ describe('watchForUpdates', () => {
     ]
     globalThis.fetch = vi.fn().mockImplementation(async () => ({
       ok: true,
-      text: async () => responses.shift() ?? responses.at(-1),
+      text: async () => responses.shift() ?? '<script src="/assets/app.456.js"></script>',
     })) as typeof fetch
     const onUpdate = vi.fn()
 
     const stop = watchForUpdates({ intervalMs: 1_000, onUpdate })
-    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
     await vi.advanceTimersByTimeAsync(1_000)
 
     expect(onUpdate).toHaveBeenCalledTimes(1)
@@ -56,7 +58,8 @@ describe('watchForUpdates', () => {
     const onUpdate = vi.fn()
 
     const stop = watchForUpdates({ intervalMs: 1_000, onUpdate })
-    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
     stop()
 
     await vi.advanceTimersByTimeAsync(5_000)
