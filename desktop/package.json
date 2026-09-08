@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "friday": "python ../main.py --ui",
+    "friday": "python ../scripts/launch.py --ui",
+    "update": "python ../scripts/update.py --build",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
