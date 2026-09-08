@@ -109,9 +109,11 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
         if not npm_cmd:
             raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
-        front_cmd = [npm_cmd, "run", "dev"]
+        # Vite may resolve localhost to IPv6 (::1) on Windows. Bind explicitly to
+        # IPv4 so the readiness probe and browser use the same reachable endpoint.
+        front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
     else:
-        front_cmd = ["npm", "run", "dev"]
+        front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
 
     procs: list[subprocess.Popen] = []
     try:
@@ -364,7 +366,7 @@ Assistant ke paas tools hain:
   - Browser automation (navigate, click, type, screenshot)
   - Python code execution
   - Persistent memory (remember/recall)
-  - File/content search
+  - File search
   - System information
 """, "33")
 
