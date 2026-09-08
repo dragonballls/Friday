@@ -95,6 +95,32 @@ class RealCoderController:
 
         return default
 
+    @classmethod
+    def _gate_failure(cls, result: Any) -> str | None:
+        """Return a precise completion-gate failure, or None when all gates pass."""
+        completed = cls._get_value(result, "completed", False)
+        if completed is not True:
+            return cls._get_value(result, "error") or "coding execution did not complete"
+
+        changed_paths = cls._get_value(result, "changed_paths", [])
+        if not changed_paths:
+            return "completion gate failed: no changed paths were reported"
+
+        gates = (
+            ("implementation", cls._get_value(result, "implementation_ok", None)),
+            ("tests", cls._get_value(result, "tests_ok", None)),
+            ("review", cls._get_value(result, "review_ok", None)),
+            ("final verification", cls._get_value(result, "final_verification_ok", None)),
+        )
+        failed = [name for name, passed in gates if passed is not True]
+        if failed:
+            return "completion gate failed: " + ", ".join(failed) + " gate did not pass"
+
+        if not cls._get_value(result, "transaction_id"):
+            return "completion gate failed: coding executor did not provide a transaction ID"
+
+        return None
+
     @staticmethod
     def _consume_execution_result(result: Any) -> Any:
         """
@@ -152,19 +178,12 @@ class RealCoderController:
                         "error": "Coding executor returned no execution result.",
                     }
 
-                completed = self._get_value(
-                    result,
-                    "completed",
-                    False,
-                )
-
-                if completed is not True:
+                failure = self._gate_failure(result)
+                if failure is not None:
                     return {
                         "success": False,
-                        "error": (
-                            self._get_value(result, "error")
-                            or f"Coding attempt {attempt_number} did not complete."
-                        ),
+                        "error": f"Coding attempt {attempt_number}: {failure}",
+                        "result": result,
                     }
 
                 return {"success": True, "result": result}
@@ -210,45 +229,17 @@ class RealCoderController:
                 "Coding repair loop completed without a final result."
             )
 
+        failure = self._gate_failure(execution_result)
+        if failure is not None:
+            raise CoderControllerError(failure)
+
         transaction_id = self._get_value(execution_result, "transaction_id")
-
-        if not transaction_id:
-            raise CoderControllerError(
-                "Coding executor did not provide a transaction ID."
-            )
-
         changed_paths = self._get_value(execution_result, "changed_paths", [])
-        changed_paths = tuple(
-            sorted(str(path) for path in (changed_paths or []))
-        )
+        changed_paths = tuple(sorted(str(path) for path in (changed_paths or [])))
 
         tests_ok = self._get_value(execution_result, "tests_ok", None)
         review_ok = self._get_value(execution_result, "review_ok", None)
-        final_verification_ok = self._get_value(
-            execution_result,
-            "final_verification_ok",
-            None,
-        )
-        implementation_ok = self._get_value(
-            execution_result,
-            "implementation_ok",
-            None,
-        )
-
-        if not all(
-            value is True
-            for value in (
-                implementation_ok,
-                tests_ok,
-                review_ok,
-                final_verification_ok,
-            )
-        ):
-            raise CoderControllerError(
-                "Coding completion gate failed: execution result did not "
-                "explicitly verify implementation, tests, review, and "
-                "final verification."
-            )
+        final_verification_ok = self._get_value(execution_result, "final_verification_ok", None)
 
         return CoderResult(
             success=True,
