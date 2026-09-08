@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - friday-full-migration-20260907
     paths-ignore:
       - heartbeat.log
   pull_request:
