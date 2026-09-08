@@ -47,17 +47,68 @@ class Executor:
         max_iterations: int,
         task: Task,
     ) -> Generator[dict, None, None]:
+        coding_tools = {
+            "write_file",
+            "run_tests",
+            "review_code_change",
+            "app_coding_checkpoint",
+            "run_format",
+            "run_lint",
+            "verify_coding_change",
+        }
+        implementation_tools = {"write_file"}
+        is_coding_task = (
+            getattr(task, "tool", None) in coding_tools
+            or "coding" in str(getattr(task, "description", "")).lower()
+            or "edit " in str(getattr(task, "description", "")).lower()
+            or "change " in str(getattr(task, "description", "")).lower()
+            or "modify " in str(getattr(task, "description", "")).lower()
+        )
+        coding_tool_executed = False
+        implementation_executed = False
+        verification_passed = False
+
         for iteration in range(max_iterations):
             collected = ""
             tool_calls = None
 
+            provider_error = None
+
             for event in self._llm(messages, tools=tool_definitions):
-                if event["type"] == "tokens":
-                    collected += event["content"]
+                event_type = event.get("type")
+
+                if event_type == "tokens":
+                    collected += event.get("content", "")
                     yield event
-                elif event["type"] == "done":
-                    collected = event["content"]
-                    tool_calls = event["tool_calls"]
+
+                elif event_type == "error":
+                    provider_error = (
+                        event.get("error")
+                        or event.get("content")
+                        or "Provider error"
+                    )
+                    yield event
+
+                elif event_type == "done":
+                    collected = event.get("content", "")
+                    tool_calls = event.get("tool_calls") or []
+
+                    if (
+                        not tool_calls
+                        and isinstance(collected, str)
+                        and collected.startswith("Error:")
+                    ):
+                        provider_error = collected
+
+            if provider_error:
+                task.status = "failed"
+                task.error = str(provider_error)
+                yield {
+                    "type": "done",
+                    "content": str(provider_error),
+                    "final": True,
+                }
+                return
 
             if tool_calls:
                 messages.append(
@@ -100,6 +151,26 @@ class Executor:
                         try:
                             with Timer(f"tool:{func_name}"):
                                 result = yield from self._execute_with_confirmation(func_name, args, handler)
+                            if (
+                                is_coding_task
+                                and func_name in coding_tools
+                                and not result.get("error")
+                            ):
+                                coding_tool_executed = True
+                            if (
+                                is_coding_task
+                                and func_name in implementation_tools
+                                and not result.get("error")
+                                and result.get("success", True) is not False
+                            ):
+                                implementation_executed = True
+                            if (
+                                is_coding_task
+                                and func_name == "verify_coding_change"
+                                and result.get("success")
+                                and result.get("all_gates_passed")
+                            ):
+                                verification_passed = True
                         except Exception as e:
                             result = {"error": str(e)}
                     else:
@@ -128,6 +199,41 @@ class Executor:
 
                 yield {"type": "tool_result", "tools": tool_summary}
             else:
+                if is_coding_task and not coding_tool_executed:
+                    messages.append({"role": "assistant", "content": collected})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Do not finish this coding task with a text response. "
+                                "You must actually execute the required coding tool and "
+                                "make the requested change before reporting completion. "
+                                "Use the available coding tools now."
+                            ),
+                        }
+                    )
+                    task.error = "Coding task attempted to finish without executing a coding tool."
+                    yield {
+                        "type": "verification",
+                        "content": "Coding task did not execute a coding tool; continuing.",
+                    }
+                    continue
+
+                if is_coding_task and (not implementation_executed or not verification_passed):
+                    missing = []
+                    if not implementation_executed:
+                        missing.append("implementation")
+                    if not verification_passed:
+                        missing.append("verification")
+                    task.status = "failed"
+                    task.error = "Required coding gates did not pass: " + ", ".join(missing)
+                    yield {
+                        "type": "done",
+                        "content": "Coding task failed closed: required gates did not pass (" + ", ".join(missing) + ").",
+                        "final": True,
+                    }
+                    return
+
                 messages.append({"role": "assistant", "content": collected})
                 task.status = "completed"
                 task.result = collected
@@ -184,6 +290,7 @@ class Executor:
             }
             return
 
+        previous_error = task.error or "Unknown failure"
         task.retries += 1
         task.status = "running"
         task.error = None
@@ -191,7 +298,7 @@ class Executor:
         messages.append(
             {
                 "role": "user",
-                "content": f"The previous attempt failed: {task.error}\n\nPlease try again with a different approach.",
+                "content": f"The previous attempt failed: {previous_error}\n\nPlease try again with a different approach.",
             }
         )
         yield from self._react_loop(messages, tool_definitions, 10, task)

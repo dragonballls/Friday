@@ -1,3 +1,4 @@
+from pathlib import Path
 from agent.llm import chat as llm_chat
 from config import MAX_ITERATIONS, get_system_prompt
 from core.executor import Executor
@@ -7,6 +8,7 @@ from core.planner import Planner
 from core.registry import get_tool_definitions, get_tool_map
 from core.security import get_approval_registry, get_permission_manager
 from core.system1 import build_default_system1
+from types import SimpleNamespace
 
 _system1 = None
 
@@ -56,6 +58,30 @@ def _desktop_context() -> str:
         )
     except Exception as e:  # noqa: BLE001
         return f"Desktop snapshot unavailable: {e}"
+
+
+def _is_coding_task(task) -> bool:
+    """Return True only when the task is a file mutation with an explicit path.
+
+    Validation/inspection tools such as run_tests, review_code_change, lint,
+    formatting, and final verification must remain on the normal Executor path.
+    The safe transaction wrapper is reserved for actual coding mutations so a
+    validation task without a file path is never rejected by the transaction
+    boundary.
+    """
+    mutation_tools = {"write_file"}
+    tool = getattr(task, "tool", None)
+    args = getattr(task, "args", None)
+    has_path = isinstance(args, dict) and bool(args.get("path"))
+    if tool in mutation_tools:
+        return has_path
+
+    description = str(getattr(task, "description", "")).lower()
+    mutation_language = any(
+        marker in description
+        for marker in ("edit ", "change ", "modify ", "rewrite ", "update ")
+    )
+    return mutation_language and has_path
 
 
 class Agent:
@@ -126,17 +152,46 @@ class Agent:
             yield {"type": "task_start", "task": task.to_dict()}
             info(f"Executing task: {task.id} - {task.description}")
 
-            for event in self._executor.execute_task(task, self.messages, self._tool_defs, MAX_ITERATIONS):
-                yield event
+            if _is_coding_task(task):
+                coding_events = self._execute_coding_task(
+                    task,
+                    max_iterations=MAX_ITERATIONS,
+                )
+                for event in coding_events:
+                    yield event
+            else:
+                for event in self._executor.execute_task(
+                    task,
+                    self.messages,
+                    self._tool_defs,
+                    MAX_ITERATIONS,
+                ):
+                    yield event
 
             if task.status == "failed" and task.retries < task.max_retries:
                 err = (task.error or "").lower()
                 if any(x in err for x in _TRANSIENT_ERRORS):
                     info(f"Retrying task: {task.id} (attempt {task.retries}/{task.max_retries})")
-                    for event in self._executor.retry_task(task, self.messages, self._tool_defs):
-                        yield event
+                    if _is_coding_task(task):
+                        for event in self._execute_coding_task(
+                            task,
+                            max_iterations=MAX_ITERATIONS,
+                        ):
+                            yield event
+                    else:
+                        for event in self._executor.retry_task(
+                            task,
+                            self.messages,
+                            self._tool_defs,
+                        ):
+                            yield event
 
             yield {"type": "task_done", "task": task.to_dict()}
+
+            if task.status == "failed":
+                error_text = task.error or f"Task failed: {task.description}"
+                yield {"type": "error", "content": error_text, "final": True}
+                return
 
         last = self.messages[-1] if self.messages else {}
         final = last.get("content", "") if last.get("role") == "assistant" else ""
@@ -147,11 +202,7 @@ class Agent:
         yield {"type": "done", "content": final or "Done.", "final": True}
 
     def run_autopilot(self, goal: str, workspace: str | None = None):
-        """Run a goal through the Autopilot loop (plan -> ordered steps -> verify).
-
-        Yields executor events interleaved with ``autopilot`` orchestration
-        events for the brain-view UI.
-        """
+        """Run a goal through the Autopilot loop (plan -> ordered steps -> verify)."""
         from core.autopilot import Autopilot
 
         context = list(self.messages)
@@ -166,3 +217,117 @@ class Agent:
             workspace=workspace or self._output_dir,
         )
         yield from auto.run(goal, context=context)
+
+    def _execute_coding_task(self, task_description, max_iterations=10, expected_paths=None, **kwargs):
+        """Run one coding transaction through the safe executor contract."""
+        from coding.executor_adapter import SafeExecutorAdapter
+
+        task_args = getattr(task_description, "args", None)
+        if expected_paths is None and isinstance(task_args, dict):
+            task_path = task_args.get("path")
+            if task_path:
+                expected_paths = [task_path]
+
+        if not expected_paths:
+            task_description.status = "failed"
+            task_description.error = "Coding execution requires an explicit authorized path."
+
+            def rejected():
+                yield {
+                    "type": "coding_transaction",
+                    "status": "rejected",
+                    "reason": "Coding execution requires an explicit path.",
+                }
+
+            return rejected()
+
+        session = getattr(self, "_coding_session", None)
+        if session is None:
+            session = SimpleNamespace(current_stage="executing", status="running")
+            self._coding_session = session
+        else:
+            session.current_stage = "executing"
+            session.status = "running"
+
+        self._coding_session_state = {
+            "status": "running",
+            "current_stage": "execute",
+            "checkpoint": "coding-started",
+            "confidence": "medium",
+            "attempt": 1,
+            "changes": [],
+            "tests": [],
+        }
+
+        executor = getattr(self, "_executor", None)
+        if executor is None:
+            executor = getattr(self, "executor", None)
+
+        configured_workspace = getattr(self, "workspace", None)
+        if configured_workspace is None:
+            configured_workspace = self._output_dir
+        workspace = Path(configured_workspace) if configured_workspace else Path.cwd()
+
+        adapter = SafeExecutorAdapter(
+            executor=executor,
+            workspace=workspace,
+            expected_paths=expected_paths,
+        )
+
+        inner = adapter.execute(
+            task=task_description,
+            messages=getattr(self, "messages", []),
+            tool_definitions=getattr(self, "_tool_defs", []),
+            max_iterations=max_iterations,
+            **kwargs,
+        )
+
+        def run():
+            events = []
+            for event in inner:
+                events.append(event)
+                if isinstance(event, dict):
+                    yield event
+
+            coding_completed = any(
+                isinstance(event, dict)
+                and event.get("type") == "coding_transaction"
+                and event.get("status") == "completed"
+                for event in events
+            )
+            if not coding_completed:
+                session.current_stage = "failed"
+                session.status = "failed"
+                self._coding_session_state = {
+                    "status": "failed",
+                    "current_stage": "failed",
+                    "checkpoint": "coding-failed",
+                    "confidence": "high",
+                    "attempt": 1,
+                    "changes": [],
+                    "tests": [
+                        event.get("error", event.get("content", "coding transaction failed"))
+                        for event in events
+                        if isinstance(event, dict)
+                        and event.get("type") in ("coding_transaction", "error", "test", "verification")
+                    ] or ["coding transaction did not pass all completion gates"],
+                }
+                return
+
+            session.current_stage = "complete"
+            session.status = "completed"
+            self._coding_session_state = {
+                "status": "completed",
+                "current_stage": "complete",
+                "checkpoint": "coding-complete",
+                "confidence": "high",
+                "attempt": 1,
+                "changes": list(expected_paths),
+                "tests": [
+                    event.get("content", "coding execution completed")
+                    for event in events
+                    if isinstance(event, dict)
+                    and event.get("type") in ("done", "test", "verification")
+                ] or ["coding transaction completed"],
+            }
+        return run()

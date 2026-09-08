@@ -40,7 +40,7 @@ const initialState: AppState = {
   persona: (() => { try { return localStorage.getItem('friday_persona') || 'friday' } catch { return 'friday' } })(),
   loading: false,
   metrics: DEFAULT_METRICS,
-  zen: (() => { try { return (localStorage.getItem('friday_ui_zen') || '1') !== '0' } catch { return true } })(),
+  zen: false,
   handsFree: (() => { try { return localStorage.getItem('friday_hands_free') === '1' } catch { return false } })(),
 }
 
@@ -113,3 +113,4 @@ class StateManager {
 }
 
 export const state = new StateManager()
+

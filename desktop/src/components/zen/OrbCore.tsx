@@ -1,9 +1,8 @@
-import { memo } from 'react'
+﻿import { memo } from 'react'
 import type { OrbState } from '../../types'
-import { JarvisOrb } from '../center/AiCore'
+import { JarvisOrb, PERSONA_VISUALS } from '../center/AiCore'
 
-/* ─── Zen monochrome palette ─── */
-const C_TEXT = '#e5e5e5'
+/* â”€â”€â”€ Zen monochrome palette â”€â”€â”€ */
 const C_SECONDARY = '#a0a0a8'
 const C_TERTIARY = '#606068'
 
@@ -38,6 +37,7 @@ interface OrbCoreProps {
   model?: string
   latency?: number
   time?: string
+  persona?: string
 }
 
 export const OrbCore = memo(function OrbCore({
@@ -50,12 +50,14 @@ export const OrbCore = memo(function OrbCore({
   model = '',
   latency = 0,
   time = '',
+  persona = 'friday',
 }: OrbCoreProps) {
   const isOnline = orbState !== 'offline'
+  const accent = (PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday).color
 
   const chips: AmbientChip[] = [
     temperature != null
-      ? { id: 'temp', label: 'TEMP', value: `${Math.round(temperature)}°C`, position: { top: '6%', left: '12%' }, delay: 0 }
+      ? { id: 'temp', label: 'TEMP', value: `${Math.round(temperature)}Â°C`, position: { top: '6%', left: '12%' }, delay: 0 }
       : null,
     time ? { id: 'time', label: 'TIME', value: time, position: { top: '18%', left: '84%' }, delay: 0.8 } : null,
     model ? { id: 'model', label: 'MODEL', value: model, position: { top: '72%', left: '10%' }, delay: 1.6 } : null,
@@ -75,11 +77,11 @@ export const OrbCore = memo(function OrbCore({
         <span
           className={`inline-block w-1.5 h-1.5 rounded-full ${isOnline ? 'animate-pulse-glow' : ''}`}
           style={{
-            background: isOnline ? '#ffffff' : C_TERTIARY,
-            boxShadow: isOnline ? '0 0 8px rgba(255,255,255,0.5)' : 'none',
+            background: isOnline ? accent : C_TERTIARY,
+            boxShadow: isOnline ? `0 0 8px ${accent}80` : 'none',
           }}
         />
-        <span className="text-[11px] tracking-[0.2em]" style={{ color: isOnline ? C_TEXT : C_TERTIARY }}>
+        <span className="text-[11px] tracking-[0.2em]" style={{ color: isOnline ? accent : C_TERTIARY }}>
           {isOnline ? (ORB_STATE_LABELS[orbState] ?? orbState.toUpperCase()) : 'OFFLINE'}
         </span>
         {location && <span className="text-[10px] uppercase tracking-widest" style={{ color: C_TERTIARY }}>{location}</span>}
@@ -115,3 +117,4 @@ export const OrbCore = memo(function OrbCore({
     </div>
   )
 })
+

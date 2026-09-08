@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+﻿import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { theme } from './core/ThemeEngine'
 import { state, useStore } from './core/StateManager'
 import { LeftSidebar } from './components/sidebar/LeftSidebar'
 import { StatusRibbon } from './components/topbar/TopBar'
-import { AiCore } from './components/center/AiCore'
+import { WorkspaceBrowser } from './components/workspace/WorkspaceBrowser'
+import { AiCore, PERSONA_VISUALS } from './components/center/AiCore'
 import { MessageBubble } from './components/chat/MessageBubble'
 import { InputBar } from './components/chat/InputBar'
 import { CameraIndicator } from './components/common/CameraIndicator'
@@ -35,6 +36,7 @@ const PERSONA_TTS: Record<string, { rate: number; pitch: number }> = {
   jarvis: { rate: 0.9, pitch: 1.0 },
   friday: { rate: 1.0, pitch: 1.1 },
   cortana: { rate: 0.95, pitch: 1.05 },
+  adonis: { rate: 0.95, pitch: 0.95 },
 }
 
 function showNativeNotification(title: string, body: string) {
@@ -51,14 +53,28 @@ function showNativeNotification(title: string, body: string) {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+    const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [camActive, setCamActive] = useState(false)
   const [backendOnline, setBackendOnline] = useState(true)
+  const backendOnlineDebug = (value: boolean, source: string) => {
+    console.log('[BACKEND ONLINE]', value, source)
+    setBackendOnline(value)
+  }
   const [outputDir, setOutputDirState] = useState(() => localStorage.getItem('friday_output_dir') || '')
   const [dataLoaded, setDataLoaded] = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const [alerts, setAlerts] = useState<ProactiveAlert[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [intelligenceOpen, setIntelligenceOpen] = useState(() => {
+    try { return localStorage.getItem('friday_intelligence_open') !== '0' } catch { return true }
+  })
+  const [personaPrompts, setPersonaPrompts] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem('friday_persona_prompts')
+      return raw ? JSON.parse(raw) : {}
+    } catch { return {} }
+  })
 const [briefing, setBriefing] = useState<{ summary: string; sections: string[]; greeting: string; yesterday?: string } | null>(null)
 const [automations, setAutomations] = useState<Automation[]>([])
 const [visionScreenResult, setVisionScreenResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
@@ -76,13 +92,14 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     try { return localStorage.getItem('friday_onboarded') !== '1' } catch { return true }
   })
 
-  // ─── Fine-grained Zustand selectors (before any hooks that use them) ───
+  // â”€â”€â”€ Fine-grained Zustand selectors (before any hooks that use them) â”€â”€â”€
   const sessions = useStore(s => s.sessions)
   const activeSessionId = useStore(s => s.activeSessionId)
   const loading = useStore(s => s.loading)
   const orb = useStore(s => s.orb)
   const voiceLanguage = useStore(s => s.voiceLanguage)
   const persona = useStore(s => s.persona)
+  const personaName = (PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday).name
   const metricsState = useStore(s => s.metrics)
   const zen = useStore(s => s.zen)
   const handsFree = useStore(s => s.handsFree)
@@ -154,7 +171,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     startVoiceInput(voiceLanguage, true)
   })
 
-  // ─── Ambient Voice Mode ────────────────────────────────────────
+  // â”€â”€â”€ Ambient Voice Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [ambientActive, setAmbientActive] = useState(false)
   const ambientTranscriptRef = useRef('')
   const ambientSilenceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -215,7 +232,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     }
   }, [ambientActive, voiceInputStatus, finalTranscript, clearAmbientSilence, resetTranscript])
 
-  // Silence timeout — exit ambient after 5s of voice inactivity
+  // Silence timeout â€” exit ambient after 5s of voice inactivity
   useEffect(() => {
     if (!ambientActiveRef.current) return
     clearAmbientSilence()
@@ -234,8 +251,15 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
   }, [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  })
+    const end = messagesEndRef.current
+    const container = end?.parentElement
+    if (!end || !container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distanceFromBottom < 160) {
+      end.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [active.messages])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -248,7 +272,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     return () => window.removeEventListener('keydown', handleKey)
   }, [])
 
-  // ─── Single SSE connection replaces all polling ───
+  // â”€â”€â”€ Single SSE connection replaces all polling â”€â”€â”€
   useEffect(() => {
     let cancelled = false
 
@@ -306,14 +330,15 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
 
     const unsub = connectEventSource(handleEvent, () => {
       if (!cancelled) {
-        setBackendOnline(false)
-        toast('warning', 'Lost connection to Friday backend\u2026')
+        // SSE reconnects automatically after transient connection errors.
+        // A temporary SSE error does not mean the API backend is offline.
+        setSseConnected(false)
       }
     }, (connected) => {
       if (!cancelled) {
         setSseConnected(connected)
         if (connected) {
-          setBackendOnline(true)
+          backendOnlineDebug(true, 'SSE connected')
         }
       }
     })
@@ -321,19 +346,26 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     return () => { cancelled = true; unsub() }
   }, [])
 
-  // ─── Initial data fetch (one-shot, no polling) ───
+  // â”€â”€â”€ Initial data fetch (one-shot, no polling) â”€â”€â”€
   useEffect(() => {
     let cancelled = false
     const init = async () => {
       try {
-        const [health, sessions] = await Promise.all([
-          checkHealth(),
-          getSessions(),
-        ])
+        // Health is the authoritative backend status.
+        const health = await checkHealth()
         if (cancelled) return
-        setBackendOnline(health.status === 'ok')
+        backendOnlineDebug(health.status === 'ok', 'health')
 
-        if (sessions.sessions.length > 0) {
+        // Session loading is secondary. It must not make a healthy
+        // backend appear offline.
+        let sessions: { sessions: { id: string; language: string }[] } = { sessions: [] }
+        try {
+          sessions = await getSessions()
+        } catch {
+          // Keep the backend online; session loading can recover separately.
+        }
+        if (cancelled) return
+if (sessions.sessions.length > 0) {
           const synced = sessions.sessions.map((s: any) => ({
             id: s.id,
             title: s.language === 'hinglish' ? 'Hinglish session' : 'Session',
@@ -388,8 +420,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
         getPrivacyStatus().then(d => { if (!cancelled) setBlackout(d.enabled) }).catch(() => {})
         if (!cancelled) setDataLoaded(true)      } catch {
         if (!cancelled) {
-          setBackendOnline(false)
-          toast('error', 'Could not reach Friday backend. Is the API server running?')
+          toast('warning', 'Some Friday startup data could not be loaded.')
         }
       }
     }
@@ -496,7 +527,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     return () => clearInterval(id)
   }, [])
 
-  // ─── Power-user keyboard shortcuts ───
+  // â”€â”€â”€ Power-user keyboard shortcuts â”€â”€â”€
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
@@ -548,8 +579,8 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     const trimmed = text.trim()
     const isAuto =
       /^\/autopilot\b/i.test(trimmed) ||
-      (/^autopilot\s*[-:،]?\s/i.test(trimmed) && trimmed.replace(/^autopilot\s*[-:،]?\s?/i, '').trim().length > 0)
-    const goal = isAuto ? trimmed.replace(/^\/autopilot\b/i, '').replace(/^autopilot\s*[-:،]?\s?/i, '').trim() : ''
+      (/^autopilot\s*[-:ØŒ]?\s/i.test(trimmed) && trimmed.replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim().length > 0)
+    const goal = isAuto ? trimmed.replace(/^\/autopilot\b/i, '').replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim() : ''
 
     if (isAuto && goal.length === 0) {
       state.setLoading(false)
@@ -667,11 +698,10 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
         },
         (err) => {
           const isNetwork = err?.message?.includes('network') || err?.status === 0
-          if (isNetwork) setBackendOnline(false)
           setAutopilotRun(prev => prev ? { ...prev, phase: 'aborted', abortedReason: err?.message || 'error' } : prev)
           state.updateMessages(msgs => msgs.map(m =>
             m.id === aid ? { ...m, content: isNetwork
-              ? 'Backend offline — start `python api_server.py` on port 8080'
+              ? 'Backend offline â€” start `python api_server.py` on port 8080'
               : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
           ))
           state.setOrb('error')
@@ -682,8 +712,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
           abortRef.current = null
         },
       )
-      : streamChat(
-      { message: text, session_id: activeSessionId, persona },
+      : streamChat({ message: text, session_id: activeSessionId, persona, persona_prompt: personaPrompts[persona] || undefined },
       (ev) => {
         switch (ev.type) {
           case 'plan':
@@ -737,10 +766,9 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
       },
       (err) => {
         const isNetwork = err?.message?.includes('network') || err?.status === 0
-        if (isNetwork) setBackendOnline(false)
         state.updateMessages(msgs => msgs.map(m =>
           m.id === aid ? { ...m, content: isNetwork
-            ? 'Backend offline — start `python api_server.py` on port 8080'
+            ? 'Backend offline â€” start `python api_server.py` on port 8080'
             : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
         ))
         state.setOrb('error')
@@ -789,6 +817,12 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     handleSend(text)
   }, [loading, handleSend])
 
+  const [, setCommandDraft] = useState<string | undefined>()
+
+  const handleCommandTemplate = useCallback((prompt: string) => {
+    setCommandDraft(`${prompt} `)
+  }, [])
+
   const handleRegenerate = useCallback(() => {
     const msg = lastUserMsgRef.current
     if (!msg || state.get().loading) return
@@ -820,6 +854,14 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
   const handleSetPersona = useCallback((key: string) => {
     state.setPersona(key)
   }, [])
+
+  const handleSetPersonaPrompt = useCallback((prompt: string) => {
+    setPersonaPrompts(prev => {
+      const next = { ...prev, [persona]: prompt }
+      try { localStorage.setItem('friday_persona_prompts', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [persona])
 
   const handleAutomationToggle = useCallback(async (id: string) => {
     try {
@@ -871,7 +913,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     }
   }, [briefing, voiceOutputEnabled, speakResponse, persona])
 
-  // ─── Persist voice settings ───
+  // â”€â”€â”€ Persist voice settings â”€â”€â”€
   useEffect(() => {
     localStorage.setItem('friday_voice_output_enabled', String(voiceOutputEnabled))
   }, [voiceOutputEnabled])
@@ -889,6 +931,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     { id: 'toggle-zen', label: zen ? 'Exit zen mode (dashboard)' : 'Enter zen mode', action: () => state.toggleZen() },
     { id: 'toggle-handsfree', label: handsFree ? 'Disable hands-free listening' : 'Enable hands-free listening', action: handleToggleHandsFree },
     { id: 'toggle-sidebar', label: 'Toggle sessions sidebar', action: () => setSidebarOpen(o => !o) },
+    { id: 'toggle-workspace', label: workspaceOpen ? 'Close workspace preview' : 'Open workspace preview', action: () => setWorkspaceOpen(o => !o) },
 
     { id: 'toggle-camera', label: 'Gesture control', action: toggleCamera },
     { id: 'toggle-voice-output', label: 'Toggle voice output', action: handleToggleVoiceOutput },
@@ -897,6 +940,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
     { id: 'persona-friday', label: 'Persona: FRIDAY', action: () => handleSetPersona('friday') },
     { id: 'persona-jarvis', label: 'Persona: J.A.R.V.I.S.', action: () => handleSetPersona('jarvis') },
     { id: 'persona-cortana', label: 'Persona: Cortana', action: () => handleSetPersona('cortana') },
+    { id: 'persona-adonis', label: 'Persona: ADONIS', action: () => handleSetPersona('adonis') },
 
     { id: 'vision-screen', label: 'Analyze screen', action: handleVisionCaptureScreen },
     { id: 'vision-camera', label: 'Capture camera', action: handleVisionCaptureCamera },
@@ -937,14 +981,14 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
           style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
         >
-          Backend offline — start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080
+          Backend offline â€” start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080
         </div>
       )}
       {backendOnline && !sseConnected && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
           style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fde68a' }}
         >
-          Reconnecting…
+          Reconnectingâ€¦
         </div>
       )}
 
@@ -1034,12 +1078,14 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
               onVoiceStart={() => { exitAmbient(); cancelAutoRestart(); resetTranscript(); startVoiceInput(voiceLanguage) }}
               onVoiceStop={() => { cancelAutoRestart(); return stopVoiceInput() }}
               onCycleLanguage={handleCycleLanguage}
+              personaName={personaName}
               onToggleDashboard={() => state.toggleZen()}
               handsFree={handsFree}
               ambientActive={ambientActive}
               onToggleHandsFree={handleToggleHandsFree}
               persona={persona}
               continuity={continuity}
+              greeting={personaName}
             computerReady={computerReady}
             blackout={blackout}
             temperature={weather?.temperature ?? null}
@@ -1089,7 +1135,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
 
           <main className="flex-1 flex flex-col min-w-0">
             <div className="flex-1 flex flex-col items-center relative min-h-0">
-              <div className="w-full max-w-[720px] flex-1 flex flex-col">
+              <div className="w-full max-w-[720px] flex-1 min-h-0 flex flex-col">
                 <div className={`relative flex flex-col min-h-0 ${autopilotRun ? 'flex-1' : ''}`}>
                   <AiCore
                     orbState={orb}
@@ -1100,16 +1146,17 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
                       memory: metricsState.memory,
                       tokenUsage: metricsState.tokenUsage,
                     }}
-                    onCommand={sendMessage}
+                    onCommand={handleCommandTemplate}
                     hasMessages={!autopilotRun && active.messages.length > 0}
                     handPosition={handPosition}
+                    persona={persona}
                     voiceActivity={voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking'}
                   />
                   {autopilotRun && <BrainView run={autopilotRun} size={320} />}
                 </div>
 
                 {active.messages.length > 0 && (
-                  <div className="w-full flex-1 overflow-y-auto space-y-6 px-8 pb-4">
+                  <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-8 pb-4">
                     {active.messages.length > 1 && (
                       <div className="sticky top-0 z-10 pb-2" style={{ background: 'var(--bg)' }}>
                         <input
@@ -1153,10 +1200,15 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
               isVoiceSupported={voiceInputSupported}
               voiceLanguage={voiceLanguage}
               onCycleLanguage={handleCycleLanguage}
+              personaName={personaName}
             />
           </main>
 
-          <Suspense fallback={<div className="w-80 shrink-0" />}>
+          <Suspense fallback={<div className="w-10 shrink-0" />}>
+            <button type="button" aria-label={intelligenceOpen ? 'Hide intelligence panel' : 'Show intelligence panel'} onClick={() => { setIntelligenceOpen(open => { const next = !open; try { localStorage.setItem('friday_intelligence_open', next ? '1' : '0') } catch {}; return next }) }} className="w-8 shrink-0 self-stretch border-l border-white/[.06] text-[10px] text-[#666] transition-colors hover:text-[#00a8ff]">
+              {intelligenceOpen ? 'ï¿½' : 'ï¿½'}
+            </button>
+            {intelligenceOpen && (
             <IntelligencePanel
               news={news}
               weather={weather}
@@ -1207,6 +1259,7 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
               onHolodeckToggle={() => setHolodeckExpanded(e => !e)}
               diaryRefreshToken={diaryRefreshToken}
             />
+            )}
           </Suspense>
         </div>
         </>
@@ -1220,6 +1273,10 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
           commands={commandActions}
         />
       </Suspense>
+
+      {workspaceOpen && (
+        <WorkspaceBrowser onClose={() => setWorkspaceOpen(false)} />
+      )}
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -1239,6 +1296,8 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
           onGoogleConnect={handleGoogleConnect}
           persona={persona}
           onSetPersona={handleSetPersona}
+          personaPrompt={personaPrompts[persona] || ''}
+          onSetPersonaPrompt={handleSetPersonaPrompt}
         />
         </Suspense>
       )}
@@ -1247,3 +1306,23 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
 }
 
 export default App
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

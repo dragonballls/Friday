@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react'
 import type { SystemInfo } from '../../types'
+import { PERSONA_VISUALS } from '../center/AiCore'
 
 interface StatusRibbonProps {
   systemInfo: SystemInfo
@@ -46,6 +47,7 @@ export const StatusRibbon = memo(function StatusRibbon({
   const model = systemInfo.model || '-'
   const uptime = `${Math.round(systemInfo.uptime_seconds / 60)}m`
   const cpu = `${systemInfo.cpu_cores}c`
+  const visual = PERSONA_VISUALS[persona || 'friday'] || PERSONA_VISUALS.friday
 
   return (
     <div
@@ -91,8 +93,8 @@ export const StatusRibbon = memo(function StatusRibbon({
       <span className="shrink-0" style={{ color: '#606068' }}>{ORB_LABELS[orbState] ?? orbState.toUpperCase()}</span>
 
       {persona && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: '#00a8ff', background: 'rgba(0,168,255,0.08)', border: '1px solid rgba(0,168,255,0.15)' }}>
-          {persona}
+        <span className="shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: visual.color, background: `${visual.color}14`, border: `1px solid ${visual.color}26` }}>
+          {visual.name}
         </span>
       )}
 

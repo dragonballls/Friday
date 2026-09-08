@@ -1,6 +1,6 @@
-import type { DiaryDay, DiaryPage } from '../types'
+﻿import type { DiaryDay, DiaryPage } from '../types'
 
-const API_BASE = 'http://localhost:8080/api/v1'
+const API_BASE = 'http://127.0.0.1:8080/api/v1'
 
 const AUTH_KEY = 'friday_api_secret'
 
@@ -23,7 +23,7 @@ export interface ApiError {
   body?: any
 }
 
-/* ─── Low-level fetch with auth + base URL ─── */
+/* â”€â”€â”€ Low-level fetch with auth + base URL â”€â”€â”€ */
 export async function fetchApi<T = any>(
   path: string,
   options: RequestInit = {},
@@ -54,7 +54,7 @@ export async function fetchApi<T = any>(
   }
 }
 
-/* ─── SSE streaming helper ─── */
+/* â”€â”€â”€ SSE streaming helper â”€â”€â”€ */
 async function streamEndpoint(
   path: string,
   body: Record<string, unknown>,
@@ -119,7 +119,7 @@ async function streamEndpoint(
 }
 
 export function streamChat(
-  body: { message: string; session_id?: string; persona?: string },
+  body: { message: string; session_id?: string; persona?: string; persona_prompt?: string },
   onEvent: (event: any) => void,
   onError: (err: any) => void,
   onDone: () => void,
@@ -140,7 +140,7 @@ export function streamAutopilot(
   return controller
 }
 
-/* ─── Typed endpoint helpers ─── */
+/* â”€â”€â”€ Typed endpoint helpers â”€â”€â”€ */
 
 export async function checkHealth(): Promise<{ status: string; sessions: number }> {
   return fetchApi('/health')
@@ -176,7 +176,7 @@ export async function setOutputDir(path: string, sessionId = 'default') {
   })
 }
 
-/* ─── Tool call approvals ──────────────────────────────────────── */
+/* â”€â”€â”€ Tool call approvals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function getApprovals(): Promise<{ approvals: any[] }> {
   return fetchApi('/approvals')
@@ -252,7 +252,7 @@ export async function deleteMemory(entryId: string) {
   return fetchApi(`/memory/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
 }
 
-/* ─── Knowledge graph API ─────────────────────────────────────── */
+/* â”€â”€â”€ Knowledge graph API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface KnowledgeEntity {
   name: string
@@ -285,7 +285,7 @@ export async function getKnowledgeContinuity(): Promise<{ continuity: string }> 
   return fetchApi('/knowledge/continuity')
 }
 
-/* ─── Computer control API ─────────────────────────────────────── */
+/* â”€â”€â”€ Computer control API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface ComputerStatus {
   platform: string
@@ -322,7 +322,7 @@ export async function getComputerSummary(): Promise<ComputerSummary> {
   return fetchApi('/computer/summary')
 }
 
-/* ─── Plugin marketplace API ───────────────────────────────────── */
+/* â”€â”€â”€ Plugin marketplace API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface MarketplacePlugin {
   name: string
@@ -345,7 +345,7 @@ export async function uninstallPlugin(name: string): Promise<{ success: boolean;
   return fetchApi('/plugins/uninstall', { method: 'POST', body: JSON.stringify({ name }) })
 }
 
-/* ─── Custom tool builder API ─────────────────────────────────── */
+/* â”€â”€â”€ Custom tool builder API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface CustomTool {
   name: string
@@ -368,7 +368,7 @@ export async function deleteCustomTool(name: string): Promise<{ success?: boolea
   return fetchApi(`/tools/custom/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }
 
-/* ─── Privacy (blackout mode) API ─────────────────────────────── */
+/* â”€â”€â”€ Privacy (blackout mode) API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface PrivacyStatus {
   enabled: boolean
@@ -384,7 +384,7 @@ export async function setPrivacy(enabled: boolean): Promise<PrivacyStatus> {
   return fetchApi('/privacy', { method: 'POST', body: JSON.stringify({ enabled }) })
 }
 
-/* ─── Diary API ───────────────────────────────────────────────── */
+/* â”€â”€â”€ Diary API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function getDiaryRecent(): Promise<{ days: DiaryDay[] }> {
   return fetchApi('/diary/recent')
@@ -419,7 +419,7 @@ export async function getAlerts(): Promise<{ alerts: any[]; count: number }> {
   return fetchApi('/alerts')
 }
 
-/* ─── Automations API ─────────────────────────────────────────── */
+/* â”€â”€â”€ Automations API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function getAutomations(): Promise<{ automations: any[] }> {
   return fetchApi('/automations')
@@ -454,7 +454,7 @@ export async function triggerAutomation(id: string): Promise<any> {
   return fetchApi(`/automations/${id}/trigger`, { method: 'POST' })
 }
 
-/* ─── Vision API ──────────────────────────────────────────────── */
+/* â”€â”€â”€ Vision API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function analyzeVisionImage(image: string, prompt?: string): Promise<{
   description: string; text: string | null; timestamp: number
@@ -471,7 +471,7 @@ export async function getVisionScreen(): Promise<{
   return fetchApi('/vision/screen')
 }
 
-/* ─── SSE EventSource connection ─── */
+/* â”€â”€â”€ SSE EventSource connection â”€â”€â”€ */
 export type ServerEvent = {
   type: string
   data: any
@@ -484,8 +484,6 @@ export function connectEventSource(
 ): () => void {
   let es: EventSource | null = null
   let closed = false
-  let retryDelay = 1000
-  const MAX_RETRY = 30000
 
   function connect() {
     if (closed) return
@@ -503,19 +501,22 @@ export function connectEventSource(
     }
 
     es.onopen = () => {
-      retryDelay = 1000
       onStatus?.(true)
     }
 
     es.onerror = () => {
-      es?.close()
-      es = null
-      onStatus?.(false)
-      onError?.()
+      // EventSource fires error while reconnecting too. CONNECTING is
+      // transient and must not make the UI declare the backend offline.
       if (closed) return
-      const delay = retryDelay
-      retryDelay = Math.min(retryDelay * 2, MAX_RETRY)
-      setTimeout(connect, delay)
+
+      const state = es?.readyState
+
+      if (state === EventSource.CLOSED) {
+        onStatus?.(false)
+        onError?.()
+      }
+      // CONNECTING means EventSource is actively recovering.
+      // Keep the existing UI/session state intact until onopen fires.
     }
   }
 
@@ -527,3 +528,10 @@ export function connectEventSource(
     es = null
   }
 }
+
+
+
+
+
+
+

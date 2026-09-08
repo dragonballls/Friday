@@ -1,5 +1,6 @@
-import { memo, useRef, useEffect, useMemo } from 'react'
+import { memo, useRef, useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
+import { ErrorBoundary } from '../common/ErrorBoundary'
 import type { OrbState } from '../../types'
 import {
   createCoreMaterial,
@@ -9,15 +10,21 @@ import {
   makeGlowTexture,
 } from './shaders'
 
-/* ─── Monochrome palette (orb only) ─── */
+/* â”€â”€â”€ Monochrome palette (orb only) â”€â”€â”€ */
 const C_DARK = '#2B2F36'
 const C_MEDIUM = '#6E737C'
 const C_LIGHT = '#BFC4CC'
 const C_WHITE = '#FFFFFF'
+let webglDisabled = false
 
-const ACCENT = '#00a8ff'
+export const PERSONA_VISUALS: Record<string, { name: string; color: string }> = {
+  friday: { name: 'FRIDAY', color: '#00a8ff' },
+  jarvis: { name: 'J.A.R.V.I.S.', color: '#65d9ff' },
+  cortana: { name: 'CORTANA', color: '#8b7cff' },
+  adonis: { name: 'ADONIS', color: '#f0a35b' },
+}
 
-/* ─── State configuration ─── */
+/* â”€â”€â”€ State configuration â”€â”€â”€ */
 interface StateConfig {
   pulseFreq: number
   glowIntensity: number
@@ -88,7 +95,7 @@ const STATE_CFG: Record<string, StateConfig> = {
   },
 }
 
-/* ─── Orbiting node paths ─── */
+/* â”€â”€â”€ Orbiting node paths â”€â”€â”€ */
 interface NodePath {
   radius: number
   inclination: number
@@ -109,9 +116,10 @@ function generateNodePaths(count: number): NodePath[] {
   return paths
 }
 
-/* ─── JarvisOrb ─── */
+/* â”€â”€â”€ JarvisOrb â”€â”€â”€ */
 export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState: OrbState; handPosition: { x: number; y: number } | null; voiceActivity?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [webglUnavailable, setWebglUnavailable] = useState(false)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const camRef = useRef<THREE.PerspectiveCamera | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -143,31 +151,59 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     const w = container.clientWidth
     const h = container.clientHeight
 
-    /* ─── Scene ─── */
+    if (webglDisabled) {
+      setWebglUnavailable(true)
+      return
+    }
+
+    /* â”€â”€â”€ Scene â”€â”€â”€ */
     const scene = new THREE.Scene()
     sceneRef.current = scene
 
-    /* ─── Camera — slight offset for parallax ─── */
+    /* â”€â”€â”€ Camera â€” slight offset for parallax â”€â”€â”€ */
     const cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 50)
     cam.position.set(0, 0.15, 4.8)
     cam.lookAt(0, 0, 0)
     camRef.current = cam
 
-    /* ─── Renderer ─── */
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+    /* â”€â”€â”€ Renderer â”€â”€â”€ */
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, powerPreference: 'low-power' })
+    } catch (error) {
+      webglDisabled = true
+      console.warn('Friday visual orb unavailable; continuing without WebGL.', error)
+      setWebglUnavailable(true)
+      return
+    }
     renderer.setSize(w, h)
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     renderer.setClearColor(0x000000, 0)
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer
+    let contextLost = false
+    const onContextLost = (event: Event) => {
+      event.preventDefault()
+      contextLost = true
+      cancelAnimationFrame(animRef.current)
+      animRef.current = 0
+    }
+    const onContextRestored = () => {
+      contextLost = false
+      if (!document.hidden) {
+        animRef.current = requestAnimationFrame(animate)
+      }
+    }
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost)
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored)
 
-    /* ─── Main group ─── */
+    /* â”€â”€â”€ Main group â”€â”€â”€ */
     const group = new THREE.Group()
     scene.add(group)
     groupRef.current = group
 
     /* ================================================================
-       1. Core Energy Sphere — ShaderMaterial with noise + Fresnel
+       1. Core Energy Sphere â€” ShaderMaterial with noise + Fresnel
        ================================================================ */
     const coreMat = createCoreMaterial()
     const coreGeo = new THREE.IcosahedronGeometry(0.65, 3)
@@ -176,7 +212,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     coreRef.current = core
 
     /* ================================================================
-       2. Internal Core — smaller, opposite rotation, brighter
+       2. Internal Core â€” smaller, opposite rotation, brighter
        ================================================================ */
     const innerMat = createInnerCoreMaterial()
     const innerGeo = new THREE.IcosahedronGeometry(0.3, 2)
@@ -185,7 +221,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     innerCoreRef.current = innerCore
 
     /* ================================================================
-       3. Wireframe Shell — icosahedron edges
+       3. Wireframe Shell â€” icosahedron edges
        ================================================================ */
     const shellGeo = new THREE.IcosahedronGeometry(0.85, 1)
     const shellMat = new THREE.MeshBasicMaterial({
@@ -214,7 +250,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     dotsRef.current = dots
 
     /* ================================================================
-       4. Holographic Outer Shell — hex grid + scanlines shader
+       4. Holographic Outer Shell â€” hex grid + scanlines shader
        ================================================================ */
     const holoMat = createHoloMaterial()
     const holoGeo = new THREE.SphereGeometry(1.1, 48, 32)
@@ -223,7 +259,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     holoShellRef.current = holoMesh
 
     /* ================================================================
-       5. Orbital Rings — 4 rings with gradient shader
+       5. Orbital Rings â€” 4 rings with gradient shader
        ================================================================ */
     const ringDefs = [
       { r: 1.0, t: 0.01, c: C_LIGHT, o: 0.25, rx: Math.PI / 3, rz: 0, sp: 0.3, ax: 'z' },
@@ -244,7 +280,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     ringMeshesRef.current = ringEntries
 
     /* ================================================================
-       6. Floating Particles — 120 particles, orbital magnetic drift
+       6. Floating Particles â€” 120 particles, orbital magnetic drift
        ================================================================ */
     const particleCount = 120
     const pPositions = new Float32Array(particleCount * 3)
@@ -284,7 +320,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     particlesRef.current = particleSystem
 
     /* ================================================================
-       7. Orbiting Nodes — 8 glowing points on inclined paths
+       7. Orbiting Nodes â€” 8 glowing points on inclined paths
        ================================================================ */
     const nodeCount = 8
     const nodePaths = generateNodePaths(nodeCount)
@@ -323,29 +359,23 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     scene.add(sprite)
     spriteRef.current = sprite
 
-    /* ─── Geometry cleanup list ─── */
+    /* â”€â”€â”€ Geometry cleanup list â”€â”€â”€ */
     const disposables: THREE.BufferGeometry[] = [coreGeo, innerGeo, shellGeo, dotGeo, holoGeo, pGeo, nGeo]
 
-    /* ─── Visibilty / pause handling ─── */
-    let paused = false
-    const onVisibility = () => {
-      if (document.hidden) {
-        paused = true
-        cancelAnimationFrame(animRef.current)
-      } else {
-        paused = false
-        animate()
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibility)
+    let paused = document.hidden
+    let animationStarted = false
 
-    /* ─── Animation ─── */
+    /* â”€â”€â”€ Animation â”€â”€â”€ */
     let time = 0
     let camAngle = 0
 
     const animate = () => {
-      if (paused) return
+      if (paused) {
+        animRef.current = 0
+        return
+      }
       if (container.clientWidth === 0 || container.clientHeight === 0) {
+        if (contextLost) return
         animRef.current = requestAnimationFrame(animate)
         return
       }
@@ -364,13 +394,13 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
       coreMat.uniforms.uGlowIntensity.value = cfg.glowIntensity
       coreMat.uniforms.uOpacity.value = cfg.opacity
 
-      /* Inner core — opposite rotation */
+      /* Inner core â€” opposite rotation */
       innerMat.uniforms.uTime.value = time
       innerMat.uniforms.uGlowIntensity.value = cfg.glowIntensity * 1.2
       innerCore.rotation.x = -rot * 0.6
       innerCore.rotation.y = rot * 0.9
 
-      /* Wireframe shell — slow independent rotation */
+      /* Wireframe shell â€” slow independent rotation */
       shell.rotation.x = rot * 0.3 + time * 0.05
       shell.rotation.z = time * 0.03
       shellMat.opacity = cfg.opacity * 0.25
@@ -410,7 +440,7 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
         ringMat.uniforms.uOpacity.value = entry.speed * 0.5 * (0.5 + pulse * 0.5) * cfg.ringSpeed
       }
 
-      /* Animate particles — magnetic orbital drift */
+      /* Animate particles â€” magnetic orbital drift */
       if (particlesRef.current) {
         const pPos = particlesRef.current.geometry.attributes.position.array as Float32Array
         for (let i = 0; i < particleCount; i++) {
@@ -455,7 +485,30 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
       renderer.render(scene, cam)
       animRef.current = requestAnimationFrame(animate)
     }
-    animate()
+
+    const resumeAnimation = () => {
+      if (document.hidden || !paused) return
+      paused = false
+      if (!animationStarted) {
+        animationStarted = true
+        animate()
+      } else if (!animRef.current) {
+        animRef.current = requestAnimationFrame(animate)
+      }
+    }
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        paused = true
+        cancelAnimationFrame(animRef.current)
+        animRef.current = 0
+      } else {
+        resumeAnimation()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    animationStarted = true
+    if (!paused) animate()
 
     const resize = () => {
       const cw = container.clientWidth
@@ -471,7 +524,11 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
       cancelAnimationFrame(animRef.current)
       document.removeEventListener('visibilitychange', onVisibility)
       ro.disconnect()
-      container.removeChild(renderer.domElement)
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
+      renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored)
+      if (renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement)
+      }
       renderer.dispose()
       disposables.forEach(d => d.dispose())
       coreMat.dispose()
@@ -486,10 +543,23 @@ export function JarvisOrb({ orbState, handPosition, voiceActivity }: { orbState:
     }
   }, [glowTex])
 
+  if (webglUnavailable) {
+    return (
+      <div
+        className="w-full h-full rounded-full"
+        aria-label="Friday visual orb unavailable"
+        style={{
+          background: 'radial-gradient(circle, rgba(180,190,205,0.3) 0%, rgba(80,90,105,0.14) 35%, transparent 70%)',
+          boxShadow: orbState === 'offline' ? 'none' : '0 0 35px rgba(160,175,195,0.18)',
+        }}
+      />
+    )
+  }
+
   return <div ref={containerRef} className="w-full h-full" />
 }
 
-/* ─── Command cards ─── */
+/* â”€â”€â”€ Command cards â”€â”€â”€ */
 const COMMANDS = [
   { id: 'code', label: 'Code', prompt: 'Write code to' },
   { id: 'research', label: 'Research', prompt: 'Research the topic' },
@@ -515,7 +585,7 @@ const CommandCard = memo(function CommandCard({ label, prompt, onClick }: { labe
   )
 })
 
-/* ─── AiCore ─── */
+/* â”€â”€â”€ AiCore â”€â”€â”€ */
 interface AiCoreProps {
   orbState: OrbState
   metrics: { latency: number; model: string; provider: string; memory: number; tokenUsage: number }
@@ -523,27 +593,31 @@ interface AiCoreProps {
   hasMessages: boolean
   handPosition?: { x: number; y: number } | null
   voiceActivity?: boolean
+  persona?: string
 }
 
-export const AiCore = memo(function AiCore({ orbState, metrics, onCommand, hasMessages, handPosition = null, voiceActivity = false }: AiCoreProps) {
+export const AiCore = memo(function AiCore({ orbState, metrics, onCommand, hasMessages, handPosition = null, voiceActivity = false, persona = 'friday' }: AiCoreProps) {
   const isOnline = orbState !== 'offline'
+  const visual = PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday
 
   return (
     <div className="w-full transition-all duration-700 ease-in-out" key={hasMessages ? 'compact' : 'full'}>
       {hasMessages ? (
         <div className="flex items-center gap-4 mb-6 px-8 pt-6 animate-fade-in">
           <div className="w-12 h-12 shrink-0 transition-transform duration-700 ease-in-out">
-            <JarvisOrb orbState={orbState} handPosition={handPosition} voiceActivity={voiceActivity} />
+            <ErrorBoundary fallback={<div className="h-full w-full rounded-full bg-black/20" />}>
+              <JarvisOrb orbState={orbState} handPosition={handPosition} voiceActivity={voiceActivity} />
+            </ErrorBoundary>
           </div>
           <div>
-            <div className="text-lg font-light tracking-wider blue-text" style={{ fontWeight: 200 }}>
-              FRIDAY
+            <div className="text-lg font-light tracking-wider" style={{ fontWeight: 200, color: visual.color }}>
+              {visual.name}
             </div>
             <div className="flex items-center gap-2 text-[11px] mt-0.5" style={{ color: '#606068' }}>
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOnline ? 'animate-pulse-glow' : ''}`}
-                style={{ background: isOnline ? ACCENT : '#606068', boxShadow: isOnline ? `0 0 8px ${ACCENT}` : 'none' }}
+                style={{ background: isOnline ? visual.color : '#606068', boxShadow: isOnline ? `0 0 8px ${visual.color}` : 'none' }}
               />
-              <span style={{ color: isOnline ? ACCENT : '#606068' }}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+              <span style={{ color: isOnline ? visual.color : '#606068' }}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
               <span>{metrics.model}</span>
               <span>{metrics.latency}ms</span>
             </div>
@@ -552,18 +626,20 @@ export const AiCore = memo(function AiCore({ orbState, metrics, onCommand, hasMe
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center px-8 relative overflow-hidden">
           <div className="absolute inset-0 pointer-events-none">
-            <JarvisOrb orbState={orbState} handPosition={handPosition} voiceActivity={voiceActivity} />
+            <ErrorBoundary fallback={<div className="h-full w-full rounded-full bg-black/20" />}>
+              <JarvisOrb orbState={orbState} handPosition={handPosition} voiceActivity={voiceActivity} />
+            </ErrorBoundary>
           </div>
-          <div className="text-[56px] font-thin tracking-[0.15em] blue-text animate-fade-slide-up" style={{ fontWeight: 100 }}>
-            FRIDAY
+          <div className="text-[56px] font-thin tracking-[0.15em] animate-fade-slide-up" style={{ fontWeight: 100, color: visual.color }}>
+            {visual.name}
           </div>
 
           <div className="flex items-center gap-3 mt-3 text-xs animate-fade-in" style={{ color: '#606068' }}>
             <div className="flex items-center gap-1.5">
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOnline ? 'animate-pulse-glow' : ''}`}
-                style={{ background: isOnline ? ACCENT : '#606068', boxShadow: isOnline ? `0 0 8px ${ACCENT}` : 'none' }}
+                style={{ background: isOnline ? visual.color : '#606068', boxShadow: isOnline ? `0 0 8px ${visual.color}` : 'none' }}
               />
-              <span style={{ color: isOnline ? ACCENT : '#606068' }}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+              <span style={{ color: isOnline ? visual.color : '#606068' }}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
             </div>
             <span className="w-px h-3 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }} />
             <span>{metrics.model}</span>

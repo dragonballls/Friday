@@ -33,7 +33,7 @@ def _resolve_api_key(toml_key: str, env_var: str) -> str:
 
 def load_provider_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        return {"default": {"provider": "ollama"}}
+        return {"default": {"provider": "openai"}}
     with open(CONFIG_PATH, "rb") as f:
         cfg = tomllib.load(f)
 
@@ -54,7 +54,7 @@ def load_provider_config() -> dict[str, Any]:
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
     if config is None:
         config = load_provider_config()
-    return config.get("default", {}).get("provider", "ollama")
+    return config.get("default", {}).get("provider", "openai")
 
 
 def get_provider_config(name: str | None = None) -> dict[str, Any]:

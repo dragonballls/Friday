@@ -50,3 +50,18 @@ dist-ssr/
 # OS
 .DS_Store
 Thumbs.db
+
+# Friday local/runtime artifacts
+.venv/
+.friday/
+*.bak
+*.before-*
+*_backup_*
+*-backup-*
+*-backups-*
+*.log
+*.txt
+*.zip
+*.provider_state.json
+*_source_inspect/
+_source_inspect/

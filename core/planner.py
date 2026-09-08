@@ -121,6 +121,16 @@ class Planner:
         return _parse_tasks(content)
 
 
+    def revise_plan(self, tasks: list[Task], failed: Task, feedback: str) -> list[Task]:
+        context = {
+            "original_tasks": [t.to_dict() for t in tasks],
+            "failed_task": failed.to_dict(),
+            "feedback": feedback,
+        }
+        prompt = f"The following task failed. Revise the remaining plan.\n\n{json.dumps(context, indent=2)}"
+        return self.create_plan(prompt)
+
+
 def _toolcalls_to_tasks(tool_calls: list) -> list[Task]:
     tasks = []
     for i, tc in enumerate(tool_calls):
@@ -136,12 +146,3 @@ def _toolcalls_to_tasks(tool_calls: list) -> list[Task]:
             )
         )
     return tasks if tasks else [Task(id="task_1", description="No tasks generated", tool="none")]
-
-    def revise_plan(self, tasks: list[Task], failed: Task, feedback: str) -> list[Task]:
-        context = {
-            "original_tasks": [t.to_dict() for t in tasks],
-            "failed_task": failed.to_dict(),
-            "feedback": feedback,
-        }
-        prompt = f"The following task failed. Revise the remaining plan.\n\n{json.dumps(context, indent=2)}"
-        return self.create_plan(prompt)
