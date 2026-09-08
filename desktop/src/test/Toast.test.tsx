@@ -41,7 +41,7 @@ describe('Toast', () => {
   it('should dismiss toast on close click', () => {
     render(<ToastContainer />)
     act(() => { toast('info', 'Dismiss me') })
-    const close = screen.getByText('\u2715')
+    const close = screen.getByRole('button', { name: 'Dismiss notification' })
     act(() => { close.click() })
     expect(screen.queryByText('Dismiss me')).not.toBeInTheDocument()
   })
