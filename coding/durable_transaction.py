@@ -27,19 +27,9 @@ def _sha256_bytes(data: bytes) -> str:
 
 
 def _transaction_root() -> Path:
-    """
-    Store transaction journals outside the Friday workspace.
-
-    This prevents Friday's own workspace operations from accidentally
-    modifying or deleting rollback material.
-    """
-
-    root = Path(
-        tempfile.gettempdir()
-    ) / "FridayCodingTransactions"
-
+    """Store transaction journals outside the Friday workspace."""
+    root = Path(tempfile.gettempdir()) / "FridayCodingTransactions"
     root.mkdir(parents=True, exist_ok=True)
-
     return root
 
 
@@ -56,13 +46,8 @@ class DurableCodingTransaction:
     """
     Crash-resistant filesystem transaction for a Friday coding run.
 
-    Snapshot bytes are persisted outside the Friday workspace.
-
-    Rollback restores only explicitly authorized paths to their exact
-    pre-run state.
-
-    No Git reset, clean, restore, checkout, or repository-wide operation
-    is used.
+    Snapshot bytes are persisted outside the Friday workspace. Rollback
+    restores only explicitly authorized paths to their exact pre-run state.
     """
 
     FORMAT_VERSION = 1
@@ -73,7 +58,6 @@ class DurableCodingTransaction:
         transaction_id: str | None = None,
     ):
         self.workspace = Path(workspace).resolve()
-
         if not self.workspace.exists():
             raise DurableTransactionError(
                 f"Workspace does not exist: {self.workspace}"
@@ -88,19 +72,12 @@ class DurableCodingTransaction:
             or "\\" in transaction_id
             or ".." in transaction_id
         ):
-            raise DurableTransactionError(
-                "Invalid transaction ID."
-            )
+            raise DurableTransactionError("Invalid transaction ID.")
 
         self.transaction_id = transaction_id
-
-        self.storage_root = (
-            _transaction_root() / self.transaction_id
-        )
-
+        self.storage_root = _transaction_root() / self.transaction_id
         self.files_root = self.storage_root / "files"
         self.manifest_path = self.storage_root / "manifest.json"
-
         self._active = False
         self._rolled_back = False
 
@@ -114,7 +91,6 @@ class DurableCodingTransaction:
 
     def _write_manifest(self, snapshots: list[DurableSnapshot]) -> None:
         self.storage_root.mkdir(parents=True, exist_ok=True)
-
         manifest = {
             "format_version": self.FORMAT_VERSION,
             "transaction_id": self.transaction_id,
@@ -130,18 +106,11 @@ class DurableCodingTransaction:
                 for snapshot in snapshots
             ],
         }
-
         temp_manifest = self.storage_root / "manifest.tmp"
-
         temp_manifest.write_text(
-            json.dumps(
-                manifest,
-                indent=2,
-                sort_keys=True,
-            ),
+            json.dumps(manifest, indent=2, sort_keys=True),
             encoding="utf-8",
         )
-
         os.replace(temp_manifest, self.manifest_path)
 
     def _load_manifest(self) -> dict:
@@ -149,12 +118,9 @@ class DurableCodingTransaction:
             raise DurableTransactionError(
                 f"Transaction manifest is missing: {self.manifest_path}"
             )
-
         try:
             manifest = json.loads(
-                self.manifest_path.read_text(
-                    encoding="utf-8"
-                )
+                self.manifest_path.read_text(encoding="utf-8")
             )
         except (OSError, json.JSONDecodeError) as exc:
             raise DurableTransactionError(
@@ -162,34 +128,25 @@ class DurableCodingTransaction:
             ) from exc
 
         if manifest.get("format_version") != self.FORMAT_VERSION:
-            raise DurableTransactionError(
-                "Unsupported transaction manifest version."
-            )
-
+            raise DurableTransactionError("Unsupported transaction manifest version.")
         if manifest.get("transaction_id") != self.transaction_id:
-            raise DurableTransactionError(
-                "Transaction ID mismatch."
-            )
+            raise DurableTransactionError("Transaction ID mismatch.")
 
-        recorded_workspace = Path(
-            manifest.get("workspace", "")
-        ).resolve()
-
+        recorded_workspace = Path(manifest.get("workspace", "")).resolve()
         if recorded_workspace != self.workspace:
-            raise DurableTransactionError(
-                "Transaction workspace mismatch."
-            )
+            raise DurableTransactionError("Transaction workspace mismatch.")
+
+        snapshots = manifest.get("snapshots")
+        if not isinstance(snapshots, list):
+            raise DurableTransactionError("Invalid transaction snapshot manifest.")
 
         return manifest
 
     def begin(self, paths: Iterable[str | Path]) -> None:
         if self._active:
-            raise DurableTransactionError(
-                "Transaction is already active."
-            )
+            raise DurableTransactionError("Transaction is already active.")
 
         targets = list(paths)
-
         if not targets:
             raise DurableTransactionError(
                 "Transaction requires at least one authorized path."
@@ -197,48 +154,24 @@ class DurableCodingTransaction:
 
         snapshots: list[DurableSnapshot] = []
         seen: set[str] = set()
-
-        self.storage_root.mkdir(
-            parents=True,
-            exist_ok=False,
-        )
-
-        self.files_root.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        self.storage_root.mkdir(parents=True, exist_ok=False)
+        self.files_root.mkdir(parents=True, exist_ok=True)
 
         try:
             for raw_path in targets:
                 try:
-                    target = assert_safe_path(
-                        self.workspace,
-                        raw_path,
-                    )
+                    target = assert_safe_path(self.workspace, raw_path)
                 except CodingTransactionError as exc:
                     raise DurableTransactionError(str(exc)) from exc
 
-                rel = _norm(
-                    _relative(
-                        self.workspace,
-                        target,
-                    )
-                )
-
+                rel = _norm(_relative(self.workspace, target))
                 if rel in seen:
                     continue
-
                 seen.add(rel)
 
                 if not target.exists():
                     snapshots.append(
-                        DurableSnapshot(
-                            relative_path=rel,
-                            existed=False,
-                            is_file=False,
-                            sha256=None,
-                            content_file=None,
-                        )
+                        DurableSnapshot(rel, False, False, None, None)
                     )
                     continue
 
@@ -249,77 +182,40 @@ class DurableCodingTransaction:
                     )
 
                 content = target.read_bytes()
-
-                content_name = (
-                    f"{len(snapshots):08d}.bin"
-                )
-
-                content_path = (
-                    self.files_root / content_name
-                )
-
-                temp_content = (
-                    self.files_root /
-                    f"{content_name}.tmp"
-                )
-
+                content_name = f"{len(snapshots):08d}.bin"
+                content_path = self.files_root / content_name
+                temp_content = self.files_root / f"{content_name}.tmp"
                 temp_content.write_bytes(content)
-                os.replace(
-                    temp_content,
-                    content_path,
-                )
-
+                os.replace(temp_content, content_path)
                 snapshots.append(
                     DurableSnapshot(
-                        relative_path=rel,
-                        existed=True,
-                        is_file=True,
-                        sha256=_sha256_bytes(content),
-                        content_file=content_name,
+                        rel,
+                        True,
+                        True,
+                        _sha256_bytes(content),
+                        content_name,
                     )
                 )
 
             self._write_manifest(snapshots)
-
-            # Validate the persisted journal before declaring it active.
             self._load_manifest()
-
             self._active = True
             self._rolled_back = False
-
         except Exception:
-            # Do not recursively delete anything in the Friday workspace.
-            # The journal itself is outside the workspace.
             raise
 
     def authorize(self, path: str | Path) -> Path:
         if not self._active:
-            raise DurableTransactionError(
-                "Transaction has not been started."
-            )
+            raise DurableTransactionError("Transaction has not been started.")
 
         try:
-            target = assert_safe_path(
-                self.workspace,
-                path,
-            )
+            target = assert_safe_path(self.workspace, path)
         except CodingTransactionError as exc:
             raise DurableTransactionError(str(exc)) from exc
 
         manifest = self._load_manifest()
-
-        existing = {
-            item["relative_path"]
-            for item in manifest["snapshots"]
-        }
-
-        rel = _norm(
-            _relative(
-                self.workspace,
-                target,
-            )
-        )
-
+        existing = {item["relative_path"] for item in manifest["snapshots"]}
+        rel = _norm(_relative(self.workspace, target))
         if rel in existing:
             return target
 
@@ -341,53 +237,28 @@ class DurableCodingTransaction:
 
         if target.exists():
             content = target.read_bytes()
-
-            content_name = (
-                f"{len(snapshots):08d}.bin"
-            )
-
-            content_path = (
-                self.files_root / content_name
-            )
-
-            temp_content = (
-                self.files_root /
-                f"{content_name}.tmp"
-            )
-
+            content_name = f"{len(snapshots):08d}.bin"
+            content_path = self.files_root / content_name
+            temp_content = self.files_root / f"{content_name}.tmp"
             temp_content.write_bytes(content)
-            os.replace(
-                temp_content,
-                content_path,
-            )
-
+            os.replace(temp_content, content_path)
             snapshots.append(
                 DurableSnapshot(
-                    relative_path=rel,
-                    existed=True,
-                    is_file=True,
-                    sha256=_sha256_bytes(content),
-                    content_file=content_name,
+                    rel,
+                    True,
+                    True,
+                    _sha256_bytes(content),
+                    content_name,
                 )
             )
         else:
-            snapshots.append(
-                DurableSnapshot(
-                    relative_path=rel,
-                    existed=False,
-                    is_file=False,
-                    sha256=None,
-                    content_file=None,
-                )
-            )
+            snapshots.append(DurableSnapshot(rel, False, False, None, None))
 
         self._write_manifest(snapshots)
-
         return target
 
     def _snapshots(self) -> list[DurableSnapshot]:
         manifest = self._load_manifest()
-
         return [
             DurableSnapshot(
                 relative_path=item["relative_path"],
@@ -401,17 +272,13 @@ class DurableCodingTransaction:
 
     def rollback(self) -> dict[str, str]:
         if not self._active:
-            raise DurableTransactionError(
-                "Cannot rollback an inactive transaction."
-            )
+            raise DurableTransactionError("Cannot rollback an inactive transaction.")
 
         restored: dict[str, str] = {}
-
         snapshots = self._snapshots()
 
         for snapshot in snapshots:
             target = self.workspace / snapshot.relative_path
-
             target = assert_safe_path(
                 self.workspace,
                 target,
@@ -424,35 +291,21 @@ class DurableCodingTransaction:
                         "Missing snapshot content reference: "
                         f"{snapshot.relative_path}"
                     )
-
-                content_path = (
-                    self.files_root /
-                    snapshot.content_file
-                )
-
+                content_path = self.files_root / snapshot.content_file
                 if not content_path.is_file():
                     raise DurableTransactionError(
                         "Snapshot content is missing: "
                         f"{snapshot.relative_path}"
                     )
-
                 content = content_path.read_bytes()
-
                 if _sha256_bytes(content) != snapshot.sha256:
                     raise DurableTransactionError(
                         "Snapshot hash verification failed: "
                         f"{snapshot.relative_path}"
                     )
-
-                target.parent.mkdir(
-                    parents=True,
-                    exist_ok=True,
-                )
-
+                target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
-
                 restored[snapshot.relative_path] = "restored"
-
             else:
                 if target.exists():
                     if not target.is_file():
@@ -460,54 +313,34 @@ class DurableCodingTransaction:
                             "Rollback refused to delete a directory: "
                             f"{snapshot.relative_path}"
                         )
-
                     target.unlink()
-
-                    restored[
-                        snapshot.relative_path
-                    ] = "removed_created_file"
+                    restored[snapshot.relative_path] = "removed_created_file"
                 else:
-                    restored[
-                        snapshot.relative_path
-                    ] = "already_absent"
+                    restored[snapshot.relative_path] = "already_absent"
 
         self._rolled_back = True
         self._active = False
-
         return restored
 
     def verify_snapshot_state(self) -> dict[str, bool]:
         results: dict[str, bool] = {}
-
         for snapshot in self._snapshots():
             target = self.workspace / snapshot.relative_path
-
             if not snapshot.existed:
-                results[snapshot.relative_path] = (
-                    not target.exists()
-                )
+                results[snapshot.relative_path] = not target.exists()
                 continue
-
-            if not target.is_file():
+            if not target.is_file() or not snapshot.content_file:
                 results[snapshot.relative_path] = False
                 continue
-
+            content_path = self.files_root / snapshot.content_file
+            if not content_path.is_file():
+                results[snapshot.relative_path] = False
+                continue
             content = target.read_bytes()
-
             results[snapshot.relative_path] = (
-                content_path_exists(
-                    self.files_root,
-                    snapshot.content_file,
-                )
-                and _sha256_bytes(content)
-                == snapshot.sha256
-                and content
-                == (
-                    self.files_root /
-                    snapshot.content_file
-                ).read_bytes()
+                _sha256_bytes(content) == snapshot.sha256
+                and content == content_path.read_bytes()
             )
-
         return results
 
     @classmethod
@@ -516,31 +349,8 @@ class DurableCodingTransaction:
         workspace: str | Path,
         transaction_id: str,
     ) -> "DurableCodingTransaction":
-        transaction = cls(
-            workspace,
-            transaction_id=transaction_id,
-        )
-
+        transaction = cls(workspace, transaction_id=transaction_id)
         transaction._load_manifest()
-
         transaction._active = True
         transaction._rolled_back = False
-
         return transaction
-
-
-def content_path_exists(
-    files_root: Path,
-    content_file: str | None,
-) -> bool:
-    if not content_file:
-        return False
-
-    candidate = (files_root / content_file).resolve()
-
-    try:
-        candidate.relative_to(files_root.resolve())
-    except ValueError:
-        return False
-
-    return candidate.is_file()
