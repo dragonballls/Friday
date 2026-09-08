@@ -37,13 +37,15 @@ def load_provider_config() -> dict[str, Any]:
     with open(CONFIG_PATH, "rb") as f:
         cfg = tomllib.load(f)
 
-    # Override API keys from environment variables
+    # Override API keys from environment variables. Secrets never need to be
+    # committed to the repository; user-level environment variables are preferred.
     env_map = {
         "openai": ("api_key", "OPENAI_API_KEY"),
         "openrouter": ("api_key", "OPENROUTER_API_KEY"),
+        "zen_coder": ("api_key", "ZEN_CODER_API_KEY"),
     }
     for section, (field, env_var) in env_map.items():
-        if section in cfg and field in cfg[section]:
+        if section in cfg:
             resolved = _resolve_api_key(field, env_var)
             if resolved:
                 cfg[section][field] = resolved
