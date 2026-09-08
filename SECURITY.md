@@ -4,33 +4,24 @@
 
 | Version | Supported |
 |---------|-----------|
-| v2.x    | ✅ Active development |
-| v1.x    | ❌ No longer supported |
+| Current migration branch | Yes |
+| Older releases | Best effort |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Friday, please report it privately.
+If you discover a security vulnerability in Friday, please report it privately through the repository owner's GitHub account rather than opening a public issue with sensitive details.
 
-**Do not** open a public issue. Instead, send a direct message to **alimaandev** on GitHub or email the project maintainer (available via the GitHub profile).
+For this fork, the repository owner is **@dragonballls**.
 
-You should receive a response within 48 hours. If you don't, follow up with a public issue tagged `security` (without sensitive details).
+## What to include
 
-### What to include
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
 - Any suggested fix (optional)
 
-## Response Timeline
+## Repository safety
 
-- **48 hours** — Initial acknowledgment
-- **7 days** — Status update
-- **30 days** — Target resolution for confirmed vulnerabilities
+The canonical working branch for the current migration is kept separate from `main` until verification is complete. Changes should be reviewed and verified before they are promoted to the protected branch.
 
-## Scope
-
-This policy covers the Friday codebase hosted at https://github.com/alimaandev/Friday. It does not cover third-party dependencies — report those to their respective maintainers.
-
-## Preferred Languages
-
-English, please.
+GitHub repository administrators should enable branch protection or rulesets on `main` with required pull requests, required status checks, disabled force pushes, and disabled branch deletion.
