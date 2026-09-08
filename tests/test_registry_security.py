@@ -25,3 +25,15 @@ def test_permission_rule_command_prefix_is_case_insensitive():
     result = permissions.check_tool("run_command", {"command": "GIT STATUS --short"})
 
     assert result["allowed"] is False
+
+
+def test_legacy_registration_respects_excluded_names():
+    marker = object()
+    assert registry.register_tool("browse_secret", marker) is False
+    assert "browse_secret" not in registry.get_tool_map()
+
+
+def test_legacy_registration_respects_exact_exclusions():
+    marker = object()
+    assert registry.register_tool("close_browser", marker) is False
+    assert "close_browser" not in registry.get_tool_map()
