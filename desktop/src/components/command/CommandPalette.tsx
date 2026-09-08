@@ -68,9 +68,16 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
         if (!dialog) return
         const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])'))
         if (!focusable.length) return
-        const current = document.activeElement
-        const index = focusable.indexOf(current as HTMLElement)
-        if (e.shiftKey && (index <= 0 || current === dialog)) {
+        const current = document.activeElement as HTMLElement | null
+        const index = current ? focusable.indexOf(current) : -1
+
+        if (index === -1) {
+          e.preventDefault()
+          focusable[e.shiftKey ? focusable.length - 1 : 0].focus()
+          return
+        }
+
+        if (e.shiftKey && index === 0) {
           e.preventDefault()
           focusable[focusable.length - 1].focus()
         } else if (!e.shiftKey && index === focusable.length - 1) {
