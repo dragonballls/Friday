@@ -215,6 +215,13 @@ class SafeExecutorAdapter:
             )
 
         except Exception as exc:
+            error_text = str(exc)
+            try:
+                task.status = "failed"
+                task.error = error_text
+            except Exception:
+                pass
+
             unexpected: list[str] = []
             try:
                 unexpected = list(self.run.unexpected_changes())
@@ -232,7 +239,7 @@ class SafeExecutorAdapter:
                 "type": "coding_transaction",
                 "status": "rolled_back",
                 "transaction_id": self.transaction_id,
-                "error": str(exc),
+                "error": error_text,
                 "unexpected_changes": unexpected,
             }
 
