@@ -21,7 +21,6 @@ BANNER = r"""
 """
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
 AUTO_UPDATE_INTERVAL = 60
-DEFAULT_UI_PORT = 5173
 
 
 def get_terminal_width() -> int:
@@ -87,39 +86,36 @@ def _terminate_processes(procs: list[subprocess.Popen]):
                 pass
 
 
-def _start_ui_processes(desktop: str, port: int) -> list[subprocess.Popen]:
+def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-    front_cmd = ["npm", "run", "dev", "--", "--port", str(port)]
+    front_cmd = ["npm", "run", "dev"]
     if sys.platform == "win32":
-        front_cmd = ["cmd", "/c", "npm", "run", "dev", "--", "--port", str(port)]
-    child_env = os.environ.copy()
-    child_env["FRIDAY_UI_PORT"] = str(port)
-    child_env["FRONTEND_ORIGIN"] = f"http://localhost:{port}"
+        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
     procs: list[subprocess.Popen] = []
-    api = subprocess.Popen(api_cmd, cwd=desktop, env=child_env)
+    api = subprocess.Popen(api_cmd, cwd=desktop)
     procs.append(api)
     time.sleep(2.0)
-    front = subprocess.Popen(front_cmd, cwd=desktop, env=child_env, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
+    front = subprocess.Popen(front_cmd, cwd=desktop, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
     procs.append(front)
     return procs
 
 
-def _launch_ui(port: int = DEFAULT_UI_PORT):
+def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
     root = os.path.dirname(os.path.abspath(__file__))
     desktop = os.path.join(root, "desktop")
     print_colored(BANNER, "36")
     print_colored("─" * get_terminal_width(), "90")
-    print_colored(f"Launching Friday desktop UI on port {port}…  (Ctrl+C to stop everything)", "33")
+    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
     print_colored("─" * get_terminal_width(), "90")
     update_event = threading.Event()
     stop_event = threading.Event()
     _start_auto_update_monitor(root, update_event, stop_event)
     procs: list[subprocess.Popen] = []
     try:
-        procs = _start_ui_processes(desktop, port)
+        procs = _start_ui_processes(desktop)
         time.sleep(5.0)
-        webbrowser.open(f"http://localhost:{port}")
+        webbrowser.open("http://localhost:5173")
         while True:
             time.sleep(1.0)
             if update_event.is_set():
@@ -133,14 +129,14 @@ def _launch_ui(port: int = DEFAULT_UI_PORT):
                 print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
                 update_event.clear()
                 _start_auto_update_monitor(root, update_event, stop_event)
-                procs = _start_ui_processes(desktop, port)
+                procs = _start_ui_processes(desktop)
             elif any(p.poll() is not None for p in procs):
                 print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
                 _terminate_processes(procs)
                 procs.clear()
                 time.sleep(2.0)
-                procs = _start_ui_processes(desktop, port)
-                webbrowser.open(f"http://localhost:{port}")
+                procs = _start_ui_processes(desktop)
+                webbrowser.open("http://localhost:5173")
     except KeyboardInterrupt:
         print_colored("\nShutting down Friday UI…", "33")
     finally:
@@ -153,12 +149,9 @@ def main():
     parser.add_argument("--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)")
     parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls")
     parser.add_argument("--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)")
-    parser.add_argument("--port", type=int, default=DEFAULT_UI_PORT, help=f"Frontend UI port when using --ui (default: {DEFAULT_UI_PORT})")
     args = parser.parse_args()
-    if args.port < 1024 or args.port > 65535:
-        parser.error("--port must be between 1024 and 65535")
     if args.ui:
-        _launch_ui(args.port)
+        _launch_ui()
         return
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
