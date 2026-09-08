@@ -28,18 +28,10 @@ class BoundedRepairLoop:
     """
     Safe orchestration primitive for automatic coding repair.
 
-    The loop deliberately does not:
-      - mutate files directly
-      - perform Git reset/clean operations
-      - own coding transactions
-      - bypass SafeExecutorAdapter
-      - modify the existing Executor
-
-    The supplied run_attempt callback is responsible for performing
-    one complete safe coding attempt.
-
-    A failed attempt must already have been rolled back by the
-    transaction owner before the next attempt begins.
+    The loop deliberately does not mutate files directly, perform Git reset/clean
+    operations, own coding transactions, bypass SafeExecutorAdapter, or modify
+    the existing Executor. The supplied run_attempt callback owns one complete
+    safe coding attempt and must roll it back before another attempt begins.
     """
 
     def __init__(
@@ -51,10 +43,7 @@ class BoundedRepairLoop:
         should_repair: Callable[[int, Any], bool] | None = None,
     ) -> None:
         if max_attempts < 1:
-            raise RepairLoopError(
-                "max_attempts must be at least 1."
-            )
-
+            raise RepairLoopError("max_attempts must be at least 1.")
         self.max_attempts = int(max_attempts)
         self.run_attempt = run_attempt
         self.repair = repair
@@ -63,27 +52,17 @@ class BoundedRepairLoop:
     @staticmethod
     def _success(result: Any) -> bool:
         if isinstance(result, dict):
-            return bool(result.get("success", False))
-
+            return result.get("success", False) is True
         value = getattr(result, "success", None)
-
-        if value is not None:
-            return bool(value)
-
-        return False
+        return value is True
 
     @staticmethod
     def _error(result: Any) -> str | None:
         if isinstance(result, dict):
             value = result.get("error")
             return None if value is None else str(value)
-
         value = getattr(result, "error", None)
-
-        if value is None:
-            return None
-
-        return str(value)
+        return None if value is None else str(value)
 
     def run(self) -> RepairLoopResult:
         attempts: list[RepairAttempt] = []
@@ -91,8 +70,6 @@ class BoundedRepairLoop:
         last_error: str | None = None
 
         for attempt_number in range(1, self.max_attempts + 1):
-            repaired = False
-
             try:
                 result = self.run_attempt(attempt_number)
                 last_result = result
@@ -102,11 +79,8 @@ class BoundedRepairLoop:
                         RepairAttempt(
                             attempt=attempt_number,
                             success=True,
-                            error=None,
-                            repaired=repaired,
                         )
                     )
-
                     return RepairLoopResult(
                         success=True,
                         attempts=tuple(attempts),
@@ -116,72 +90,52 @@ class BoundedRepairLoop:
                 last_error = self._error(result) or (
                     f"Repair attempt {attempt_number} failed."
                 )
-
                 attempts.append(
                     RepairAttempt(
                         attempt=attempt_number,
                         success=False,
                         error=last_error,
-                        repaired=False,
                     )
                 )
-
             except Exception as exc:
                 last_error = str(exc)
-
                 attempts.append(
                     RepairAttempt(
                         attempt=attempt_number,
                         success=False,
                         error=last_error,
-                        repaired=False,
                     )
                 )
-
                 last_result = None
 
             if attempt_number >= self.max_attempts:
                 break
 
             allow_repair = True
-
             if self.should_repair is not None:
-                allow_repair = bool(
-                    self.should_repair(
+                try:
+                    allow_repair = self.should_repair(
                         attempt_number,
                         last_result,
-                    )
-                )
+                    ) is True
+                except Exception as exc:
+                    last_error = f"Repair policy failed: {exc}"
+                    break
 
-            if not allow_repair:
-                break
-
-            if self.repair is None:
+            if not allow_repair or self.repair is None:
                 break
 
             try:
-                self.repair(
-                    attempt_number,
-                    last_result,
-                )
-                repaired = True
-
-                # Replace the attempt record with the accurate
-                # repaired flag without mutating the frozen object.
+                self.repair(attempt_number, last_result)
                 previous = attempts[-1]
-
                 attempts[-1] = RepairAttempt(
                     attempt=previous.attempt,
                     success=previous.success,
                     error=previous.error,
                     repaired=True,
                 )
-
             except Exception as exc:
-                last_error = (
-                    f"Repair preparation failed: {exc}"
-                )
-
+                last_error = f"Repair preparation failed: {exc}"
                 break
 
         return RepairLoopResult(
