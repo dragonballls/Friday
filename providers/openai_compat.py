@@ -28,6 +28,11 @@ def _is_retryable_err(e: Exception) -> bool:
             "not found",
             "404",
             "no endpoints found",
+            "temporarily unavailable",
+            "service unavailable",
+            "502",
+            "503",
+            "504",
         )
     ):
         return True
@@ -344,3 +349,7 @@ class OpenAICompatibleProvider(BaseProvider):
 register_provider("openai", OpenAICompatibleProvider)
 register_provider("openrouter", OpenAICompatibleProvider)
 register_provider("openai_compatible", OpenAICompatibleProvider)
+# OpenCode Zen exposes an OpenAI-compatible API. Friday uses this provider only
+# for coding tasks when ZEN_CODER_API_KEY is present; the LLM layer handles the
+# provider-level fallback without exposing or persisting the secret.
+register_provider("zen_coder", OpenAICompatibleProvider)
