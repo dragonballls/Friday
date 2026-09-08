@@ -49,6 +49,11 @@ export const InputBar = memo(function InputBar({
     }
   }, [value, loading, onSend])
 
+  const clear = useCallback(() => {
+    setValue('')
+    inputRef.current?.focus()
+  }, [])
+
   const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -99,7 +104,7 @@ export const InputBar = memo(function InputBar({
               }}
               placeholder={`Message ${personaName}...`}
               disabled={loading}
-              className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-32 placeholder:text-neutral-600"
+              className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-40 placeholder:text-neutral-600"
               style={{
                 color: '#e5e5e5',
                 minHeight: '56px',
@@ -139,9 +144,7 @@ export const InputBar = memo(function InputBar({
                   }}
                   className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90"
                   style={{
-                    background: isListening
-                      ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-                      : 'var(--surface)',
+                    background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)',
                     color: isListening ? '#fff' : '#a0a0a8',
                     boxShadow: isListening ? '0 0 16px rgba(239,68,68,0.3)' : 'none',
                     border: isListening ? 'none' : '1px solid var(--glass-border)',
@@ -193,6 +196,22 @@ export const InputBar = memo(function InputBar({
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>
               </button>
+
+              {value && (
+                <button
+                  onClick={clear}
+                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
+                  style={{
+                    background: 'var(--surface)',
+                    color: '#a0a0a8',
+                    border: '1px solid var(--glass-border)',
+                  }}
+                  title="Clear message"
+                  aria-label="Clear message"
+                >
+                  ×
+                </button>
+              )}
 
               <button
                 onClick={send}
