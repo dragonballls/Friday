@@ -33,21 +33,23 @@ def start_hotkey_listener(hotkey: str = DEFAULT_HOTKEY, url: str = FRONTEND_URL)
         webbrowser.open(url)
 
     def _loop():
+        global _enabled
         try:
             keyboard.add_hotkey(hotkey, _handler)
+            _enabled = True
             info(f"Global hotkey active: {hotkey} → {url}")
             keyboard.wait()
         except Exception as e:  # noqa: BLE001
+            _enabled = False
             info(f"Global hotkey listener stopped: {e}")
 
     _thread = threading.Thread(target=_loop, daemon=True, name="friday-hotkey")
     _thread.start()
-    _enabled = True
     return True
 
 
 def stop_hotkey_listener():
-    global _enabled
+    global _enabled, _thread
     if _enabled:
         try:
             import keyboard  # type: ignore
@@ -56,3 +58,4 @@ def stop_hotkey_listener():
         except Exception:  # noqa: BLE001
             pass
         _enabled = False
+    _thread = None
