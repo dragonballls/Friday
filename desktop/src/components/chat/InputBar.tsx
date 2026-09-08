@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, memo } from 'react'
 import { QuickActions } from './QuickActions'
 
 const LANG_LABELS: Record<string, string> = { 'en-US': 'EN', 'hi-IN': 'HI', 'ur-PK': 'UR' }
+const MAX_ATTACH_BYTES = 1024 * 1024
 
 const SUGGESTIONS = [
   { label: 'Explain', action: 'Explain this concept in simple terms' },
@@ -82,6 +83,11 @@ export const InputBar = memo(function InputBar({
     inputRef.current?.focus()
   }, [])
 
+  const applyQuickAction = useCallback((prompt: string) => {
+    setValue(v => v.trim() ? `${prompt} ${v.trim()}` : `${prompt} `)
+    inputRef.current?.focus()
+  }, [])
+
   const finishVoice = useCallback(() => {
     voicePointerRef.current = null
     const transcript = onVoiceStop()
@@ -133,15 +139,26 @@ export const InputBar = memo(function InputBar({
   const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    e.target.value = ''
+
+    if (file.size > MAX_ATTACH_BYTES) {
+      setValue(v => v ? `${v}\n[File too large: ${file.name} — maximum 1 MB]` : `[File too large: ${file.name} — maximum 1 MB]`)
+      inputRef.current?.focus()
+      return
+    }
+
     const reader = new FileReader()
     reader.onload = () => {
-      const text = reader.result as string
+      const text = typeof reader.result === 'string' ? reader.result : ''
       const header = `[File: ${file.name}]\n~~~\n${text}\n~~~\n\n`
       setValue(v => v + header)
       inputRef.current?.focus()
     }
+    reader.onerror = () => {
+      setValue(v => v ? `${v}\n[Unable to read file: ${file.name}]` : `[Unable to read file: ${file.name}]`)
+      inputRef.current?.focus()
+    }
     reader.readAsText(file)
-    e.target.value = ''
   }, [])
 
   const isListening = voiceStatus === 'listening'
@@ -179,22 +196,11 @@ export const InputBar = memo(function InputBar({
               disabled={loading}
               aria-label={`Message ${personaName}`}
               className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-4 sm:pl-5 pr-3 sm:pr-40 placeholder:text-neutral-600"
-              style={{
-                color: '#e5e5e5',
-                minHeight: '56px',
-                maxHeight: '160px',
-                fontWeight: 350,
-                letterSpacing: '0.01em',
-                overflowY: 'hidden',
-              }}
+              style={{ color: '#e5e5e5', minHeight: '56px', maxHeight: '160px', fontWeight: 350, letterSpacing: '0.01em', overflowY: 'hidden' }}
             />
 
             {isListening && voiceInterim && (
-              <div
-                className="absolute left-4 sm:left-5 right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-xs truncate pointer-events-none glass blue-border"
-                style={{ color: 'var(--blue-bright)' }}
-                aria-live="polite"
-              >
+              <div className="absolute left-4 sm:left-5 right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-xs truncate pointer-events-none glass blue-border" style={{ color: 'var(--blue-bright)' }} aria-live="polite">
                 {voiceInterim}
               </div>
             )}
@@ -222,132 +228,38 @@ export const InputBar = memo(function InputBar({
                   onBlur={cancelKeyboardVoice}
                   aria-label={isListening ? 'Release to send voice message' : 'Hold to speak'}
                   className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90 shrink-0 touch-none select-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                  style={{
-                    background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)',
-                    color: isListening ? '#fff' : '#a0a0a8',
-                    boxShadow: isListening ? '0 0 16px rgba(239,68,68,0.3)' : 'none',
-                    border: isListening ? 'none' : '1px solid var(--glass-border)',
-                  }}
+                  style={{ background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)', color: isListening ? '#fff' : '#a0a0a8', boxShadow: isListening ? '0 0 16px rgba(239,68,68,0.3)' : 'none', border: isListening ? 'none' : '1px solid var(--glass-border)' }}
                   title={isListening ? 'Release to send' : 'Hold to speak'}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
                 </button>
               )}
 
               {isVoiceSupported && (
-                <button
-                  type="button"
-                  onClick={onCycleLanguage}
-                  aria-label={`Voice language ${voiceLanguage}. Click to cycle.`}
-                  className="h-9 w-8 rounded-xl flex items-center justify-center transition-all duration-200 text-[10px] font-bold tracking-wider shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                  style={{
-                    color: isListening ? 'var(--gold)' : '#606068',
-                    border: `1px solid ${isListening ? 'rgba(245,158,11,0.25)' : 'var(--glass-border)'}`,
-                    background: 'transparent',
-                  }}
-                  title={`Voice language: ${voiceLanguage}. Click to cycle.`}
-                >
-                  {LANG_LABELS[voiceLanguage] || 'EN'}
-                </button>
+                <button type="button" onClick={onCycleLanguage} aria-label={`Voice language ${voiceLanguage}. Click to cycle.`} className="h-9 w-8 rounded-xl flex items-center justify-center transition-all duration-200 text-[10px] font-bold tracking-wider shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ color: isListening ? 'var(--gold)' : '#606068', border: `1px solid ${isListening ? 'rgba(245,158,11,0.25)' : 'var(--glass-border)'}`, background: 'transparent' }} title={`Voice language: ${voiceLanguage}. Click to cycle.`}>{LANG_LABELS[voiceLanguage] || 'EN'}</button>
               )}
 
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".txt,.md,.json,.csv,.py,.js,.ts,.jsx,.tsx,.html,.css,.yaml,.yml,.xml,.sh,.env,.toml,.ini,.cfg,.log"
-                onChange={handleFilePick}
-                style={{ display: 'none' }}
-                aria-label="Attach a text file"
-              />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                aria-label="Attach file"
-                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                style={{
-                  background: 'var(--surface)',
-                  color: '#a0a0a8',
-                  border: '1px solid var(--glass-border)',
-                }}
-                title="Attach file"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                </svg>
+              <input ref={fileRef} type="file" accept=".txt,.md,.json,.csv,.py,.js,.ts,.jsx,.tsx,.html,.css,.yaml,.yml,.xml,.sh,.env,.toml,.ini,.cfg,.log" onChange={handleFilePick} style={{ display: 'none' }} aria-label="Attach a text file" />
+              <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach file" className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ background: 'var(--surface)', color: '#a0a0a8', border: '1px solid var(--glass-border)' }} title="Attach file">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49 8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
               </button>
 
               {value && (
-                <button
-                  type="button"
-                  onClick={clear}
-                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                  style={{
-                    background: 'var(--surface)',
-                    color: '#a0a0a8',
-                    border: '1px solid var(--glass-border)',
-                  }}
-                  title="Clear message"
-                  aria-label="Clear message"
-                >
-                  ×
-                </button>
+                <button type="button" onClick={clear} className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ background: 'var(--surface)', color: '#a0a0a8', border: '1px solid var(--glass-border)' }} title="Clear message" aria-label="Clear message">×</button>
               )}
 
-              <button
-                type="button"
-                onClick={send}
-                disabled={!value.trim() || loading}
-                aria-label="Send message"
-                title="Send message"
-                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-500 hover:scale-105 active:scale-95 disabled:opacity-25 disabled:hover:scale-100 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                style={{
-                  background: 'linear-gradient(135deg, var(--blue), var(--blue-bright))',
-                  color: '#000',
-                  fontWeight: 600,
-                  fontSize: '16px',
-                  boxShadow: value.trim() ? '0 2px 12px var(--blue-glow)' : 'none',
-                }}
-              >
-                {'\u2191'}
-              </button>
+              <button type="button" onClick={send} disabled={!value.trim() || loading} aria-label="Send message" title="Send message" className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-500 hover:scale-105 active:scale-95 disabled:opacity-25 disabled:hover:scale-100 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ background: 'linear-gradient(135deg, var(--blue), var(--blue-bright))', color: '#000', fontWeight: 600, fontSize: '16px', boxShadow: value.trim() ? '0 2px 12px var(--blue-glow)' : 'none' }}>{'\u2191'}</button>
             </div>
           </div>
 
           {!value.trim() && !loading && (
             <div className="flex items-center gap-1.5 px-4 sm:px-5 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
               {SUGGESTIONS.map(s => (
-                <button
-                  key={s.label}
-                  type="button"
-                  onClick={() => { setValue(s.action); inputRef.current?.focus() }}
-                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-150 active:scale-95 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
-                  style={{
-                    color: '#777',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    background: 'rgba(255,255,255,0.02)',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = 'rgba(245,158,11,0.08)'
-                    e.currentTarget.style.borderColor = 'rgba(245,158,11,0.2)'
-                    e.currentTarget.style.color = '#f59e0b'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'
-                    e.currentTarget.style.color = '#777'
-                  }}
-                >
-                  {s.label}
-                </button>
+                <button key={s.label} type="button" onClick={() => { setValue(s.action); inputRef.current?.focus() }} className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-150 active:scale-95 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" style={{ color: '#777', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>{s.label}</button>
               ))}
             </div>
           )}
-          <QuickActions onAction={onSend} disabled={loading} />
+          <QuickActions onAction={applyQuickAction} disabled={loading} />
         </div>
       </div>
     </div>
