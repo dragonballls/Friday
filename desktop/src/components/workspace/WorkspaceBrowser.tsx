@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type FileEntry = {
   name: string
@@ -28,6 +28,24 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const filterRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        filterRef.current?.focus()
+        filterRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
 
   const loadDirectory = useCallback(async (directory: FileSystemDirectoryHandle, path: string[]) => {
     setLoading(true)
@@ -149,22 +167,22 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex items-center gap-2">
             <label className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/[.04] border border-white/[.06]">
-              <span className="text-white/30">⌕</span>
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter files" aria-label="Filter workspace files" className="w-36 bg-transparent outline-none text-xs text-white placeholder:text-white/25" />
+              <span className="text-white/30" aria-hidden="true">⌕</span>
+              <input ref={filterRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter files" aria-label="Filter workspace files" className="w-36 bg-transparent outline-none text-xs text-white placeholder:text-white/25" />
             </label>
-            <button type="button" onClick={chooseWorkspace} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs text-[#D4A040] bg-[#D4A040]/10 hover:bg-[#D4A040]/15 disabled:opacity-50">{loading ? 'Opening…' : root ? 'Change folder' : 'Open folder'}</button>
-            <button type="button" onClick={onClose} aria-label="Close workspace" className="w-8 h-8 rounded-lg text-white/50 hover:text-white hover:bg-white/[.06]">×</button>
+            <button type="button" onClick={chooseWorkspace} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs text-[#D4A040] bg-[#D4A040]/10 hover:bg-[#D4A040]/15 disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">{loading ? 'Opening…' : root ? 'Change folder' : 'Open folder'}</button>
+            <button type="button" onClick={onClose} aria-label="Close workspace" title="Close workspace (Esc)" className="w-8 h-8 rounded-lg text-white/50 hover:text-white hover:bg-white/[.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">×</button>
           </div>
         </div>
 
-        {error && <div className="mx-4 mt-3 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-500/10 border border-red-500/20">{error}</div>}
+        {error && <div className="mx-4 mt-3 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-500/10 border border-red-500/20" role="alert">{error}</div>}
 
         <div className="flex flex-1 min-h-0 flex-col md:flex-row">
           <section className="md:w-[46%] min-h-0 flex flex-col border-b md:border-b-0 md:border-r border-white/[.06]">
             <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[.05] overflow-x-auto">
-              <button type="button" onClick={() => jumpToPath(0)} disabled={!root} className="shrink-0 text-[11px] text-white/55 hover:text-white">{rootName}</button>
-              {currentPath.map((segment, index) => <span key={`${segment}-${index}`} className="shrink-0 text-white/20 text-[10px]">/ <button type="button" onClick={() => jumpToPath(index + 1)} className="text-white/45 hover:text-white">{segment}</button></span>)}
-              <button type="button" onClick={goBack} disabled={!root || currentPath.length === 0} className="ml-auto shrink-0 px-2 py-1 rounded text-[10px] text-white/45 hover:text-white hover:bg-white/[.05] disabled:opacity-20" aria-label="Go to parent directory">↑ Up</button>
+              <button type="button" onClick={() => jumpToPath(0)} disabled={!root} className="shrink-0 text-[11px] text-white/55 hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">{rootName}</button>
+              {currentPath.map((segment, index) => <span key={`${segment}-${index}`} className="shrink-0 text-white/20 text-[10px]">/ <button type="button" onClick={() => jumpToPath(index + 1)} className="text-white/45 hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">{segment}</button></span>)}
+              <button type="button" onClick={goBack} disabled={!root || currentPath.length === 0} className="ml-auto shrink-0 px-2 py-1 rounded text-[10px] text-white/45 hover:text-white hover:bg-white/[.05] disabled:opacity-20 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]" aria-label="Go to parent directory">↑ Up</button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2">
               {!root ? (
@@ -177,8 +195,8 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
               ) : (
                 <div className="space-y-0.5">
                   {filteredEntries.map(entry => (
-                    <button key={entry.path} type="button" onClick={() => void openEntry(entry)} className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-white/[.05] ${selected?.path === entry.path ? 'bg-white/[.07]' : ''}`}>
-                      <span className="w-5 text-center text-xs text-[#D4A040]">{entry.kind === 'directory' ? '▸' : '•'}</span>
+                    <button key={entry.path} type="button" onClick={() => void openEntry(entry)} className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-white/[.05] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040] ${selected?.path === entry.path ? 'bg-white/[.07]' : ''}`}>
+                      <span className="w-5 text-center text-xs text-[#D4A040]" aria-hidden="true">{entry.kind === 'directory' ? '▸' : '•'}</span>
                       <span className="text-xs text-white/75 truncate">{entry.name}</span>
                       <span className="ml-auto text-[10px] text-white/20">{entry.kind === 'directory' ? 'folder' : 'file'}</span>
                     </button>
@@ -195,10 +213,10 @@ function WorkspaceBrowser({ onClose }: { onClose: () => void }) {
                 <div className="text-xs text-white/70 truncate">{selected?.path || 'File preview'}</div>
                 <div className="text-[10px] text-white/25">{selected ? 'Read-only browser preview' : 'Select a file from the explorer'}</div>
               </div>
-              {selected && <button type="button" onClick={() => { setSelected(null); setPreview(null) }} className="text-[10px] text-white/40 hover:text-white">Clear</button>}
+              {selected && <button type="button" onClick={() => { setSelected(null); setPreview(null) }} className="text-[10px] text-white/40 hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]">Clear</button>}
             </div>
             <div className="flex-1 min-h-0 overflow-auto p-4">
-              {previewLoading ? <div className="text-xs text-white/35">Loading preview…</div> : preview != null ? <pre className="whitespace-pre-wrap break-words text-[11px] leading-5 text-white/65 font-mono">{preview}</pre> : <div className="h-full flex items-center justify-center text-xs text-white/25 text-center px-8">Workspace files are opened read-only here. Select a text file to inspect it without modifying your local folder.</div>}
+              {previewLoading ? <div className="text-xs text-white/35" role="status">Loading preview…</div> : preview != null ? <pre className="whitespace-pre-wrap break-words text-[11px] leading-5 text-white/65 font-mono">{preview}</pre> : <div className="h-full flex items-center justify-center text-xs text-white/25 text-center px-8">Workspace files are opened read-only here. Select a text file to inspect it without modifying your local folder.</div>}
             </div>
           </section>
         </div>
