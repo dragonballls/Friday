@@ -20,7 +20,6 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
   const [visible, setVisible] = useState(true)
   const dialogRef = useRef<HTMLDivElement>(null)
   const firstSuggestionRef = useRef<HTMLButtonElement>(null)
-  const dismissButtonRef = useRef<HTMLButtonElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
 
   const dismiss = () => {
@@ -120,7 +119,6 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
 
         <div className="flex justify-center">
           <button
-            ref={dismissButtonRef}
             type="button"
             onClick={dismiss}
             className="px-5 py-2 rounded-lg text-[12px] font-mono tracking-widest transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
