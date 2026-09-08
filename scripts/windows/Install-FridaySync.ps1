@@ -6,20 +6,22 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $syncScript = Join-Path $repoRoot 'scripts\windows\Sync-Friday.ps1'
-$taskName = 'Friday GitHub Sync'
+$runName = 'Friday GitHub Sync'
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 if (-not (Test-Path $syncScript)) { throw "Missing $syncScript" }
 
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$syncScript`""
-$logonTrigger = New-ScheduledTaskTrigger -AtLogOn
-$intervalTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+# Task Scheduler can be blocked by local Windows policy even for per-user tasks.
+# HKCU\Run is user-scoped and requires no administrator rights, so use it as the
+# durable mechanism for the sync daemon.
+$command = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$syncScript`" -Daemon"
+New-Item -Path $runKey -Force | Out-Null
+Set-ItemProperty -Path $runKey -Name $runName -Value $command
 
-Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($logonTrigger,$intervalTrigger) -Settings $settings -Principal $principal -Description 'Keeps the local Friday checkout synchronized with GitHub main without overwriting tracked local edits.' | Out-Null
+if ($StartNow) {
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',"$syncScript",'-Daemon'
+}
 
-if ($StartNow) { Start-ScheduledTask -TaskName $taskName }
-Write-Host "Installed: $taskName"
+Write-Host "Installed: $runName"
 Write-Host "Repository: $repoRoot"
-Write-Host "Schedule: at logon and every 2 minutes"
+Write-Host "Schedule: at Windows logon and every 2 minutes while signed in"
