@@ -8,7 +8,6 @@ export interface ToastItem {
 }
 
 type Listener = (toasts: ToastItem[]) => void
-
 type HistoryListener = (history: ToastItem[]) => void
 
 const MAX_HISTORY = 50
@@ -42,7 +41,7 @@ export function toast(kind: ToastKind, message: string, ttl = 4500) {
   history = [item, ...history].slice(0, MAX_HISTORY)
   notify()
   notifyHistory()
-  window.setTimeout(() => {
+  globalThis.setTimeout(() => {
     current = current.filter(t => t.id !== item.id)
     notify()
   }, Math.max(0, ttl))
