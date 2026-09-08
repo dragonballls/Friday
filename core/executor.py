@@ -129,9 +129,25 @@ class Executor:
 
                 tool_summary = []
                 for tc in tool_calls:
-                    func_name = tc["function"]["name"]
+                    if not isinstance(tc, dict):
+                        result = {"error": "Invalid tool call: expected an object"}
+                        tool_summary.append({"name": "unknown", "args": "", "result": json.dumps(result)})
+                        continue
+
+                    function = tc.get("function")
+                    if not isinstance(function, dict):
+                        result = {"error": "Invalid tool call: missing function object"}
+                        tool_summary.append({"name": "unknown", "args": "", "result": json.dumps(result)})
+                        continue
+
+                    func_name = function.get("name")
+                    if not isinstance(func_name, str) or not func_name:
+                        result = {"error": "Invalid tool call: missing function name"}
+                        tool_summary.append({"name": "unknown", "args": "", "result": json.dumps(result)})
+                        continue
+
                     tc_id = tc.get("id", "")
-                    raw_args = tc["function"]["arguments"]
+                    raw_args = function.get("arguments", {})
                     try:
                         if isinstance(raw_args, str):
                             args = json.loads(raw_args)
@@ -147,11 +163,24 @@ class Executor:
                                 "content": json.dumps(result, ensure_ascii=False),
                             }
                         )
+                        tool_summary.append({"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]})
+                        continue
+
+                    if not isinstance(args, dict):
+                        result = {"error": "Invalid tool arguments: expected a JSON object"}
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc_id,
+                                "content": json.dumps(result, ensure_ascii=False),
+                            }
+                        )
+                        tool_summary.append({"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]})
                         continue
 
                     if self.output_dir and func_name == "write_file" and "path" in args:
                         p = args["path"]
-                        if not os.path.isabs(p):
+                        if isinstance(p, str) and not os.path.isabs(p):
                             args["path"] = os.path.join(self.output_dir, p)
 
                     handler = self._tool_map.get(func_name)
