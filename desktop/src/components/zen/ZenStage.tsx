@@ -74,6 +74,7 @@ export const ZenStage = memo(function ZenStage({
   const visual = PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday
   const displayName = greeting || visual.name
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const lastContent = messages[messages.length - 1]?.content
   const [momentOpen, setMomentOpen] = useState(false)
 
@@ -83,10 +84,22 @@ export const ZenStage = memo(function ZenStage({
     if (!end || !container) return
 
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    setShowJumpToLatest(distanceFromBottom > 180)
     if (distanceFromBottom < 180) {
       end.scrollIntoView({ behavior: messages.length > 1 ? 'smooth' : 'auto', block: 'end' })
     }
   }, [messages.length, lastContent])
+
+  const handleChatScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const container = event.currentTarget
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    setShowJumpToLatest(distanceFromBottom > 180)
+  }
+
+  const jumpToLatest = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    setShowJumpToLatest(false)
+  }
 
   return (
     <div className="relative flex flex-col h-full min-w-0">
@@ -208,7 +221,10 @@ export const ZenStage = memo(function ZenStage({
         </div>
       )}
       {messages.length > 0 && (
-        <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-4 sm:px-8 pb-4">
+        <div
+          className="relative w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-4 sm:px-8 pb-4"
+          onScroll={handleChatScroll}
+        >
           {messages.map((m, idx) => (
             <MessageBubble
               key={m.id}
@@ -219,6 +235,22 @@ export const ZenStage = memo(function ZenStage({
             />
           ))}
           <div ref={messagesEndRef} />
+          {showJumpToLatest && (
+            <button
+              type="button"
+              onClick={jumpToLatest}
+              className="sticky bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-medium tracking-wide backdrop-blur-md transition-all hover:bg-white/[.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
+              style={{ color: '#e5e5e5', background: 'rgba(18,18,18,0.88)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 6px 24px rgba(0,0,0,0.3)' }}
+              aria-label="Jump to latest message"
+              title="Jump to latest message"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14" />
+                <path d="m19 12-7 7-7-7" />
+              </svg>
+              Latest
+            </button>
+          )}
         </div>
       )}
 
