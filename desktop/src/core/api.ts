@@ -485,10 +485,24 @@ export function connectEventSource(
   let es: EventSource | null = null
   let closed = false
   let retryDelay = 1000
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let dropTimer: ReturnType<typeof setTimeout> | null = null
+  let reportedOffline = false
   const MAX_RETRY = 30000
+  // A dropped stream is only surfaced once this elapses, so brief blips and
+  // background-tab throttling never flash a disconnected state.
+  const DROP_GRACE = 4000
+
+  function clearDropTimer() {
+    if (dropTimer !== null) {
+      clearTimeout(dropTimer)
+      dropTimer = null
+    }
+  }
 
   function connect() {
     if (closed) return
+    retryTimer = null
     const key = getApiKey()
     const url = key ? `${API_BASE}/events?key=${encodeURIComponent(key)}` : `${API_BASE}/events`
     es = new EventSource(url)
@@ -504,25 +518,57 @@ export function connectEventSource(
 
     es.onopen = () => {
       retryDelay = 1000
+      clearDropTimer()
+      reportedOffline = false
       onStatus?.(true)
     }
 
     es.onerror = () => {
       es?.close()
       es = null
-      onStatus?.(false)
-      onError?.()
       if (closed) return
+      if (!reportedOffline && dropTimer === null) {
+        dropTimer = setTimeout(() => {
+          dropTimer = null
+          reportedOffline = true
+          onStatus?.(false)
+          onError?.()
+        }, DROP_GRACE)
+      }
       const delay = retryDelay
       retryDelay = Math.min(retryDelay * 2, MAX_RETRY)
-      setTimeout(connect, delay)
+      retryTimer = setTimeout(connect, delay)
     }
   }
+
+  // Waking from sleep or returning to the tab should retry now rather than
+  // sitting out the remainder of a backed-off delay.
+  function reconnectNow() {
+    if (closed || es !== null) return
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    retryDelay = 1000
+    connect()
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'visible') reconnectNow()
+  }
+
+  window.addEventListener('online', reconnectNow)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   connect()
 
   return () => {
     closed = true
+    window.removeEventListener('online', reconnectNow)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    if (retryTimer !== null) clearTimeout(retryTimer)
+    retryTimer = null
+    clearDropTimer()
     es?.close()
     es = null
   }

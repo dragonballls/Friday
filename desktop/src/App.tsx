@@ -56,7 +56,7 @@ function App() {
   const [backendOnline, setBackendOnline] = useState(true)
   const [outputDir, setOutputDirState] = useState(() => localStorage.getItem('friday_output_dir') || '')
   const [dataLoaded, setDataLoaded] = useState(false)
-  const [sseConnected, setSseConnected] = useState(false)
+  const [sseConnected, setSseConnected] = useState(true)
   const [alerts, setAlerts] = useState<ProactiveAlert[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
 const [briefing, setBriefing] = useState<{ summary: string; sections: string[]; greeting: string; yesterday?: string } | null>(null)
