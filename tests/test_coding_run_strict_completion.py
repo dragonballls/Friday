@@ -15,7 +15,8 @@ def test_finish_rejects_non_boolean_gate_values(tmp_path):
             test_passed="false",
             review_passed=True,
             final_verification_passed=True,
-        )\    except CodingRunError:
+        )
+    except CodingRunError:
         pass
     else:
         raise AssertionError("Non-boolean gate value must fail closed.")
