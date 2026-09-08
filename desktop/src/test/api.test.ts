@@ -18,7 +18,7 @@ describe('fetchApi', () => {
     const result = await fetchApi('/health')
     expect(result).toEqual({ status: 'ok' })
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:8080/api/v1/health',
+      'http://127.0.0.1:8080/api/v1/health',
       expect.objectContaining({
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
