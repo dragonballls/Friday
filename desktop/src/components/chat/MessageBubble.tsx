@@ -16,6 +16,7 @@ function ToolCallCard({ name, args, result }: { name: string; args: string; resu
   return (
     <div className="mt-2 rounded-xl text-xs font-mono overflow-hidden glass">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[rgba(255,255,255,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]"
         style={{ color: '#a0a0a8' }}
@@ -108,6 +109,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, index: id
         {!m.streaming && m.content && (
           <>
             <button
+              type="button"
               onClick={handleCopy}
               className="h-7 w-7 rounded-lg flex items-center justify-center text-[11px] transition-all hover:scale-105 active:scale-95 glass glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]"
               style={{ color: copied ? '#22c55e' : '#a0a0a8' }}
@@ -118,6 +120,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, index: id
             </button>
             {isAssistant && onRegenerate && (
               <button
+                type="button"
                 onClick={onRegenerate}
                 className="h-7 w-7 rounded-lg flex items-center justify-center text-xs transition-all hover:scale-105 active:scale-95 glass glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]"
                 style={{ color: '#a0a0a8' }}
@@ -131,6 +134,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, index: id
         )}
         {isAssistant && m.streaming && onStop && (
           <button
+            type="button"
             onClick={onStop}
             className="h-7 w-7 rounded-lg flex items-center justify-center text-xs transition-all hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
             style={{ background: 'rgba(239,68,68,0.12)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.15)' }}
