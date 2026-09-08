@@ -20,7 +20,7 @@ BANNER = r"""
                 |___/
 """
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
-AUTO_UPDATE_INTERVAL = 300
+AUTO_UPDATE_INTERVAL = 60
 
 def get_terminal_width() -> int:
     return shutil.get_terminal_size((80, 20)).columns
@@ -32,10 +32,14 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
     """Watch origin/main while the UI supervisor is alive."""
     raw_interval = os.environ.get("FRIDAY_AUTO_UPDATE_INTERVAL", str(AUTO_UPDATE_INTERVAL))
     try:
-        interval = max(30, int(raw_interval))
+        interval = max(15, int(raw_interval))
     except ValueError:
         interval = AUTO_UPDATE_INTERVAL
-    while not stop_event.wait(interval):
+    first_check = True
+    while not stop_event.is_set():
+        if not first_check and stop_event.wait(interval):
+            return
+        first_check = False
         try:
             branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
             if branch != "main":
