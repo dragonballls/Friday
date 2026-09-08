@@ -3,14 +3,12 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-const devPort = Number(process.env.FRIDAY_UI_PORT || 5173)
-
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/Friday/' : '/',
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: {
-    port: Number.isFinite(devPort) && devPort >= 1024 && devPort <= 65535 ? devPort : 5173,
+    port: 5173,
     strictPort: true,
   },
   build: {
