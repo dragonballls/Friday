@@ -84,6 +84,24 @@ def test_multiple_files_restore_independently(tmp_path):
     assert second.read_bytes() == second_original
 
 
+def test_case_distinct_paths_are_tracked_independently(tmp_path):
+    upper = tmp_path / "Config.py"
+    lower = tmp_path / "config.py"
+    upper.write_text("UPPER", encoding="utf-8")
+    lower.write_text("LOWER", encoding="utf-8")
+
+    transaction = SafeCodingTransaction(tmp_path)
+    transaction.begin(["Config.py", "config.py"])
+
+    upper.write_text("CHANGED UPPER", encoding="utf-8")
+    lower.write_text("CHANGED LOWER", encoding="utf-8")
+
+    transaction.rollback()
+
+    assert upper.read_text(encoding="utf-8") == "UPPER"
+    assert lower.read_text(encoding="utf-8") == "LOWER"
+
+
 def test_preexisting_dirty_file_is_not_replaced_by_git_head(tmp_path):
     target = tmp_path / "planner.py"
 
