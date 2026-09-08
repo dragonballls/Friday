@@ -1,6 +1,7 @@
 import argparse
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -16,7 +17,7 @@ BANNER = r"""
  |  ___(_) __| |_   _| | ___
  | |_  | |/ _` | | | | |/ _ \
  |  _| | | (_| | |_| | |  __/
- |_|   |_|\__,_|\__, |_|\___|
+ |_|   |_|\__,_|\__,_| |\___|
                 |___/
 """
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
@@ -86,18 +87,45 @@ def _terminate_processes(procs: list[subprocess.Popen]):
                 pass
 
 
+def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float = 30.0) -> None:
+    """Wait until a child service accepts connections, or fail with its exit code."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {proc.returncode}).")
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return
+        except OSError as exc:
+            last_error = exc
+        time.sleep(0.25)
+    raise RuntimeError(f"Friday UI service did not become ready on {host}:{port} within {timeout:.0f}s ({last_error}).")
+
+
 def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-    front_cmd = ["npm", "run", "dev"]
     if sys.platform == "win32":
-        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
+        npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
+        if not npm_cmd:
+            raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
+        front_cmd = [npm_cmd, "run", "dev"]
+    else:
+        front_cmd = ["npm", "run", "dev"]
+
     procs: list[subprocess.Popen] = []
-    api = subprocess.Popen(api_cmd, cwd=desktop)
-    procs.append(api)
-    time.sleep(2.0)
-    front = subprocess.Popen(front_cmd, cwd=desktop, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
-    procs.append(front)
-    return procs
+    try:
+        api = subprocess.Popen(api_cmd, cwd=desktop)
+        procs.append(api)
+        _wait_for_port("127.0.0.1", 8080, api)
+
+        front = subprocess.Popen(front_cmd, cwd=desktop)
+        procs.append(front)
+        _wait_for_port("127.0.0.1", 5173, front)
+        return procs
+    except Exception:
+        _terminate_processes(procs)
+        raise
 
 
 def _launch_ui():
@@ -114,7 +142,6 @@ def _launch_ui():
     procs: list[subprocess.Popen] = []
     try:
         procs = _start_ui_processes(desktop)
-        time.sleep(5.0)
         webbrowser.open("http://localhost:5173")
         while True:
             time.sleep(1.0)
@@ -141,6 +168,8 @@ def _launch_ui():
                 webbrowser.open("http://localhost:5173")
     except KeyboardInterrupt:
         print_colored("\nShutting down Friday UI…", "33")
+    except RuntimeError as exc:
+        print_colored(f"\nFriday UI startup failed: {exc}", "31")
     finally:
         stop_event.set()
         _terminate_processes(procs)
