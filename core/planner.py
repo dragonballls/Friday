@@ -137,12 +137,21 @@ def _toolcalls_to_tasks(tool_calls: list) -> list[Task]:
         fn = tc.get("function", tc.function if hasattr(tc, "function") else {})
         name = fn.get("name", fn.name if hasattr(fn, "name") else "?")
         args = fn.get("arguments", fn.arguments if hasattr(fn, "arguments") else {})
+
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {}
+        if not isinstance(args, dict):
+            args = {}
+
         tasks.append(
             Task(
                 id=f"task_{i + 1}",
                 description=f"Execute {name}",
                 tool=name,
-                args=args if isinstance(args, dict) else {},
+                args=args,
             )
         )
     return tasks if tasks else [Task(id="task_1", description="No tasks generated", tool="none")]
