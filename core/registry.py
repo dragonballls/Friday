@@ -2,7 +2,7 @@ import importlib
 import inspect
 import os
 import pkgutil
-from typing import Any
+from typing import Any, get_origin
 
 from core.logger import info, warn
 from plugins.base import ToolPlugin
@@ -140,14 +140,17 @@ def _register_functions_from_module(module):
                     required.append(pname)
                 if param.annotation is not inspect.Parameter.empty:
                     ann = param.annotation
+                    origin = get_origin(ann)
                     if ann is int:
                         prop["type"] = "integer"
                     elif ann is float:
                         prop["type"] = "number"
                     elif ann is bool:
                         prop["type"] = "boolean"
-                    elif ann is list:
+                    elif ann is list or origin is list:
                         prop["type"] = "array"
+                    elif ann is dict or origin is dict:
+                        prop["type"] = "object"
                 properties[pname] = prop
             _TOOL_DEFINITIONS.append(
                 {
