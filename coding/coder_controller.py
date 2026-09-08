@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from coding.coding_handoff import CodingHandoff
 from coding.coding_run import CodingRunError
@@ -113,8 +113,6 @@ class RealCoderController:
         if result is None:
             return None
 
-        # The actual Agent bridge is a generator because it yields
-        # Executor/transaction events to the caller.
         if hasattr(result, "__next__"):
             iterator = result
 
@@ -137,22 +135,16 @@ class RealCoderController:
         before BoundedRepairLoop starts the next attempt.
         """
 
-        last_result: Any = None
-        attempt_results: list[Any] = []
-
         def run_attempt(attempt_number: int) -> Any:
-            nonlocal last_result
-
             try:
-                result = self.execute_coder(
-                    self.handoff,
-                    self.run_tests,
-                    self.run_review,
-                    self.final_verify,
+                result = self._consume_execution_result(
+                    self.execute_coder(
+                        self.handoff,
+                        self.run_tests,
+                        self.run_review,
+                        self.final_verify,
+                    )
                 )
-
-                last_result = result
-                attempt_results.append(result)
 
                 if result is None:
                     return {
@@ -170,44 +162,22 @@ class RealCoderController:
                     return {
                         "success": False,
                         "error": (
-                            self._get_value(
-                                result,
-                                "error",
-                            )
-                            or
-                            f"Coding attempt {attempt_number} did not complete."
+                            self._get_value(result, "error")
+                            or f"Coding attempt {attempt_number} did not complete."
                         ),
                     }
 
-                return {
-                    "success": True,
-                    "result": result,
-                }
+                return {"success": True, "result": result}
 
             except Exception as exc:
-                last_result = None
-
-                return {
-                    "success": False,
-                    "error": str(exc),
-                }
+                return {"success": False, "error": str(exc)}
 
         def repair(attempt_number: int, failed_result: Any) -> Any:
-            """
-            Repair preparation is deliberately delegated to the Agent
-            bridge. The controller itself never edits files.
-            """
-
-            repair_callback = getattr(
-                self,
-                "repair_coder",
-                None,
-            )
+            repair_callback = getattr(self, "repair_coder", None)
 
             if repair_callback is None:
                 raise CoderControllerError(
-                    "No repair callback is available; "
-                    "coding repair fails closed."
+                    "No repair callback is available; coding repair fails closed."
                 )
 
             return repair_callback(
@@ -216,74 +186,40 @@ class RealCoderController:
                 failed_result,
             )
 
-        # The controller currently receives the repair capability
-        # through an optional attribute installed by the Agent bridge.
-        #
-        # If no repair callback exists, the first failed attempt is
-        # intentionally not retried.
-        repair_callback = getattr(
-            self,
-            "repair_coder",
-            None,
-        )
+        repair_callback = getattr(self, "repair_coder", None)
 
         loop = BoundedRepairLoop(
             max_attempts=3,
             run_attempt=run_attempt,
-            repair=(
-                repair
-                if repair_callback is not None
-                else None
-            ),
+            repair=repair if repair_callback is not None else None,
         )
 
         loop_result = loop.run()
 
         if not loop_result.success:
-            error = (
-                loop_result.error
-                or
-                "Bounded coding repair loop failed."
-            )
-
-            raise CoderControllerError(
-                f"Coding completion gate failed: {error}"
-            )
+            error = loop_result.error or "Bounded coding repair loop failed."
+            raise CoderControllerError(f"Coding completion gate failed: {error}")
 
         execution_result = loop_result.final_result
 
         if isinstance(execution_result, dict):
-            execution_result = execution_result.get(
-                "result",
-                execution_result,
-            )
+            execution_result = execution_result.get("result", execution_result)
 
         if execution_result is None:
             raise CoderControllerError(
                 "Coding repair loop completed without a final result."
             )
 
-        transaction_id = self._get_value(
-            execution_result,
-            "transaction_id",
-        )
+        transaction_id = self._get_value(execution_result, "transaction_id")
 
         if not transaction_id:
             raise CoderControllerError(
                 "Coding executor did not provide a transaction ID."
             )
 
-        changed_paths = self._get_value(
-            execution_result,
-            "changed_paths",
-            [],
-        )
-
+        changed_paths = self._get_value(execution_result, "changed_paths", [])
         changed_paths = tuple(
-            sorted(
-                str(path)
-                for path in (changed_paths or [])
-            )
+            sorted(str(path) for path in (changed_paths or []))
         )
 
         tests_ok = self._get_value(execution_result, "tests_ok", None)
@@ -309,9 +245,9 @@ class RealCoderController:
             )
         ):
             raise CoderControllerError(
-                "Coding completion gate failed: "
-                "execution result did not explicitly verify "
-                "implementation, tests, review, and final verification."
+                "Coding completion gate failed: execution result did not "
+                "explicitly verify implementation, tests, review, and "
+                "final verification."
             )
 
         return CoderResult(
@@ -322,6 +258,8 @@ class RealCoderController:
             review_ok=review_ok,
             final_verification_ok=final_verification_ok,
         )
+
+
 def create_coder_controller(
     *,
     workspace: str | Path,
