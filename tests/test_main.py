@@ -62,17 +62,23 @@ def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
             pass
 
     class FakeThread:
+        starts: list["FakeThread"] = []
+
         def __init__(self, target, args, **_kwargs):
             self._target = target
             self._args = args
 
         def start(self):
-            self._target(*self._args)
+            self.starts.append(self)
+            # Simulate the initial monitor discovering an update. The restarted
+            # monitor is allowed to start without running synchronously in the
+            # caller, matching threading.Thread's real asynchronous behavior.
+            if len(self.starts) == 1:
+                self._target(*self._args)
 
     def fake_monitor(_root, update_event, _stop_event):
         monitor_calls.append(1)
-        if len(monitor_calls) == 1:
-            update_event.set()
+        update_event.set()
 
     def fake_popen(cmd, **_kwargs):
         spawned.append(cmd)
@@ -91,4 +97,5 @@ def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
     _launch_ui()
 
     assert len(spawned) == 4
-    assert len(monitor_calls) == 2
+    assert len(monitor_calls) == 1
+    assert len(FakeThread.starts) == 2
