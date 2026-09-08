@@ -112,6 +112,55 @@ class DurableCodingTransaction:
         )
         os.replace(temp_manifest, self.manifest_path)
 
+    @staticmethod
+    def _validate_snapshot_entry(item: object) -> None:
+        if not isinstance(item, dict):
+            raise DurableTransactionError("Invalid transaction snapshot entry.")
+
+        required = {
+            "relative_path",
+            "existed",
+            "is_file",
+            "sha256",
+            "content_file",
+        }
+        if set(item) != required:
+            raise DurableTransactionError("Invalid transaction snapshot entry.")
+
+        relative_path = item["relative_path"]
+        existed = item["existed"]
+        is_file = item["is_file"]
+        sha256 = item["sha256"]
+        content_file = item["content_file"]
+
+        if not isinstance(relative_path, str) or not relative_path:
+            raise DurableTransactionError("Invalid transaction snapshot path.")
+        if not isinstance(existed, bool) or not isinstance(is_file, bool):
+            raise DurableTransactionError("Invalid transaction snapshot flags.")
+        if existed and not is_file:
+            raise DurableTransactionError(
+                "Invalid transaction snapshot: existing targets must be files."
+            )
+        if not existed and (is_file or sha256 is not None or content_file is not None):
+            raise DurableTransactionError(
+                "Invalid transaction snapshot: absent targets cannot have file data."
+            )
+        if existed:
+            if (
+                not isinstance(sha256, str)
+                or len(sha256) != 64
+                or any(char not in "0123456789abcdef" for char in sha256)
+            ):
+                raise DurableTransactionError("Invalid transaction snapshot hash.")
+            if not isinstance(content_file, str) or not content_file:
+                raise DurableTransactionError(
+                    "Invalid transaction snapshot content reference."
+                )
+        elif sha256 is not None or content_file is not None:
+            raise DurableTransactionError(
+                "Invalid transaction snapshot content metadata."
+            )
+
     def _load_manifest(self) -> dict:
         if not self.manifest_path.is_file():
             raise DurableTransactionError(
@@ -140,6 +189,8 @@ class DurableCodingTransaction:
         snapshots = manifest.get("snapshots")
         if not isinstance(snapshots, list):
             raise DurableTransactionError("Invalid transaction snapshot manifest.")
+        for item in snapshots:
+            self._validate_snapshot_entry(item)
 
         return manifest
 
@@ -228,8 +279,8 @@ class DurableCodingTransaction:
         snapshots = [
             DurableSnapshot(
                 relative_path=item["relative_path"],
-                existed=bool(item["existed"]),
-                is_file=bool(item["is_file"]),
+                existed=item["existed"],
+                is_file=item["is_file"],
                 sha256=item["sha256"],
                 content_file=item["content_file"],
             )
@@ -263,8 +314,8 @@ class DurableCodingTransaction:
         return [
             DurableSnapshot(
                 relative_path=item["relative_path"],
-                existed=bool(item["existed"]),
-                is_file=bool(item["is_file"]),
+                existed=item["existed"],
+                is_file=item["is_file"],
                 sha256=item["sha256"],
                 content_file=item["content_file"],
             )
