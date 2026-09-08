@@ -6,11 +6,20 @@ from typing import Any
 def _format_tool_list(defs: list[dict]) -> str:
     lines = []
     for d in defs:
+        if not isinstance(d, dict):
+            continue
         fn = d.get("function", {})
+        if not isinstance(fn, dict):
+            fn = {}
         name = fn.get("name", "?")
         desc = fn.get("description", "")
-        params = fn.get("parameters", {}).get("properties", {})
-        args_str = ", ".join(params.keys()) if params else "(no args)"
+        params = fn.get("parameters", {})
+        if not isinstance(params, dict):
+            params = {}
+        properties = params.get("properties", {})
+        if not isinstance(properties, dict):
+            properties = {}
+        args_str = ", ".join(str(key) for key in properties) if properties else "(no args)"
         lines.append(f"  - {name}({args_str}): {desc}")
     return "\n".join(lines)
 
@@ -34,7 +43,7 @@ Example 1: "open notepad and write hello world to a file"
 
 Example 2: "what year is it?"
 [
-  {{"id": "task_1", "description": "Get current datetime", "tool": "get_current_datetime", "args": {{}}, "dependencies": []}}
+  {{"id": "task_1", "description": "Get current datetime", "tool": "get_current_datetime", "args": {{}} , "dependencies": []}}
 ]
 
 Example 3: "hello how are you"
@@ -65,6 +74,7 @@ class Task:
 def _parse_tasks(text: str) -> list[Task]:
     import re
 
+    text = str(text or "")
     match = re.search(r"\[.*\]", text, re.DOTALL)
     if not match:
         return [Task(id="task_1", description=text.strip()[:200], tool="none")]
@@ -83,13 +93,19 @@ def _parse_tasks(text: str) -> list[Task]:
             dependencies = item.get("dependencies", [])
             if not isinstance(dependencies, list):
                 dependencies = []
+            task_id = item.get("id", f"task_{len(tasks) + 1}")
+            if not isinstance(task_id, str) or not task_id.strip():
+                task_id = f"task_{len(tasks) + 1}"
+            tool = item.get("tool")
+            if tool is not None and not isinstance(tool, str):
+                tool = str(tool)
             tasks.append(
                 Task(
-                    id=item.get("id", f"task_{len(tasks) + 1}"),
+                    id=task_id,
                     description=str(item.get("description", "")),
-                    tool=item.get("tool"),
+                    tool=tool,
                     args=args,
-                    dependencies=dependencies,
+                    dependencies=[str(dep) for dep in dependencies],
                 )
             )
         return tasks if tasks else [Task(id="task_1", description=text.strip()[:200], tool="none")]
@@ -121,16 +137,18 @@ class Planner:
         content = ""
         tool_calls = None
         for event in self._llm(messages, tools=self._tool_defs or None):
-            if event["type"] == "tokens":
-                content += event["content"]
-            elif event["type"] == "done":
-                content = event["content"]
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("type")
+            if event_type == "tokens":
+                content += str(event.get("content") or "")
+            elif event_type == "done":
+                content = str(event.get("content") or content)
                 tool_calls = event.get("tool_calls")
 
         if tool_calls:
             return _toolcalls_to_tasks(tool_calls)
         return _parse_tasks(content)
-
 
     def revise_plan(self, tasks: list[Task], failed: Task, feedback: str) -> list[Task]:
         context = {
@@ -143,16 +161,30 @@ class Planner:
 
 
 def _toolcalls_to_tasks(tool_calls: list) -> list[Task]:
+    if isinstance(tool_calls, dict):
+        tool_calls = [tool_calls]
+    if not isinstance(tool_calls, (list, tuple)):
+        return [Task(id="task_1", description="No tasks generated", tool="none")]
+
     tasks = []
     for i, tc in enumerate(tool_calls):
-        fn = tc.get("function", tc.function if hasattr(tc, "function") else {})
-        name = fn.get("name", fn.name if hasattr(fn, "name") else "?")
-        args = fn.get("arguments", fn.arguments if hasattr(fn, "arguments") else {})
+        if isinstance(tc, dict):
+            fn = tc.get("function", {})
+        else:
+            fn = getattr(tc, "function", {})
+        if isinstance(fn, dict):
+            name = fn.get("name", "?")
+            args = fn.get("arguments", {})
+        else:
+            name = getattr(fn, "name", "?")
+            args = getattr(fn, "arguments", {})
 
+        if not isinstance(name, str) or not name.strip():
+            name = "?"
         if isinstance(args, str):
             try:
                 args = json.loads(args)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 args = {}
         if not isinstance(args, dict):
             args = {}
