@@ -1,4 +1,5 @@
 const POLL_INTERVAL = 60_000
+const MIN_POLL_INTERVAL = 1_000
 const ASSET_PATTERN = /(?:src|href)="([^"]+\.(?:js|css))"/g
 
 function fingerprintOf(html: string): string {
@@ -21,7 +22,10 @@ export interface UpdateWatcherOptions {
 }
 
 export function watchForUpdates(options: UpdateWatcherOptions = {}): () => void {
-  const intervalMs = options.intervalMs ?? POLL_INTERVAL
+  const requestedInterval = options.intervalMs ?? POLL_INTERVAL
+  const intervalMs = Number.isFinite(requestedInterval)
+    ? Math.max(MIN_POLL_INTERVAL, requestedInterval)
+    : POLL_INTERVAL
   const onUpdate = options.onUpdate ?? (() => window.location.reload())
   let stopped = false
   let baseline: string | null = null
