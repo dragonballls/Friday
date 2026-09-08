@@ -17,6 +17,7 @@ export function AlertToast({ alert, onDismiss }: AlertToastProps) {
   const removeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dismissedRef = useRef(false)
   const sev = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS.info
+  const liveRole = alert.severity === 'warning' ? 'alert' : 'status'
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true))
@@ -45,6 +46,8 @@ export function AlertToast({ alert, onDismiss }: AlertToastProps) {
   return (
     <div
       className="pointer-events-auto transition-all duration-300"
+      role={liveRole}
+      aria-atomic="true"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(-12px)',
