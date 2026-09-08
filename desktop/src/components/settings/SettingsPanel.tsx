@@ -41,7 +41,6 @@ export function SettingsPanel({
   personaPrompt = '',
   onSetPersonaPrompt = () => {},
 }: SettingsPanelProps) {
-  const ref = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [plugins, setPlugins] = useState<MarketplacePlugin[] | null>(null)
   const [pluginMsg, setPluginMsg] = useState('')
@@ -77,7 +76,7 @@ export function SettingsPanel({
       const res = await createCustomTool(toolDesc)
       if (res.error) setToolMsg(`Error: ${res.error}`)
       else {
-        setToolMsg(`Built tool "${res.tool?.name}"`)
+        setToolMsg(`Built tool \"${res.tool?.name}\"`)
         setToolDesc('')
       }
       setCustomTools(await getCustomTools().catch(() => []))
@@ -150,7 +149,6 @@ export function SettingsPanel({
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        ref={ref}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
@@ -190,7 +188,7 @@ export function SettingsPanel({
               {voiceLanguage}
             </button>
           </div>
-          {toggleRow('Wake Word ("Hey Friday")', wakeWordActive, onToggleWakeWord)}
+          {toggleRow('Wake Word (\"Hey Friday\")', wakeWordActive, onToggleWakeWord)}
           <div className="flex items-center justify-between gap-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
             <span className="min-w-0 text-sm" style={{ color: '#ccc' }}>Voice Personality</span>
             <div className="flex max-w-[65%] gap-1 overflow-x-auto overscroll-contain py-0.5">
