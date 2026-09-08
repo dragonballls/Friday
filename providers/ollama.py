@@ -1,4 +1,3 @@
-import json
 import time
 from collections.abc import Generator
 from typing import Any
@@ -95,8 +94,6 @@ class OllamaProvider(BaseProvider):
             stream_started = time.monotonic()
 
             for chunk in stream:
-                # Guard the streaming loop itself so a provider that stops
-                # producing data cannot leave Friday hanging indefinitely.
                 if time.monotonic() - stream_started > self._timeout:
                     raise TimeoutError(
                         f"Ollama stream exceeded timeout of {self._timeout:.1f}s"
@@ -122,10 +119,7 @@ class OllamaProvider(BaseProvider):
 
                     now = time.monotonic()
 
-                    if (
-                        now - last_flush >= 0.05
-                        or len(buffer) >= 5
-                    ):
+                    if now - last_flush >= 0.05 or len(buffer) >= 5:
                         text = "".join(buffer)
                         buffer.clear()
                         last_flush = now
@@ -168,7 +162,6 @@ class OllamaProvider(BaseProvider):
                             "id",
                             "",
                         )
-
 
                         normalized.append(
                             {

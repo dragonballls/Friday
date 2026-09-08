@@ -29,7 +29,7 @@ const canvasContext = {
 }
 
 const originalGetContext = HTMLCanvasElement.prototype.getContext
-HTMLCanvasElement.prototype.getContext = function (contextId: string, ...args: unknown[]) {
+HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) {
   if (contextId === '2d') return canvasContext as unknown as CanvasRenderingContext2D
   return originalGetContext.call(this, contextId as never, ...args as never[])
 } as typeof HTMLCanvasElement.prototype.getContext
