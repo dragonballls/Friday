@@ -119,6 +119,36 @@ def test_generator_execution_result_is_consumed(tmp_path):
     assert result.changed_paths == ("feature.py",)
 
 
+@pytest.mark.parametrize(
+    "failed_gate",
+    ["implementation_ok", "tests_ok", "review_ok", "final_verification_ok"],
+)
+def test_completed_execution_cannot_bypass_failed_gate(tmp_path, failed_gate):
+    handoff = make_handoff(tmp_path)
+    target = tmp_path / "feature.py"
+    target.write_text("implemented\n", encoding="utf-8")
+
+    kwargs = {
+        "completed": True,
+        "transaction_id": f"txn-{failed_gate}",
+        "changed_paths": ["feature.py"],
+        failed_gate: False,
+    }
+    execution = FakeExecutionResult(**kwargs)
+
+    controller = RealCoderController(
+        workspace=tmp_path,
+        handoff=handoff,
+        execute_coder=lambda _, *gate_callbacks: execution,
+        run_tests=lambda _: True,
+        run_review=lambda _: True,
+        final_verify=lambda _: True,
+    )
+
+    with pytest.raises(CoderControllerError):
+        controller.run()
+
+
 def test_failed_tests_roll_back(tmp_path):
     handoff = make_handoff(tmp_path)
 
