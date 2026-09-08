@@ -35,6 +35,7 @@ export const InputBar = memo(function InputBar({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const voicePointerRef = useRef<number | null>(null)
+  const voiceKeyboardRef = useRef(false)
 
   useEffect(() => {
     if (draft == null) return
@@ -90,8 +91,30 @@ export const InputBar = memo(function InputBar({
     }
   }, [onSend, onVoiceStop])
 
+  const startKeyboardVoice = useCallback(() => {
+    if (voiceKeyboardRef.current || voicePointerRef.current !== null || voiceStatus === 'listening') return
+    voiceKeyboardRef.current = true
+    onVoiceStart()
+  }, [onVoiceStart, voiceStatus])
+
+  const stopKeyboardVoice = useCallback(() => {
+    if (!voiceKeyboardRef.current) return
+    voiceKeyboardRef.current = false
+    const transcript = onVoiceStop()
+    if (transcript.trim()) {
+      setValue('')
+      onSend(transcript.trim())
+    }
+  }, [onSend, onVoiceStop])
+
+  const cancelKeyboardVoice = useCallback(() => {
+    if (!voiceKeyboardRef.current) return
+    voiceKeyboardRef.current = false
+    onVoiceStop()
+  }, [onVoiceStop])
+
   const handleVoicePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    if (voicePointerRef.current !== null) return
+    if (voicePointerRef.current !== null || voiceKeyboardRef.current) return
     voicePointerRef.current = e.pointerId
     e.currentTarget.setPointerCapture?.(e.pointerId)
     onVoiceStart()
@@ -184,6 +207,19 @@ export const InputBar = memo(function InputBar({
                   onPointerUp={handleVoicePointerUp}
                   onPointerCancel={handleVoicePointerCancel}
                   onContextMenu={e => e.preventDefault()}
+                  onKeyDown={e => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+                      e.preventDefault()
+                      startKeyboardVoice()
+                    }
+                  }}
+                  onKeyUp={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      stopKeyboardVoice()
+                    }
+                  }}
+                  onBlur={cancelKeyboardVoice}
                   aria-label={isListening ? 'Release to send voice message' : 'Hold to speak'}
                   className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90 shrink-0 touch-none select-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
                   style={{
