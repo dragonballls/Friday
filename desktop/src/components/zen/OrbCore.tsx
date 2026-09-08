@@ -73,6 +73,9 @@ export const OrbCore = memo(function OrbCore({
       <div
         className="relative flex max-w-[calc(100%-2rem)] min-w-0 items-center gap-2 px-3 py-1.5 rounded-full glass animate-fade-in"
         style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
         aria-label={`Friday status: ${isOnline ? (ORB_STATE_LABELS[orbState] ?? orbState.toUpperCase()) : 'OFFLINE'}${location ? `, ${location}` : ''}`}
       >
         <span
