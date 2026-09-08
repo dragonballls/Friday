@@ -22,3 +22,16 @@ def test_only_mutations_use_safe_coding_boundary(tmp_path):
 
 def test_write_file_without_path_is_not_sent_to_transaction():
     assert not _is_coding_task(TaskStub("write_file", "write code", {"content": "x=1"}))
+
+
+def test_explicit_implementation_language_uses_safe_boundary(tmp_path):
+    path = str(tmp_path / "feature.py")
+
+    for description in (
+        "implement feature",
+        "add feature",
+        "create feature",
+        "refactor feature",
+        "fix feature",
+    ):
+        assert _is_coding_task(TaskStub("none", description, {"path": path}))
