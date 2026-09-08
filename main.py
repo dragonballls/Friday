@@ -145,7 +145,18 @@ def _launch_ui():
         stop_event.set()
         _terminate_processes(procs)
 
+
 def main():
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
+        try:
+            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(description="Friday — AI Assistant")
     parser.add_argument("--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)")
     parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls")
@@ -154,9 +165,6 @@ def main():
     if args.ui:
         _launch_ui()
         return
-    if sys.platform == "win32":
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stdin.reconfigure(encoding="utf-8")
     lang = args.lang
     label = LANG_LABELS.get(lang, "English")
     print_colored(BANNER, "36")
@@ -174,6 +182,7 @@ def main():
         except ImportError:
             return
         close_browser()
+
 
 def _repl_loop(agent: Agent):
     while True:
@@ -213,6 +222,7 @@ def _repl_loop(agent: Agent):
                     print_colored(f"  🛠 {t['name']}({t['args']})", "90")
                     print_colored(f"     Result: {t['result']}", "90")
         print("\n")
+
 
 def _voice_loop(agent: Agent):
     if not is_voice_available():
@@ -254,6 +264,7 @@ def _voice_loop(agent: Agent):
             print_colored(f"Voice error: {e}", "31")
             return
 
+
 def _handle_command(cmd: str, agent: Agent):
     cmd = cmd.lower().strip()
     if cmd in ("/exit", "/quit"):
@@ -283,6 +294,7 @@ def _handle_command(cmd: str, agent: Agent):
         _print_help(agent.language)
     else:
         print_colored(f"Unknown: {cmd}. Type /help for commands.", "31")
+
 
 def _print_help(lang: str):
     if lang == "english":
