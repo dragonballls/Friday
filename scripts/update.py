@@ -2,8 +2,9 @@
 """Safely update a Friday source checkout from its configured Git remote.
 
 The updater never resets, force-checks out, or overwrites local changes. It only
-performs a fast-forward merge when the entire working tree is clean, then can
-reinstall frontend dependencies and rebuild the desktop bundle.
+performs a fast-forward merge when the checkout is clean and is currently on
+the requested branch. It can optionally reinstall frontend dependencies and
+rebuild the desktop bundle after an update.
 """
 
 from __future__ import annotations
@@ -42,6 +43,19 @@ def working_tree_is_clean() -> bool:
     return True
 
 
+def current_branch() -> str | None:
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
@@ -52,6 +66,10 @@ def main() -> int:
     if shutil.which("git") is None:
         print("git is required", file=sys.stderr)
         return 1
+    branch = current_branch()
+    if branch != args.branch:
+        print(f"Refusing to update branch '{branch or 'detached HEAD'}'; expected '{args.branch}'.", file=sys.stderr)
+        return 4
     if not working_tree_is_clean():
         return 2
     if run(["git", "fetch", "--prune", args.remote, args.branch]) != 0:
