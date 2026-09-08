@@ -60,7 +60,7 @@ export const InputBar = memo(function InputBar({
     const reader = new FileReader()
     reader.onload = () => {
       const text = reader.result as string
-      const header = `[File: ${file.name}]\n\`\`\`\n${text}\n\`\`\`\n\n`
+      const header = `[File: ${file.name}]\n\\`\\`\\`\n${text}\n\\`\\`\\`\n\n`
       setValue(v => v + header)
       if (inputRef.current) {
         inputRef.current.focus()
@@ -75,10 +75,10 @@ export const InputBar = memo(function InputBar({
   const borderColor = isListening ? 'rgba(245,158,11,0.4)' : focused ? 'rgba(245,158,11,0.2)' : 'var(--glass-border)'
 
   return (
-    <div className="flex justify-center px-8 pb-6 pt-3">
-      <div className="w-full max-w-[720px]">
+    <div className="flex justify-center px-4 sm:px-8 pb-4 sm:pb-6 pt-3">
+      <div className="w-full max-w-[720px] min-w-0">
         <div
-          className="rounded-2xl transition-all duration-300 glass"
+          className="rounded-2xl transition-all duration-300 glass overflow-hidden"
           style={{
             border: `1px solid ${borderColor}`,
             boxShadow: isListening
@@ -104,7 +104,8 @@ export const InputBar = memo(function InputBar({
               }}
               placeholder={`Message ${personaName}...`}
               disabled={loading}
-              className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-5 pr-40 placeholder:text-neutral-600"
+              aria-label={`Message ${personaName}`}
+              className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed py-4 pl-4 sm:pl-5 pr-3 sm:pr-40 placeholder:text-neutral-600"
               style={{
                 color: '#e5e5e5',
                 minHeight: '56px',
@@ -116,14 +117,15 @@ export const InputBar = memo(function InputBar({
 
             {isListening && voiceInterim && (
               <div
-                className="absolute left-5 right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-xs truncate pointer-events-none glass blue-border"
+                className="absolute left-4 sm:left-5 right-3 sm:right-24 bottom-full mb-1 px-3 py-1.5 rounded-lg text-xs truncate pointer-events-none glass blue-border"
                 style={{ color: 'var(--blue-bright)' }}
+                aria-live="polite"
               >
                 {voiceInterim}
               </div>
             )}
 
-            <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
+            <div className="absolute right-2 bottom-2 flex items-center gap-1.5 max-w-[calc(100%-0.5rem)]">
               {isVoiceSupported && (
                 <button
                   onMouseDown={onVoiceStart}
@@ -142,7 +144,7 @@ export const InputBar = memo(function InputBar({
                       onSend(transcript.trim())
                     }
                   }}
-                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90"
+                  className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90"
                   style={{
                     background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)',
                     color: isListening ? '#fff' : '#a0a0a8',
@@ -150,8 +152,9 @@ export const InputBar = memo(function InputBar({
                     border: isListening ? 'none' : '1px solid var(--glass-border)',
                   }}
                   title={isListening ? 'Release to send' : 'Hold to speak'}
+                  aria-label={isListening ? 'Release to send voice message' : 'Hold to speak'}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                     <line x1="12" y1="19" x2="12" y2="23" />
@@ -163,13 +166,14 @@ export const InputBar = memo(function InputBar({
               {isVoiceSupported && (
                 <button
                   onClick={onCycleLanguage}
-                  className="h-9 w-8 rounded-xl flex items-center justify-center transition-all duration-200 text-[10px] font-bold tracking-wider"
+                  className="h-9 w-8 shrink-0 rounded-xl flex items-center justify-center transition-all duration-200 text-[10px] font-bold tracking-wider"
                   style={{
                     color: isListening ? 'var(--gold)' : '#606068',
                     border: `1px solid ${isListening ? 'rgba(245,158,11,0.25)' : 'var(--glass-border)'}`,
                     background: 'transparent',
                   }}
                   title={`Voice language: ${voiceLanguage}. Click to cycle.`}
+                  aria-label={`Voice language ${voiceLanguage}. Click to change language.`}
                 >
                   {LANG_LABELS[voiceLanguage] || 'EN'}
                 </button>
@@ -181,18 +185,20 @@ export const InputBar = memo(function InputBar({
                 accept=".txt,.md,.json,.csv,.py,.js,.ts,.jsx,.tsx,.html,.css,.yaml,.yml,.xml,.sh,.env,.toml,.ini,.cfg,.log"
                 onChange={handleFilePick}
                 style={{ display: 'none' }}
+                aria-label="Attach a file"
               />
               <button
                 onClick={() => fileRef.current?.click()}
-                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
+                className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
                 style={{
                   background: 'var(--surface)',
                   color: '#a0a0a8',
                   border: '1px solid var(--glass-border)',
                 }}
                 title="Attach file"
+                aria-label="Attach file"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>
               </button>
@@ -200,7 +206,7 @@ export const InputBar = memo(function InputBar({
               {value && (
                 <button
                   onClick={clear}
-                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
+                  className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90"
                   style={{
                     background: 'var(--surface)',
                     color: '#a0a0a8',
@@ -216,7 +222,7 @@ export const InputBar = memo(function InputBar({
               <button
                 onClick={send}
                 disabled={!value.trim() || loading}
-                className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-500 hover:scale-105 active:scale-95 disabled:opacity-25 disabled:hover:scale-100"
+                className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center transition-all duration-500 hover:scale-105 active:scale-95 disabled:opacity-25 disabled:hover:scale-100"
                 style={{
                   background: 'linear-gradient(135deg, var(--blue), var(--blue-bright))',
                   color: '#000',
@@ -224,6 +230,8 @@ export const InputBar = memo(function InputBar({
                   fontSize: '16px',
                   boxShadow: value.trim() ? '0 2px 12px var(--blue-glow)' : 'none',
                 }}
+                title="Send message"
+                aria-label="Send message"
               >
                 {'\u2191'}
               </button>
@@ -231,12 +239,12 @@ export const InputBar = memo(function InputBar({
           </div>
 
           {!value.trim() && !loading && (
-            <div className="flex items-center gap-1.5 px-5 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex items-center gap-1.5 px-4 sm:px-5 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
               {SUGGESTIONS.map(s => (
                 <button
                   key={s.label}
                   onClick={() => { setValue(s.action); inputRef.current?.focus() }}
-                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-150 active:scale-95"
+                  className="text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 transition-all duration-150 active:scale-95"
                   style={{
                     color: '#777',
                     border: '1px solid rgba(255,255,255,0.06)',
