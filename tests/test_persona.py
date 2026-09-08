@@ -7,11 +7,13 @@ class TestPersona:
         assert "jarvis" in PERSONAS
         assert "cortana" in PERSONAS
 
-    def test_persona_keys(self):
-        assert set(PERSONA_KEYS) == {"friday", "jarvis", "cortana"}
+    def test_persona_keys_match_personas(self):
+        assert set(PERSONA_KEYS) == set(PERSONAS)
+        assert len(PERSONA_KEYS) == len(PERSONAS)
 
     def test_each_persona_has_required_fields(self):
         for key, p in PERSONAS.items():
+            assert key in PERSONA_KEYS
             assert "name" in p
             assert "label" in p
             assert "description" in p
