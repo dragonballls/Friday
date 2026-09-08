@@ -48,6 +48,9 @@ export const StatusRibbon = memo(function StatusRibbon({
   const uptime = `${Math.round(systemInfo.uptime_seconds / 60)}m`
   const cpu = `${systemInfo.cpu_cores}c`
   const visual = PERSONA_VISUALS[persona || 'friday'] || PERSONA_VISUALS.friday
+  const backendLabel = backendOnline ? 'Backend online' : 'Backend offline'
+  const orbLabel = ORB_LABELS[orbState] ?? orbState.toUpperCase()
+  const voiceLabel = voiceOutputEnabled ? 'Mute voice output' : 'Enable voice output'
 
   return (
     <div
@@ -58,42 +61,45 @@ export const StatusRibbon = memo(function StatusRibbon({
         scrollbarWidth: 'none',
         color: '#a0a0a8',
       }}
+      role="status"
+      aria-label="Friday system status"
     >
-      <span className="font-mono shrink-0 tracking-wider" style={{ color: '#ccc' }}>{time}</span>
+      <span className="font-mono shrink-0 tracking-wider" style={{ color: '#ccc' }} aria-label={`Current time ${time}`}>{time}</span>
 
-      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} />
+      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} aria-hidden="true" />
 
-      <span className="flex items-center gap-1.5 shrink-0">
+      <span className="flex items-center gap-1.5 shrink-0" title={backendLabel}>
         <span
           className={`inline-block w-1.5 h-1.5 rounded-full ${backendOnline ? 'animate-pulse-glow' : ''}`}
           style={{
             background: backendOnline ? 'var(--blue)' : '#ef4444',
             boxShadow: backendOnline ? '0 0 8px var(--blue-glow)' : 'none',
           }}
+          aria-hidden="true"
         />
         <span style={{ color: backendOnline ? 'var(--blue)' : '#ef4444' }}>
           {backendOnline ? 'ONLINE' : 'OFFLINE'}
         </span>
       </span>
 
-      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} />
+      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} aria-hidden="true" />
 
-      <span className="shrink-0">
+      <span className="shrink-0" title={`${model} · ${latency}ms · ${memory}% RAM · ${cpu} · uptime ${uptime}`}>
         <span style={{ color: '#ccc' }}>{model}</span>
-        <span className="mx-1.5" style={{ color: '#606068' }}>·</span>
+        <span className="mx-1.5" style={{ color: '#606068' }} aria-hidden="true">·</span>
         <span>{latency}ms</span>
-        <span className="mx-1.5" style={{ color: '#606068' }}>·</span>
+        <span className="mx-1.5" style={{ color: '#606068' }} aria-hidden="true">·</span>
         <span>{memory}% RAM</span>
-        <span className="mx-1.5" style={{ color: '#606068' }}>·</span>
+        <span className="mx-1.5" style={{ color: '#606068' }} aria-hidden="true">·</span>
         <span>{cpu} · {uptime}</span>
       </span>
 
-      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} />
+      <span className="w-px h-3 rounded-full shrink-0" style={{ background: 'var(--glass-border)' }} aria-hidden="true" />
 
-      <span className="shrink-0" style={{ color: '#606068' }}>{ORB_LABELS[orbState] ?? orbState.toUpperCase()}</span>
+      <span className="shrink-0" style={{ color: '#606068' }} title={`Assistant state: ${orbLabel}`}>{orbLabel}</span>
 
       {persona && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: visual.color, background: `${visual.color}14`, border: `1px solid ${visual.color}26` }}>
+        <span className="shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: visual.color, background: `${visual.color}14`, border: `1px solid ${visual.color}26` }} title={`Active persona: ${visual.name}`}>
           {visual.name}
         </span>
       )}
@@ -111,16 +117,19 @@ export const StatusRibbon = memo(function StatusRibbon({
                 ? '0 0 8px rgba(34,197,94,0.5)'
                 : '0 0 8px var(--blue-glow)',
             }}
+            aria-hidden="true"
           />
           <span className="text-[10px]" style={{ color: voiceInputStatus === 'listening' ? '#22c55e' : 'var(--blue)' }}>
             {voiceInputStatus === 'listening' ? 'AMBIENT' : voiceOutputStatus === 'speaking' ? 'SPEAKING' : 'AWAITING'}
           </span>
           {onExitAmbient && (
             <button
+              type="button"
               onClick={onExitAmbient}
-              className="ml-1 text-[10px] transition-all hover:bg-white/[.04] px-1.5 py-0.5 rounded"
+              className="ml-1 text-[10px] transition-all hover:bg-white/[.04] px-1.5 py-0.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
               style={{ color: '#606068' }}
               title="Exit ambient mode"
+              aria-label="Exit ambient mode"
             >
               ✕
             </button>
@@ -130,7 +139,7 @@ export const StatusRibbon = memo(function StatusRibbon({
 
       {/* Legacy voice indicator (hidden during ambient mode) */}
       {!ambientActive && (voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking') && (
-        <span className="flex items-center gap-1.5 shrink-0 mr-2">
+        <span className="flex items-center gap-1.5 shrink-0 mr-2" aria-live="polite">
           <span
             className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
             style={{
@@ -139,6 +148,7 @@ export const StatusRibbon = memo(function StatusRibbon({
                 ? '0 0 8px rgba(239,68,68,0.5)'
                 : '0 0 8px var(--blue-glow)',
             }}
+            aria-hidden="true"
           />
           <span className="text-[10px]" style={{ color: voiceInputStatus === 'listening' ? '#ef4444' : 'var(--blue)' }}>
             {voiceInputStatus === 'listening' ? 'LISTENING' : 'SPEAKING'}
@@ -147,12 +157,15 @@ export const StatusRibbon = memo(function StatusRibbon({
       )}
 
       <button
+        type="button"
         onClick={onToggleVoiceOutput}
-        className="flex items-center gap-1 shrink-0 transition-all hover:bg-white/[.04] px-2 py-0.5 rounded"
+        className="flex items-center gap-1 shrink-0 transition-all hover:bg-white/[.04] px-2 py-0.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
         style={{ color: voiceOutputEnabled ? 'var(--gold)' : '#606068' }}
-        title={voiceOutputEnabled ? 'Mute voice output' : 'Enable voice output'}
+        title={voiceLabel}
+        aria-label={voiceLabel}
+        aria-pressed={voiceOutputEnabled}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           {voiceOutputEnabled ? (
             <>
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
@@ -170,11 +183,14 @@ export const StatusRibbon = memo(function StatusRibbon({
       </button>
 
       <button
+        type="button"
         onClick={onCommandPalette}
-        className="flex items-center gap-1 shrink-0 transition-all hover:bg-white/[.04] px-2 py-0.5 rounded"
+        className="flex items-center gap-1 shrink-0 transition-all hover:bg-white/[.04] px-2 py-0.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
         style={{ color: '#606068' }}
+        title="Open command palette (Ctrl/Cmd+K)"
+        aria-label="Open command palette"
       >
-        <span className="font-mono text-[10px]">⌘</span>
+        <span className="font-mono text-[10px]" aria-hidden="true">⌘</span>
         <span className="text-[10px]">cmd</span>
       </button>
     </div>
