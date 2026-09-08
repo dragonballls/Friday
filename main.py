@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -18,51 +19,130 @@ BANNER = r"""
  |_|   |_|\__,_|\__, |_|\___|
                 |___/
 """
-
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
-
+AUTO_UPDATE_INTERVAL = 300
 
 def get_terminal_width() -> int:
     return shutil.get_terminal_size((80, 20)).columns
 
-
 def print_colored(text: str, color_code: str = "37"):
     print(f"\033[{color_code}m{text}\033[0m")
 
+def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
+    """Watch origin/main while the UI supervisor is alive."""
+    raw_interval = os.environ.get("FRIDAY_AUTO_UPDATE_INTERVAL", str(AUTO_UPDATE_INTERVAL))
+    try:
+        interval = max(30, int(raw_interval))
+    except ValueError:
+        interval = AUTO_UPDATE_INTERVAL
+    while not stop_event.wait(interval):
+        try:
+            branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
+            if branch != "main":
+                continue
+            status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=root, capture_output=True, text=True, timeout=15, check=False)
+            if status.returncode != 0 or status.stdout.strip():
+                continue
+            fetch = subprocess.run(["git", "fetch", "origin", "main", "--prune"], cwd=root, capture_output=True, text=True, timeout=60, check=False)
+            if fetch.returncode != 0:
+                continue
+            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
+            remote = subprocess.run(["git", "rev-parse", "origin/main"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
+            if local and remote and local != remote:
+                update_event.set()
+                return
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
+
+def _terminate_processes(procs: list[subprocess.Popen]):
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.2)
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
+    api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
+    front_cmd = ["npm", "run", "dev"]
+    if sys.platform == "win32":
+        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
+    procs: list[subprocess.Popen] = []
+    api = subprocess.Popen(api_cmd, cwd=desktop)
+    procs.append(api)
+    time.sleep(2.0)
+    front = subprocess.Popen(front_cmd, cwd=desktop, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0)
+    procs.append(front)
+    return procs
+
+def _launch_ui():
+    """Launch the UI and keep its source/runtime synchronized with origin/main."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    desktop = os.path.join(root, "desktop")
+    print_colored(BANNER, "36")
+    print_colored("─" * get_terminal_width(), "90")
+    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
+    print_colored("─" * get_terminal_width(), "90")
+    update_event = threading.Event()
+    stop_event = threading.Event()
+    monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
+    monitor.start()
+    procs: list[subprocess.Popen] = []
+    try:
+        procs = _start_ui_processes(desktop)
+        time.sleep(5.0)
+        webbrowser.open("http://localhost:5173")
+        while True:
+            time.sleep(1.0)
+            if update_event.is_set():
+                print_colored("\nFriday update detected — restarting safely…", "33")
+                _terminate_processes(procs)
+                procs.clear()
+                result = subprocess.run([sys.executable, os.path.join(root, "scripts", "update.py")], cwd=root, check=False)
+                if result.returncode == 0:
+                    stop_event.set()
+                    os.execv(sys.executable, [sys.executable, *sys.argv])
+                print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
+                update_event.clear()
+                procs = _start_ui_processes(desktop)
+            elif any(p.poll() is not None for p in procs):
+                break
+    except KeyboardInterrupt:
+        print_colored("\nShutting down Friday UI…", "33")
+    finally:
+        stop_event.set()
+        _terminate_processes(procs)
 
 def main():
     parser = argparse.ArgumentParser(description="Friday — AI Assistant")
-    parser.add_argument(
-        "--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)"
-    )
-    parser.add_argument(
-        "--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls"
-    )
-    parser.add_argument(
-        "--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)"
-    )
+    parser.add_argument("--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)")
+    parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls")
+    parser.add_argument("--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)")
     args = parser.parse_args()
-
     if args.ui:
         _launch_ui()
         return
-
     if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stdin.reconfigure(encoding="utf-8")
-
     lang = args.lang
     label = LANG_LABELS.get(lang, "English")
-
     print_colored(BANNER, "36")
     print_colored("─" * get_terminal_width(), "90")
     print_colored(f"Friday — {label} AI Assistant (Ctrl+C to exit, /help for commands)", "33")
     print_colored("─" * get_terminal_width(), "90")
     print()
-
     discover_plugins()
     agent = Agent(language=lang, confirm_enabled=not args.no_confirm)
-
     try:
         _repl_loop(agent)
     finally:
@@ -72,54 +152,6 @@ def main():
             return
         close_browser()
 
-
-def _launch_ui():
-    """P6 — single-command start: boot API server + frontend dev server together."""
-    root = os.path.dirname(os.path.abspath(__file__))
-    desktop = os.path.join(root, "desktop")
-
-    print_colored(BANNER, "36")
-    print_colored("─" * get_terminal_width(), "90")
-    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
-    print_colored("─" * get_terminal_width(), "90")
-
-    procs: list[subprocess.Popen] = []
-
-    api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-    front_cmd = ["npm", "run", "dev"]
-
-    if sys.platform == "win32":
-        api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
-
-    try:
-        api = subprocess.Popen(api_cmd, cwd=desktop)
-        procs.append(api)
-        time.sleep(2.0)
-
-        front = subprocess.Popen(
-            front_cmd, cwd=desktop, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
-        )
-        procs.append(front)
-
-        time.sleep(5.0)
-        webbrowser.open("http://localhost:5173")
-
-        while True:
-            time.sleep(1.0)
-            if all(p.poll() is not None for p in procs):
-                break
-    except KeyboardInterrupt:
-        print_colored("\nShutting down Friday UI…", "33")
-    finally:
-        for p in procs:
-            if p.poll() is None:
-                try:
-                    p.terminate()
-                except Exception:
-                    pass
-
-
 def _repl_loop(agent: Agent):
     while True:
         try:
@@ -128,16 +160,13 @@ def _repl_loop(agent: Agent):
             print()
             print_colored("Bye bye! 👋", "33")
             sys.exit(0)
-
         if not user_input:
             continue
-
         if user_input.startswith("/"):
             handled = _handle_command(user_input, agent)
             if handled == "exit":
                 break
             continue
-
         print()
         for event in agent.run(user_input):
             if event["type"] == "tokens":
@@ -160,19 +189,14 @@ def _repl_loop(agent: Agent):
                 for t in event.get("tools", []):
                     print_colored(f"  🛠 {t['name']}({t['args']})", "90")
                     print_colored(f"     Result: {t['result']}", "90")
-            elif event["type"] == "done":
-                pass
         print("\n")
-
 
 def _voice_loop(agent: Agent):
     if not is_voice_available():
         print_colored("Voice not available — no microphone detected. Install pyaudio for voice support.", "31")
         return
-
     print_colored("Voice mode active. Speak now. Say 'exit' or press Ctrl+C to return to text mode.", "33")
     print_colored("Listening...", "33")
-
     while True:
         try:
             result = listen()
@@ -182,14 +206,11 @@ def _voice_loop(agent: Agent):
                     continue
                 print_colored(f"STT error: {result.get('error')}", "31")
                 continue
-
             text = result["text"].strip().lower()
             print_colored(f"\nYou (voice): {result['text']}", "90")
-
             if text in ("exit", "exit voice", "band karo", "stop"):
                 print_colored("Exiting voice mode.", "33")
                 return
-
             print()
             full_response = ""
             for event in agent.run(result["text"]):
@@ -200,12 +221,9 @@ def _voice_loop(agent: Agent):
                     for t in event.get("tools", []):
                         print_colored(f"  🛠 {t['name']}({t['args']})", "90")
                         print_colored(f"     Result: {t['result']}", "90")
-
             if full_response.strip():
                 speak(full_response)
-
             print_colored("\n\nListening...", "33")
-
         except KeyboardInterrupt:
             print()
             return
@@ -213,23 +231,16 @@ def _voice_loop(agent: Agent):
             print_colored(f"Voice error: {e}", "31")
             return
 
-
 def _handle_command(cmd: str, agent: Agent):
     cmd = cmd.lower().strip()
-
     if cmd in ("/exit", "/quit"):
         print_colored("Bye bye! 👋", "33")
         return "exit"
-
     elif cmd == "/clear":
         agent.clear()
-        print_colored(
-            "Conversation cleared! ✅" if agent.language == "english" else "Baat-cheet clear ho gayi! ✅", "33"
-        )
-
+        print_colored("Conversation cleared! ✅" if agent.language == "english" else "Baat-cheet clear ho gayi! ✅", "33")
     elif cmd == "/voice":
         _voice_loop(agent)
-
     elif cmd.startswith("/lang"):
         parts = cmd.split()
         if len(parts) == 1:
@@ -245,18 +256,14 @@ def _handle_command(cmd: str, agent: Agent):
                 print_colored("Hinglish mein switch ho gaya 🇮🇳", "33")
             else:
                 print_colored(f"Unknown language: {target}. Use: english or hinglish", "31")
-
     elif cmd in ("/help", "/?"):
         _print_help(agent.language)
-
     else:
         print_colored(f"Unknown: {cmd}. Type /help for commands.", "31")
 
-
 def _print_help(lang: str):
     if lang == "english":
-        print_colored(
-            """
+        print_colored("""
 Commands:
   /help               Show this help
   /clear              Reset conversation
@@ -271,12 +278,9 @@ The assistant has tools for:
   - Persistent memory (remember/recall)
   - File/content search
   - System information
-""",
-            "33",
-        )
+""", "33")
     else:
-        print_colored(
-            """
+        print_colored("""
 Commands:
   /help               Yeh help message
   /clear              Baat-cheet reset karo
@@ -291,10 +295,7 @@ Assistant ke paas tools hain:
   - Persistent memory (remember/recall)
   - File/content search
   - System information
-""",
-            "33",
-        )
-
+""", "33")
 
 if __name__ == "__main__":
     main()
