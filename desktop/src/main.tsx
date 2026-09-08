@@ -14,7 +14,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary fallback={<AppErrorFallback />}>
       <App />
-      <div className="fixed bottom-3 right-3 z-40 w-[320px] rounded-xl glass px-4">
+      <div className="fixed bottom-3 right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl glass px-4 shadow-lg">
         <UpdateSection />
       </div>
     </ErrorBoundary>
