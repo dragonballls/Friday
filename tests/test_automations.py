@@ -1,3 +1,4 @@
+import json
 import time
 
 import pytest
@@ -68,6 +69,12 @@ class TestCronMatch:
         assert not _cron_match("invalid", now)
         assert not _cron_match("", now)
 
+    def test_invalid_numeric_field_fails_closed(self):
+        now = time.localtime()
+        assert not _cron_match("not-a-minute * * * *", now)
+        assert not _cron_match("*/0 * * * *", now)
+        assert not _cron_match("60 * * * *", now)
+
 
 class TestAutomationEngine:
     @pytest.fixture
@@ -121,6 +128,9 @@ class TestAutomationEngine:
         engine.toggle(auto.id)
         assert engine.get(auto.id).enabled is True
 
+    def test_toggle_missing(self, engine):
+        assert engine.toggle("nope") is None
+
     def test_execute_notification(self, engine):
         auto = engine.create("Notif", "cron", {}, "notification", {"message": "test msg"})
         result = engine.execute(auto)
@@ -159,6 +169,26 @@ class TestAutomationEngine:
         engine2 = AutomationEngine(str(path))
         assert len(engine2.list_all()) == 1
         assert engine2.list_all()[0].name == "Persistent"
+
+    def test_malformed_persistence_fails_closed(self, tmp_path):
+        path = tmp_path / "malformed.json"
+        path.write_text(json.dumps({"unexpected": "object"}), encoding="utf-8")
+        engine = AutomationEngine(str(path))
+        assert engine.list_all() == []
+
+    def test_mixed_malformed_records_are_skipped(self, tmp_path):
+        path = tmp_path / "mixed.json"
+        valid = Automation(
+            id="valid",
+            name="Valid",
+            trigger_type="event",
+            trigger_config={},
+            action="notification",
+            action_params={},
+        ).to_dict()
+        path.write_text(json.dumps([valid, "bad", {"id": "incomplete"}]), encoding="utf-8")
+        engine = AutomationEngine(str(path))
+        assert [a.id for a in engine.list_all()] == ["valid"]
 
     def test_check_triggers_cron(self, engine):
         import time as t

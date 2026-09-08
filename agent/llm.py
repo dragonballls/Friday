@@ -66,11 +66,21 @@ def _primary_failed(events: list[dict]) -> bool:
         if event.get("type") == "error" and _is_retryable_provider_error(event):
             return True
 
-        if event.get("type") == "done":
-            if event.get("error") or _is_retryable_provider_error(event):
-                return True
+        # A normal completed response may legitimately contain words such as
+        # "timeout", "connection", or "rate limit". Only a structured error
+        # field on a done event is evidence that the provider failed.
+        if event.get("type") == "done" and event.get("error"):
+            return _is_retryable_provider_error(event)
 
     return False
+
+
+def _has_partial_output(events: list[dict]) -> bool:
+    """Return True once the primary provider has exposed user-visible text."""
+    return any(
+        event.get("type") == "tokens" and bool(str(event.get("content") or ""))
+        for event in events
+    )
 
 
 def chat(
@@ -81,7 +91,8 @@ def chat(
 
     A fallback is intentionally scoped to this request. A temporary provider
     outage must not permanently replace the configured primary provider for
-    every later conversation.
+    every later conversation. Once primary text has reached the caller, the
+    request stays on that stream to avoid duplicating visible output.
     """
     provider = _ensure_provider()
     provider_name = _provider_name or "unknown"
@@ -95,7 +106,7 @@ def chat(
     except Exception as exc:
         primary_events.append({"type": "error", "error": str(exc)})
 
-    if not _primary_failed(primary_events):
+    if _has_partial_output(primary_events) or not _primary_failed(primary_events):
         return
 
     fallback, fallback_name = _get_fallback_provider(provider_name)

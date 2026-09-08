@@ -163,6 +163,21 @@ class PermissionManager:
         if self._allowed_tools and name not in self._allowed_tools:
             return {"allowed": False, "reason": f"Tool '{name}' is not in the allowed list"}
 
+        for rule in self._rules:
+            if rule.tool and rule.tool != name:
+                continue
+            if rule.command_prefix:
+                command = ""
+                if args:
+                    command = str(args.get("command", args.get("cmd", "")))
+                if not command.lower().startswith(rule.command_prefix.lower()):
+                    continue
+            if not rule.allow:
+                return {
+                    "allowed": False,
+                    "reason": rule.reason or f"Tool '{name}' is denied by a permission rule",
+                }
+
         if name == "run_command" and args and "command" in args:
             return self._check_command(args["command"])
 

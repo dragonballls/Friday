@@ -64,7 +64,7 @@ def _is_coding_task(task) -> bool:
     """Return True only when the task is a file mutation with an explicit path.
 
     Validation/inspection tools such as run_tests, review_code_change, lint,
-    formatting, and final verification must remain on the normal Executor path.
+    formatting, and final verification remain on the normal Executor path.
     The safe transaction wrapper is reserved for actual coding mutations so a
     validation task without a file path is never rejected by the transaction
     boundary.
@@ -79,7 +79,18 @@ def _is_coding_task(task) -> bool:
     description = str(getattr(task, "description", "")).lower()
     mutation_language = any(
         marker in description
-        for marker in ("edit ", "change ", "modify ", "rewrite ", "update ")
+        for marker in (
+            "edit ",
+            "change ",
+            "modify ",
+            "rewrite ",
+            "update ",
+            "implement ",
+            "add ",
+            "create ",
+            "refactor ",
+            "fix ",
+        )
     )
     return mutation_language and has_path
 

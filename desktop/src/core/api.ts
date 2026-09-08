@@ -109,6 +109,19 @@ async function streamEndpoint(
         }
       }
     }
+
+    // Flush any UTF-8 bytes buffered by TextDecoder and process the final
+    // event even when the server closes without a trailing newline.
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      try {
+        const event = JSON.parse(buffer)
+        onEvent(event)
+      } catch {
+        // skip malformed final event
+      }
+    }
+
     onDone()
   } catch (err: any) {
     if (err?.name !== 'AbortError') {
@@ -345,7 +358,7 @@ export async function uninstallPlugin(name: string): Promise<{ success: boolean;
   return fetchApi('/plugins/uninstall', { method: 'POST', body: JSON.stringify({ name }) })
 }
 
-/* â”€â”€â”€ Custom tool builder API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€ Custom tool builder API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface CustomTool {
   name: string
@@ -368,7 +381,7 @@ export async function deleteCustomTool(name: string): Promise<{ success?: boolea
   return fetchApi(`/tools/custom/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }
 
-/* â”€â”€â”€ Privacy (blackout mode) API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€ Privacy (blackout mode) API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface PrivacyStatus {
   enabled: boolean
@@ -384,7 +397,7 @@ export async function setPrivacy(enabled: boolean): Promise<PrivacyStatus> {
   return fetchApi('/privacy', { method: 'POST', body: JSON.stringify({ enabled }) })
 }
 
-/* â”€â”€â”€ Diary API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€ Diary API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function getDiaryRecent(): Promise<{ days: DiaryDay[] }> {
   return fetchApi('/diary/recent')
@@ -419,7 +432,7 @@ export async function getAlerts(): Promise<{ alerts: any[]; count: number }> {
   return fetchApi('/alerts')
 }
 
-/* â”€â”€â”€ Automations API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€â”€ Automations API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export async function getAutomations(): Promise<{ automations: any[] }> {
   return fetchApi('/automations')

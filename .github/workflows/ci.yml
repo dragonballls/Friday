@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - friday-full-migration-20260907
+      - friday-bugfix-audit-20260908
     paths-ignore:
       - heartbeat.log
   pull_request:

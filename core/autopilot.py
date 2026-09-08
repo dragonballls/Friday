@@ -12,6 +12,7 @@ Features:
 - optional tool allowlist for headless/scheduled runs
 """
 
+import json
 import os
 import re
 from collections.abc import Generator
@@ -48,8 +49,14 @@ class Autopilot:
         confirm_timeout: float = 120.0,
     ):
         self._planner = planner
-        self.workspace_root = os.path.abspath(workspace) if workspace else None
-        self.workspace_prefix = (self.workspace_root.rstrip("\\/") + os.sep) if self.workspace_root else None
+        self.workspace_root = os.path.realpath(os.path.abspath(workspace)) if workspace else None
+        self.workspace_prefix = (
+            os.path.join(self.workspace_root, "") if self.workspace_root else None
+        )
+        self._workspace_cmp_root = os.path.normcase(self.workspace_root) if self.workspace_root else None
+        self._workspace_cmp_prefix = (
+            os.path.normcase(self.workspace_prefix) if self.workspace_prefix else None
+        )
         self.verify_enabled = verify
         self.tool_allowlist = list(tool_allowlist) if tool_allowlist else None
         self.max_retries = max_retries
@@ -174,13 +181,17 @@ class Autopilot:
         def wrapped(**kwargs) -> dict:
             if not self._is_tool_allowed(name):
                 return {"error": f"Tool '{name}' blocked by autopilot allowlist"}
-            if self.workspace_prefix:
+            if self.workspace_root:
                 for key in _PATH_ARG_KEYS:
                     value = kwargs.get(key)
                     if not isinstance(value, str) or not value:
                         continue
-                    expanded = os.path.abspath(os.path.expanduser(value))
-                    if not (expanded == self.workspace_root or expanded.startswith(self.workspace_prefix)):
+                    expanded = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
+                    expanded_cmp = os.path.normcase(expanded)
+                    if not (
+                        expanded_cmp == self._workspace_cmp_root
+                        or expanded_cmp.startswith(self._workspace_cmp_prefix)
+                    ):
                         return {"error": f"Path '{value}' is outside the workspace ({self.workspace_root})"}
             return handler(**kwargs)
 
@@ -195,8 +206,13 @@ class Autopilot:
         if not self.verify_enabled:
             return {"verified": True, "mode": "disabled"}
         for outcome in outcomes:
-            if re.search(r'"error"', outcome.get("result", "")):
-                return {"verified": False, "mode": "tool_error", "detail": outcome.get("result", "")[:300]}
+            result = outcome.get("result", "")
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+            except (json.JSONDecodeError, TypeError):
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get("error"):
+                return {"verified": False, "mode": "tool_error", "detail": str(parsed.get("error"))[:300]}
         for outcome in outcomes:
             if outcome.get("name") in _WRITE_TOOLS:
                 path = self._extract_path(outcome.get("args", ""))

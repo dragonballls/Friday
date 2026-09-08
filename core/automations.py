@@ -34,48 +34,63 @@ class Automation:
 
 def _cron_match(cron_expr: str, t: time.struct_time) -> bool:
     """Match a 5-field cron expression against a time struct."""
-    fields = cron_expr.strip().split()
-    if len(fields) != 5:
+    try:
+        fields = cron_expr.strip().split()
+        if len(fields) != 5:
+            return False
+        minute, hour, dom, month, dow = fields
+        return (
+            _cron_field_match(minute, t.tm_min, 0, 59)
+            and _cron_field_match(hour, t.tm_hour, 0, 23)
+            and _cron_field_match(dom, t.tm_mday, 1, 31)
+            and _cron_field_match(month, t.tm_mon, 1, 12)
+            and _cron_field_match(dow, t.tm_wday, 0, 6)
+        )
+    except (TypeError, ValueError, AttributeError):
         return False
-    minute, hour, dom, month, dow = fields
-    return (
-        _cron_field_match(minute, t.tm_min, 0, 59)
-        and _cron_field_match(hour, t.tm_hour, 0, 23)
-        and _cron_field_match(dom, t.tm_mday, 1, 31)
-        and _cron_field_match(month, t.tm_mon, 1, 12)
-        and _cron_field_match(dow, t.tm_wday, 0, 6)
-    )
 
 
 def _cron_field_match(pattern: str, value: int, lo: int, hi: int) -> bool:
     """Match a single cron field value against a pattern."""
-    if pattern == "*":
-        return True
-    for part in pattern.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "/" in part:
-            base, step = part.split("/", 1)
-            step = int(step)
-            if base == "*":
-                base_low, base_high = lo, hi
-            elif "-" in base:
-                base_low, base_high = (int(x) for x in base.split("-", 1))
-            else:
-                base_low = base_high = int(base)
-            if base_low <= value <= base_high and (value - base_low) % step == 0:
-                return True
-        elif "-" in part:
-            a, b = (int(x) for x in part.split("-", 1))
-            if a <= value <= b:
-                return True
-        elif part == "*":
+    try:
+        if pattern == "*":
             return True
-        else:
-            if int(part) == value:
+        for part in pattern.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "/" in part:
+                base, step_text = part.split("/", 1)
+                step = int(step_text)
+                if step <= 0:
+                    return False
+                if base == "*":
+                    base_low, base_high = lo, hi
+                elif "-" in base:
+                    base_low, base_high = (int(x) for x in base.split("-", 1))
+                else:
+                    base_low = base_high = int(base)
+                if not (lo <= base_low <= base_high <= hi):
+                    return False
+                if base_low <= value <= base_high and (value - base_low) % step == 0:
+                    return True
+            elif "-" in part:
+                a, b = (int(x) for x in part.split("-", 1))
+                if not (lo <= a <= b <= hi):
+                    return False
+                if a <= value <= b:
+                    return True
+            elif part == "*":
                 return True
-    return False
+            else:
+                number = int(part)
+                if not lo <= number <= hi:
+                    return False
+                if number == value:
+                    return True
+        return False
+    except (TypeError, ValueError):
+        return False
 
 
 class AutomationEngine:
@@ -131,7 +146,10 @@ class AutomationEngine:
         return False
 
     def toggle(self, auto_id: str) -> Automation | None:
-        return self.update(auto_id, enabled=not self._items[auto_id].enabled)
+        auto = self._items.get(auto_id)
+        if not auto:
+            return None
+        return self.update(auto_id, enabled=not auto.enabled)
 
     # ─── Trigger checking ─────────────────────────────────────────
 
@@ -207,8 +225,17 @@ class AutomationEngine:
         try:
             with open(self._file_path, encoding="utf-8") as f:
                 data = json.load(f)
+            if not isinstance(data, list):
+                self._items = {}
+                return
+            self._items = {}
             for item in data:
-                auto = Automation.from_dict(item)
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    auto = Automation.from_dict(item)
+                except (TypeError, ValueError):
+                    continue
                 self._items[auto.id] = auto
         except (FileNotFoundError, json.JSONDecodeError):
             self._items = {}

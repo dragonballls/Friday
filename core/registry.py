@@ -2,7 +2,7 @@ import importlib
 import inspect
 import os
 import pkgutil
-from typing import Any
+from typing import Any, get_origin
 
 from core.logger import info, warn
 from plugins.base import ToolPlugin
@@ -15,12 +15,12 @@ _PLUGIN_INSTANCES: dict[str, ToolPlugin] = {}
 _EXCLUDED_TOOLS = {
     "close_browser",
     "is_voice_available",
-    "browse_",  # prefix for internal browser helpers
 }
+_EXCLUDED_TOOL_PREFIXES = ("browse_",)
 
 
 def _is_tool_allowed(name: str) -> bool:
-    if name in _EXCLUDED_TOOLS:
+    if name in _EXCLUDED_TOOLS or name.startswith(_EXCLUDED_TOOL_PREFIXES):
         return False
     if name.startswith("_"):
         return False
@@ -61,8 +61,6 @@ def _scan_community_packages():
             return
         if not path:
             return
-
-        import pkgutil
 
         for importer, modname, is_pkg in pkgutil.walk_packages(path, "plugins.community."):
             base = modname.rsplit(".", 1)[-1]
@@ -108,6 +106,9 @@ def _register_plugins_from_module(module):
             try:
                 instance = obj()
                 name = instance.name
+                if not _is_tool_allowed(name):
+                    warn(f"Excluded plugin tool '{name}', skipping registration")
+                    continue
                 if name in _TOOL_MAP:
                     warn(f"Plugin '{name}' already registered, skipping duplicate")
                     continue
@@ -140,14 +141,17 @@ def _register_functions_from_module(module):
                     required.append(pname)
                 if param.annotation is not inspect.Parameter.empty:
                     ann = param.annotation
+                    origin = get_origin(ann)
                     if ann is int:
                         prop["type"] = "integer"
                     elif ann is float:
                         prop["type"] = "number"
                     elif ann is bool:
                         prop["type"] = "boolean"
-                    elif ann is list:
+                    elif ann is list or origin is list:
                         prop["type"] = "array"
+                    elif ann is dict or origin is dict:
+                        prop["type"] = "object"
                 properties[pname] = prop
             _TOOL_DEFINITIONS.append(
                 {
@@ -168,10 +172,14 @@ def _register_functions_from_module(module):
 
 
 def register_tool(name: str, func: callable, definition: dict | None = None):
+    if not _is_tool_allowed(name):
+        warn(f"Excluded legacy tool '{name}', skipping registration")
+        return False
     _TOOL_MAP[name] = func
     if definition:
         _TOOL_DEFINITIONS.append(definition)
     info(f"Registered legacy tool: {name}")
+    return True
 
 
 def get_tool_definitions() -> list[dict[str, Any]]:
