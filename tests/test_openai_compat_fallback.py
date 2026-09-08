@@ -1,5 +1,3 @@
-import pytest
-
 from providers.openai_compat import OpenAICompatibleProvider
 
 
