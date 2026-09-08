@@ -225,8 +225,17 @@ class AutomationEngine:
         try:
             with open(self._file_path, encoding="utf-8") as f:
                 data = json.load(f)
+            if not isinstance(data, list):
+                self._items = {}
+                return
+            self._items = {}
             for item in data:
-                auto = Automation.from_dict(item)
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    auto = Automation.from_dict(item)
+                except (TypeError, ValueError):
+                    continue
                 self._items[auto.id] = auto
         except (FileNotFoundError, json.JSONDecodeError):
             self._items = {}
