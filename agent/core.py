@@ -79,7 +79,18 @@ def _is_coding_task(task) -> bool:
     description = str(getattr(task, "description", "")).lower()
     mutation_language = any(
         marker in description
-        for marker in ("edit ", "change ", "modify ", "rewrite ", "update ")
+        for marker in (
+            "edit ",
+            "change ",
+            "modify ",
+            "rewrite ",
+            "update ",
+            "implement ",
+            "add ",
+            "create ",
+            "refactor ",
+            "fix ",
+        )
     )
     return mutation_language and has_path
 
