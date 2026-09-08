@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -20,6 +21,7 @@ BANNER = r"""
 """
 
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
+AUTO_UPDATE_INTERVAL = 300
 
 
 def get_terminal_width() -> int:
@@ -28,6 +30,161 @@ def get_terminal_width() -> int:
 
 def print_colored(text: str, color_code: str = "37"):
     print(f"\033[{color_code}m{text}\033[0m")
+
+
+def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
+    """Watch origin/main while the UI supervisor is alive.
+
+    This only signals the supervisor. It never mutates the working tree from the
+    background thread, so child processes can be stopped cleanly before the
+    fast-forward updater runs.
+    """
+    interval = max(30, int(os.environ.get("FRIDAY_AUTO_UPDATE_INTERVAL", AUTO_UPDATE_INTERVAL)))
+    while not stop_event.wait(interval):
+        try:
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            ).stdout.strip()
+            if branch != "main":
+                continue
+
+            status = subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=all"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if status.returncode != 0 or status.stdout.strip():
+                continue
+
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main", "--prune"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                continue
+
+            local = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "rev-parse", "origin/main"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            ).stdout.strip()
+            if local and remote and local != remote:
+                update_event.set()
+                return
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
+
+
+def _terminate_processes(procs: list[subprocess.Popen]):
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.2)
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+
+def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
+    api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
+    front_cmd = ["npm", "run", "dev"]
+    if sys.platform == "win32":
+        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
+
+    procs: list[subprocess.Popen] = []
+    api = subprocess.Popen(api_cmd, cwd=desktop)
+    procs.append(api)
+    time.sleep(2.0)
+    front = subprocess.Popen(
+        front_cmd,
+        cwd=desktop,
+        creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+    )
+    procs.append(front)
+    return procs
+
+
+def _launch_ui():
+    """Launch the UI and keep its source/runtime synchronized with origin/main."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    desktop = os.path.join(root, "desktop")
+
+    print_colored(BANNER, "36")
+    print_colored("─" * get_terminal_width(), "90")
+    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
+    print_colored("─" * get_terminal_width(), "90")
+
+    update_event = threading.Event()
+    stop_event = threading.Event()
+    monitor = threading.Thread(
+        target=_auto_update_monitor,
+        args=(root, update_event, stop_event),
+        name="friday-auto-updater",
+        daemon=True,
+    )
+    monitor.start()
+
+    procs: list[subprocess.Popen] = []
+    try:
+        procs = _start_ui_processes(desktop)
+        time.sleep(5.0)
+        webbrowser.open("http://localhost:5173")
+
+        while True:
+            time.sleep(1.0)
+            if update_event.is_set():
+                print_colored("\nFriday update detected — restarting safely…", "33")
+                _terminate_processes(procs)
+                procs.clear()
+                result = subprocess.run(
+                    [sys.executable, os.path.join(root, "scripts", "update.py")],
+                    cwd=root,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    stop_event.set()
+                    os.execv(sys.executable, [sys.executable, *sys.argv])
+                print_colored("Update could not be applied; keeping Friday available on the current version.", "31")
+                update_event.clear()
+                procs = _start_ui_processes(desktop)
+            elif any(p.poll() is not None for p in procs):
+                break
+    except KeyboardInterrupt:
+        print_colored("\nShutting down Friday UI…", "33")
+    finally:
+        stop_event.set()
+        _terminate_processes(procs)
 
 
 def main():
@@ -71,53 +228,6 @@ def main():
         except ImportError:
             return
         close_browser()
-
-
-def _launch_ui():
-    """P6 — single-command start: boot API server + frontend dev server together."""
-    root = os.path.dirname(os.path.abspath(__file__))
-    desktop = os.path.join(root, "desktop")
-
-    print_colored(BANNER, "36")
-    print_colored("─" * get_terminal_width(), "90")
-    print_colored("Launching Friday desktop UI…  (Ctrl+C to stop everything)", "33")
-    print_colored("─" * get_terminal_width(), "90")
-
-    procs: list[subprocess.Popen] = []
-
-    api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-    front_cmd = ["npm", "run", "dev"]
-
-    if sys.platform == "win32":
-        api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
-        front_cmd = ["cmd", "/c", "npm", "run", "dev"]
-
-    try:
-        api = subprocess.Popen(api_cmd, cwd=desktop)
-        procs.append(api)
-        time.sleep(2.0)
-
-        front = subprocess.Popen(
-            front_cmd, cwd=desktop, creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
-        )
-        procs.append(front)
-
-        time.sleep(5.0)
-        webbrowser.open("http://localhost:5173")
-
-        while True:
-            time.sleep(1.0)
-            if all(p.poll() is not None for p in procs):
-                break
-    except KeyboardInterrupt:
-        print_colored("\nShutting down Friday UI…", "33")
-    finally:
-        for p in procs:
-            if p.poll() is None:
-                try:
-                    p.terminate()
-                except Exception:
-                    pass
 
 
 def _repl_loop(agent: Agent):
