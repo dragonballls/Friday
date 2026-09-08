@@ -34,6 +34,7 @@ export const InputBar = memo(function InputBar({
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const voicePointerRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (draft == null) return
@@ -79,6 +80,32 @@ export const InputBar = memo(function InputBar({
     setValue('')
     inputRef.current?.focus()
   }, [])
+
+  const finishVoice = useCallback(() => {
+    voicePointerRef.current = null
+    const transcript = onVoiceStop()
+    if (transcript.trim()) {
+      setValue('')
+      onSend(transcript.trim())
+    }
+  }, [onSend, onVoiceStop])
+
+  const handleVoicePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (voicePointerRef.current !== null) return
+    voicePointerRef.current = e.pointerId
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    onVoiceStart()
+  }, [onVoiceStart])
+
+  const handleVoicePointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (voicePointerRef.current !== e.pointerId) return
+    finishVoice()
+  }, [finishVoice])
+
+  const handleVoicePointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (voicePointerRef.current !== e.pointerId) return
+    finishVoice()
+  }, [finishVoice])
 
   const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -153,24 +180,12 @@ export const InputBar = memo(function InputBar({
               {isVoiceSupported && (
                 <button
                   type="button"
-                  onMouseDown={onVoiceStart}
-                  onMouseUp={() => {
-                    const transcript = onVoiceStop()
-                    if (transcript.trim()) {
-                      setValue('')
-                      onSend(transcript.trim())
-                    }
-                  }}
-                  onTouchStart={onVoiceStart}
-                  onTouchEnd={() => {
-                    const transcript = onVoiceStop()
-                    if (transcript.trim()) {
-                      setValue('')
-                      onSend(transcript.trim())
-                    }
-                  }}
+                  onPointerDown={handleVoicePointerDown}
+                  onPointerUp={handleVoicePointerUp}
+                  onPointerCancel={handleVoicePointerCancel}
+                  onContextMenu={e => e.preventDefault()}
                   aria-label={isListening ? 'Release to send voice message' : 'Hold to speak'}
-                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90 shrink-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
+                  className="h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-90 shrink-0 touch-none select-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#D4A040]"
                   style={{
                     background: isListening ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'var(--surface)',
                     color: isListening ? '#fff' : '#a0a0a8',
