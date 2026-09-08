@@ -128,6 +128,13 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         raise
 
 
+def _open_ui_browser():
+    """Open the actual Vite frontend, not the API's default port."""
+    url = "http://127.0.0.1:5173/"
+    print_colored(f"Friday UI ready — opening {url}", "32")
+    webbrowser.open(url)
+
+
 def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
     root = os.path.dirname(os.path.abspath(__file__))
@@ -142,7 +149,7 @@ def _launch_ui():
     procs: list[subprocess.Popen] = []
     try:
         procs = _start_ui_processes(desktop)
-        webbrowser.open("http://localhost:5173")
+        _open_ui_browser()
         while True:
             time.sleep(1.0)
             if update_event.is_set():
@@ -158,14 +165,14 @@ def _launch_ui():
                 stop_event.clear()
                 _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
-                webbrowser.open("http://localhost:5173")
+                _open_ui_browser()
             elif any(p.poll() is not None for p in procs):
                 print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
                 _terminate_processes(procs)
                 procs.clear()
                 time.sleep(2.0)
                 procs = _start_ui_processes(desktop)
-                webbrowser.open("http://localhost:5173")
+                _open_ui_browser()
     except KeyboardInterrupt:
         print_colored("\nShutting down Friday UI…", "33")
     except RuntimeError as exc:
