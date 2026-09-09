@@ -50,6 +50,25 @@ describe('watchForUpdates', () => {
     stop()
   })
 
+  it('uses the one-second default polling interval', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<script src="/assets/app.123.js"></script>',
+    }) as typeof fetch
+    const onUpdate = vi.fn()
+
+    const stop = watchForUpdates({ onUpdate })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
   it('clamps an invalid polling interval to a safe minimum', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -69,7 +88,7 @@ describe('watchForUpdates', () => {
     stop()
   })
 
-  it('falls back to the default interval for non-finite values', async () => {
+  it('falls back to the one-second default for non-finite values', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: async () => '<script src="/assets/app.123.js"></script>',
@@ -80,8 +99,11 @@ describe('watchForUpdates', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.advanceTimersByTimeAsync(999)
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2)
     stop()
   })
 

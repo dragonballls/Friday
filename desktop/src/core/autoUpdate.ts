@@ -1,4 +1,4 @@
-const POLL_INTERVAL = 60_000
+const POLL_INTERVAL = 1_000
 const MIN_POLL_INTERVAL = 1_000
 const ASSET_PATTERN = /(?:src|href)="([^"]+\.(?:js|css))"/g
 
