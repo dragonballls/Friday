@@ -62,12 +62,6 @@
           loading.style.opacity = '0'
           window.setTimeout(() => loading.remove(), 220)
         }
-        const failLoading = () => {
-          if (!loading || ready) return
-          loading.classList.add('failed')
-          if (status) status.textContent = 'Friday did not finish starting.'
-          if (detail) detail.textContent = 'The interface did not report a ready state. Reload to retry, or keep waiting while you inspect the browser console.'
-        }
         window.addEventListener('error', (event) => {
           const message = event.error?.stack || event.message || `Script error at ${event.filename || 'unknown source'}:${event.lineno || 0}:${event.colno || 0}`
           showStartupError(message)
