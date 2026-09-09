@@ -29,8 +29,8 @@ createRoot(root).render(
     <ErrorBoundary fallback={<AppErrorFallback />}>
       <StartupGuard>
         <App />
+        <MountReady />
       </StartupGuard>
-      <MountReady />
       <div className="fixed bottom-3 right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl glass px-4 shadow-lg">
         <UpdateSection />
       </div>
