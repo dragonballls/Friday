@@ -29,3 +29,10 @@ createRoot(root).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
+// Let the static HTML shell disappear only after React has mounted. If React
+// fails before this point, the shell remains visible instead of leaving a blank
+// black window with no indication that startup failed.
+requestAnimationFrame(() => {
+  window.dispatchEvent(new Event('friday:ready'))
+})
