@@ -6,6 +6,11 @@ on:
   pull_request_target:
     types: [opened]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   welcome:
     runs-on: ubuntu-latest
@@ -17,9 +22,9 @@ jobs:
             👋 Thanks for opening your first issue! A maintainer will take a look soon.
 
             In the meantime:
-            - Check the [README](https://github.com/alimaandev/Friday#readme) for existing docs
-            - Search [existing issues](https://github.com/alimaandev/Friday/issues) for duplicates
-            - Join [Discussions](https://github.com/alimaandev/Friday/discussions) for questions
+            - Check the [README](https://github.com/dragonballls/Friday#readme) for existing docs
+            - Search [existing issues](https://github.com/dragonballls/Friday/issues) for duplicates
+            - Join [Discussions](https://github.com/dragonballls/Friday/discussions) for questions
 
           pr-message: |
             🎉 Thanks for your first pull request! A maintainer will review it soon.
