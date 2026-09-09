@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "scripts" / "update.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
-AUTO_UPDATE_INTERVAL = 15
+AUTO_UPDATE_INTERVAL = 1
 STARTUP_TASK_NAME = "Friday UI"
 
 
@@ -94,7 +94,7 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
     """Watch origin/main while the UI supervisor is alive."""
     raw_interval = os.environ.get("FRIDAY_AUTO_UPDATE_INTERVAL", str(AUTO_UPDATE_INTERVAL))
     try:
-        interval = max(15, int(raw_interval))
+        interval = max(1, int(raw_interval))
     except ValueError:
         interval = AUTO_UPDATE_INTERVAL
     first_check = True
@@ -172,6 +172,43 @@ def _terminate_processes(procs: list[subprocess.Popen]):
                 pass
 
 
+def _clear_frontend_port() -> None:
+    """Kill only a Windows listener on Vite's frontend port before starting it."""
+    if sys.platform != "win32":
+        return
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if result.returncode != 0:
+        return
+    pids: set[str] = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[0].upper() != "TCP":
+            continue
+        if parts[3].upper() != "LISTENING":
+            continue
+        if parts[1].rsplit(":", 1)[-1] == "5173" and parts[4].isdigit():
+            pids.add(parts[4])
+    for pid in pids:
+        subprocess.run(
+            ["taskkill", "/PID", pid, "/T", "/F"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+
 def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float = 30.0) -> None:
     """Wait until a child service accepts connections, or fail with its exit code."""
     deadline = time.monotonic() + timeout
@@ -206,6 +243,7 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         procs.append(api)
         _wait_for_port("127.0.0.1", 8080, api)
 
+        _clear_frontend_port()
         front = subprocess.Popen(front_cmd, cwd=desktop)
         procs.append(front)
         _wait_for_port("127.0.0.1", 5173, front)
