@@ -92,8 +92,9 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {proc.returncode}).")
+        exit_code = proc.poll()
+        if exit_code is not None:
+            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {exit_code}).")
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return
@@ -149,9 +150,26 @@ def _launch_ui():
     stop_event = threading.Event()
     _start_auto_update_monitor(root, update_event, stop_event)
     procs: list[subprocess.Popen] = []
+
+    def start_with_retry() -> bool:
+        nonlocal procs
+        while not stop_event.is_set():
+            try:
+                procs = _start_ui_processes(desktop)
+                _open_ui_browser()
+                return True
+            except RuntimeError as exc:
+                _terminate_processes(procs)
+                procs.clear()
+                print_colored(f"\nFriday UI startup failed: {exc}", "31")
+                print_colored("Retrying startup in 2 seconds…", "33")
+                if stop_event.wait(2.0):
+                    return False
+        return False
+
     try:
-        procs = _start_ui_processes(desktop)
-        _open_ui_browser()
+        if not start_with_retry():
+            return
         while True:
             time.sleep(1.0)
             if update_event.is_set():
@@ -166,19 +184,18 @@ def _launch_ui():
                 update_event.clear()
                 stop_event.clear()
                 _start_auto_update_monitor(root, update_event, stop_event)
-                procs = _start_ui_processes(desktop)
-                _open_ui_browser()
+                if not start_with_retry():
+                    return
             elif any(p.poll() is not None for p in procs):
                 print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
                 _terminate_processes(procs)
                 procs.clear()
-                time.sleep(2.0)
-                procs = _start_ui_processes(desktop)
-                _open_ui_browser()
+                if stop_event.wait(2.0):
+                    return
+                if not start_with_retry():
+                    return
     except KeyboardInterrupt:
         print_colored("\nShutting down Friday UI…", "33")
-    except RuntimeError as exc:
-        print_colored(f"\nFriday UI startup failed: {exc}", "31")
     finally:
         stop_event.set()
         _terminate_processes(procs)
@@ -365,10 +382,11 @@ Assistant ke paas tools hain:
   - Shell commands, file operations, web fetching
   - Browser automation (navigate, click, type, screenshot)
   - Python code execution
-  - Persistent memory (remember/recall)
+  - Persistent memory
   - File search
   - System information
 """, "33")
+
 
 if __name__ == "__main__":
     main()
