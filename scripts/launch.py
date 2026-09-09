@@ -21,6 +21,7 @@ MAIN = ROOT / "main.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
 AUTO_UPDATE_INTERVAL = 60
+STARTUP_TASK_NAME = "Friday UI"
 
 
 def _log(message: str) -> None:
@@ -39,9 +40,38 @@ def get_terminal_width() -> int:
     return shutil.get_terminal_size((80, 20)).columns
 
 
+def _ensure_windows_startup_task() -> None:
+    """Register Friday to start automatically whenever the current user logs in."""
+    if sys.platform != "win32":
+        return
+
+    task_command = subprocess.list2cmdline(
+        [sys.executable, str(Path(__file__).resolve()), "--ui", "--startup"]
+    )
+    result = subprocess.run(
+        ["schtasks", "/Create", "/SC", "ONLOGON", "/TN", STARTUP_TASK_NAME, "/TR", task_command, "/F"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        _log(
+            "Could not register automatic Windows startup for Friday "
+            f"(code {result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+        )
+    else:
+        _log("Friday Windows startup task is installed for the current user.")
+
+
 def _detach_windows_ui() -> bool:
     """Re-launch the UI supervisor without tying it to the current console."""
-    if sys.platform != "win32" or os.environ.get("FRIDAY_DETACHED_UI") == "1":
+    if (
+        sys.platform != "win32"
+        or os.environ.get("FRIDAY_DETACHED_UI") == "1"
+        or "--startup" in sys.argv[1:]
+    ):
         return False
 
     detached_process = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
@@ -49,7 +79,7 @@ def _detach_windows_ui() -> bool:
     env = os.environ.copy()
     env["FRIDAY_DETACHED_UI"] = "1"
     subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "--ui"],
+        [sys.executable, str(Path(__file__).resolve()), "--ui", "--startup"],
         cwd=ROOT,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -162,8 +192,6 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
         if not npm_cmd:
             raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
-        # Vite may resolve localhost to IPv6 (::1) on Windows. Bind explicitly to
-        # IPv4 so the readiness probe and browser use the same reachable endpoint.
         front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
     else:
         front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
@@ -192,7 +220,7 @@ def _open_ui_browser():
 
 def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     desktop = os.path.join(root, "desktop")
     print_colored("Friday desktop UI starting…", "36")
     update_event = threading.Event()
@@ -249,6 +277,9 @@ def main():
                 pass
 
     args = sys.argv[1:]
+
+    if "--ui" in args and sys.platform == "win32":
+        _ensure_windows_startup_task()
 
     if "--ui" in args and _detach_windows_ui():
         print_colored("Friday UI detached — it will keep running after this PowerShell window closes.", "32")
