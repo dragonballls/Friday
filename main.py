@@ -22,6 +22,7 @@ BANNER = r"""
 """
 LANG_LABELS = {"english": "English", "hinglish": "Hinglish"}
 AUTO_UPDATE_INTERVAL = 60
+UI_WAIT_THREAD = threading.Thread
 
 
 def get_terminal_width() -> int:
@@ -133,8 +134,8 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
                 errors.append(exc)
 
         threads = [
-            threading.Thread(target=wait_for, args=(8080, api), daemon=True),
-            threading.Thread(target=wait_for, args=(5173, front), daemon=True),
+            UI_WAIT_THREAD(target=wait_for, args=(8080, api), daemon=True),
+            UI_WAIT_THREAD(target=wait_for, args=(5173, front), daemon=True),
         ]
         for thread in threads:
             thread.start()
