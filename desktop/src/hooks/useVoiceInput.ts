@@ -104,7 +104,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     }
 
     recognition.onresult = (event: any) => {
-      if (sessionGenRef.current !== generation) return
+      if (sessionGenRef.current !== generation || recognitionRef.current !== recognition) return
 
       const results = event?.results
       if (!results || typeof results.length !== 'number') return
@@ -130,7 +130,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     }
 
     recognition.onerror = (event: any) => {
-      if (sessionGenRef.current !== generation) return
+      if (sessionGenRef.current !== generation || recognitionRef.current !== recognition) return
       const code = typeof event?.error === 'string' ? event.error : 'unknown'
       if (code === 'no-speech' || code === 'aborted') {
         setStatus('idle')
@@ -142,9 +142,10 @@ export function useVoiceInput(): UseVoiceInputReturn {
     }
 
     recognition.onend = () => {
-      if (sessionGenRef.current !== generation) return
+      if (sessionGenRef.current !== generation || recognitionRef.current !== recognition) return
       setStatus('idle')
       setInterimTranscript('')
+      recognitionRef.current = null
       scheduleRestart()
     }
 
@@ -158,7 +159,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     try {
       recognition.start()
     } catch {
-      if (sessionGenRef.current === generation) {
+      if (sessionGenRef.current === generation && recognitionRef.current === recognition) {
         recognitionRef.current = null
         setStatus('error')
         setError('Failed to start recognition')
@@ -175,6 +176,8 @@ export function useVoiceInput(): UseVoiceInputReturn {
       try { recognitionRef.current.stop() } catch {}
       recognitionRef.current = null
     }
+    setInterimTranscript('')
+    setStatus('idle')
     const transcript = finalRef.current
     return transcript
   }, [clearRestartTimer])
