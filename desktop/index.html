@@ -76,6 +76,10 @@
           const reason = event.reason
           showStartupError(reason?.stack || reason?.message || String(reason || 'Unhandled promise rejection'))
         })
+        window.addEventListener('friday:app-error', (event) => {
+          showStartupError(event.detail?.message || 'Friday failed while rendering the interface.')
+          removeLoading()
+        })
         window.addEventListener('friday:ready', removeLoading, { once: true })
         document.getElementById('friday-loading-reload')?.addEventListener('click', () => window.location.reload())
         document.getElementById('friday-loading-dismiss')?.addEventListener('click', () => removeLoading())
@@ -90,10 +94,10 @@
             }
           })
         }
-        new MutationObserver(hideTransientReconnectNotice).observe(document.documentElement, {
-          childList: true,
-          subtree: true,
-        })
+        const observer = new MutationObserver(hideTransientReconnectNotice)
+        observer.observe(document.documentElement, { childList: true, subtree: true })
+        window.addEventListener('friday:ready', () => observer.disconnect(), { once: true })
+        window.addEventListener('friday:app-error', () => observer.disconnect(), { once: true })
         hideTransientReconnectNotice()
       })()
     </script>
