@@ -18,6 +18,10 @@ export class StartupGuard extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Friday startup render failed:', error, info.componentStack)
+    // The static HTML loading screen sits above React. If React fails before
+    // MountReady can dispatch `friday:ready`, remove that screen so this
+    // diagnostic fallback is actually visible instead of leaving a black page.
+    window.dispatchEvent(new Event('friday:ready'))
   }
 
   private reload = () => window.location.reload()
