@@ -59,13 +59,20 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
     if (!synth) return
 
     const item = speakQueueRef.current.shift()!
-    speakingRef.current = true
+    let utterance: SpeechSynthesisUtterance
+    try {
+      utterance = new SpeechSynthesisUtterance(item.text)
+      if (selectedVoiceRef.current) utterance.voice = selectedVoiceRef.current
+      utterance.rate = item.options?.rate ?? 1
+      utterance.pitch = item.options?.pitch ?? 1
+      utterance.volume = 1
+    } catch {
+      speakingRef.current = false
+      setStatus('idle')
+      return
+    }
 
-    const utterance = new SpeechSynthesisUtterance(item.text)
-    if (selectedVoiceRef.current) utterance.voice = selectedVoiceRef.current
-    utterance.rate = item.options?.rate ?? 1
-    utterance.pitch = item.options?.pitch ?? 1
-    utterance.volume = 1
+    speakingRef.current = true
 
     utterance.onstart = () => setStatus('speaking')
     utterance.onend = () => {
@@ -78,13 +85,27 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
     }
     utterance.onerror = () => {
       speakingRef.current = false
-      setStatus('idle')
+      if (speakQueueRef.current.length > 0) {
+        processQueue()
+      } else {
+        setStatus('idle')
+      }
     }
     utterance.onpause = () => setStatus('paused')
     utterance.onresume = () => setStatus('speaking')
 
     utteranceRef.current = utterance
-    synth.speak(utterance)
+    try {
+      synth.speak(utterance)
+    } catch {
+      speakingRef.current = false
+      utteranceRef.current = null
+      if (speakQueueRef.current.length > 0) {
+        processQueue()
+      } else {
+        setStatus('idle')
+      }
+    }
   }, [])
 
   const speak = useCallback((text: string, options?: SpeakOptions) => {
@@ -95,20 +116,27 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
 
   const stop = useCallback(() => {
     const synth = synthRef.current
-    if (synth) synth.cancel()
+    if (synth) {
+      try { synth.cancel() } catch {}
+    }
     speakQueueRef.current = []
     speakingRef.current = false
+    utteranceRef.current = null
     setStatus('idle')
   }, [])
 
   const pause = useCallback(() => {
     const synth = synthRef.current
-    if (synth) synth.pause()
+    if (synth) {
+      try { synth.pause() } catch {}
+    }
   }, [])
 
   const resume = useCallback(() => {
     const synth = synthRef.current
-    if (synth) synth.resume()
+    if (synth) {
+      try { synth.resume() } catch {}
+    }
   }, [])
 
   const setVoice = useCallback((voice: SpeechSynthesisVoice) => {
@@ -128,30 +156,37 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
     synthRef.current = synth
 
     const loadVoices = () => {
-      const v = synth.getVoices()
-      if (v.length > 0) {
-        setVoices(v)
-        const savedURI = readStorage(VOICE_STORAGE_KEY)
-        if (savedURI) {
-          const match = v.find(vo => vo.voiceURI === savedURI)
-          if (match) {
-            selectedVoiceRef.current = match
-            setSelectedVoiceState(match)
-            return
+      try {
+        const v = synth.getVoices()
+        if (v.length > 0) {
+          setVoices(v)
+          const savedURI = readStorage(VOICE_STORAGE_KEY)
+          if (savedURI) {
+            const match = v.find(vo => vo.voiceURI === savedURI)
+            if (match) {
+              selectedVoiceRef.current = match
+              setSelectedVoiceState(match)
+              return
+            }
+          }
+          if (!selectedVoiceRef.current) {
+            const en = v.find(vo => vo.lang.startsWith('en'))
+            const fallback = en || v[0]
+            selectedVoiceRef.current = fallback
+            setSelectedVoiceState(fallback)
           }
         }
-        if (!selectedVoiceRef.current) {
-          const en = v.find(vo => vo.lang.startsWith('en'))
-          const fallback = en || v[0]
-          selectedVoiceRef.current = fallback
-          setSelectedVoiceState(fallback)
-        }
+      } catch {
+        // Some browsers expose speechSynthesis but fail while enumerating voices.
       }
     }
 
     loadVoices()
     synth.addEventListener('voiceschanged', loadVoices)
-    return () => synth.removeEventListener('voiceschanged', loadVoices)
+    return () => {
+      synth.removeEventListener('voiceschanged', loadVoices)
+      synthRef.current = null
+    }
   }, [isSupported])
 
   return {
