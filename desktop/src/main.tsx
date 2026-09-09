@@ -5,12 +5,7 @@ import App from './App.tsx'
 import { ErrorBoundary, AppErrorFallback } from './components/common/ErrorBoundary'
 import { StartupGuard } from './components/common/StartupGuard'
 import { UpdateSection } from './components/settings/UpdateSection'
-import { watchForUpdates } from './core/autoUpdate'
 import { MountReady } from './components/common/MountReady'
-
-// Vite HMR handles development. Production builds refresh themselves when a new
-// hashed asset set is deployed, so an already-open Friday stays current.
-if (import.meta.env.PROD) watchForUpdates()
 
 const root = document.getElementById('root')
 
