@@ -45,6 +45,10 @@ function pathSegment(value: string): string {
   return encodeURIComponent(value)
 }
 
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 /* ── Low-level fetch with auth + base URL ── */
 export async function fetchApi<T = any>(
   path: string,
@@ -71,6 +75,11 @@ export async function fetchApi<T = any>(
     }
 
     return await res.json() as T
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw { status: 0, message: 'Request timed out or was cancelled' } as ApiError
+    }
+    throw err
   } finally {
     clearTimeout(timer)
   }
@@ -144,7 +153,7 @@ async function streamEndpoint(
 
     onDone()
   } catch (err: any) {
-    if (err?.name !== 'AbortError') {
+    if (!isAbortError(err)) {
       onError(err)
       onDone()
     }
