@@ -56,6 +56,13 @@ def current_branch() -> str | None:
     return result.stdout.strip() or None
 
 
+def _npm_command() -> str | None:
+    """Return an executable npm command that works with Windows .cmd shims."""
+    if sys.platform == "win32":
+        return shutil.which("npm.cmd") or shutil.which("npm")
+    return shutil.which("npm")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
@@ -81,15 +88,16 @@ def main() -> int:
         return 4
 
     if args.build:
-        if shutil.which("npm") is None:
+        npm = _npm_command()
+        if npm is None:
             print("npm is required for --build", file=sys.stderr)
             return 5
         if not DESKTOP.is_dir():
             print(f"Desktop directory not found: {DESKTOP}", file=sys.stderr)
             return 6
-        if run(["npm", "ci"], cwd=DESKTOP) != 0:
+        if run([npm, "ci"], cwd=DESKTOP) != 0:
             return 7
-        if run(["npm", "run", "build"], cwd=DESKTOP) != 0:
+        if run([npm, "run", "build"], cwd=DESKTOP) != 0:
             return 8
 
     print("Friday is up to date.")
