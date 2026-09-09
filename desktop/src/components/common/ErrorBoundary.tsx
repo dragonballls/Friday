@@ -37,25 +37,38 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return (
       <div
         role="alert"
-        className="flex min-h-[200px] items-center justify-center rounded-xl p-6"
-        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 100,
+          display: 'grid',
+          placeItems: 'center',
+          padding: 24,
+          background: '#0a0a0c',
+          color: '#f0f0f0',
+        }}
       >
-        <div className="max-w-sm text-center">
-          <div className="text-2xl" aria-hidden="true">{'\u26A0'}</div>
-          <div className="mt-2 text-sm font-medium" style={{ color: '#e5e5e5' }}>
-            Something went wrong
-          </div>
-          <div className="mt-1 break-words text-xs text-muted" style={{ color: '#999' }}>
-            {this.state.message || 'An unexpected error occurred in this section.'}
-          </div>
+        <div style={{ width: 'min(560px, 100%)', padding: 28, borderRadius: 18, border: '1px solid rgba(239,68,68,.28)', background: 'rgba(255,255,255,.04)', textAlign: 'center' }}>
+          <div style={{ fontSize: 28 }} aria-hidden="true">⚠</div>
+          <h1 style={{ marginTop: 12, fontSize: 18 }}>Friday hit an unexpected error</h1>
+          <p style={{ marginTop: 8, color: '#a0a0a8', fontSize: 13 }}>The interface failed to render. The error below can be used to diagnose the exact component.</p>
+          <details style={{ marginTop: 14, textAlign: 'left' }} open>
+            <summary style={{ cursor: 'pointer', color: '#fca5a5', fontSize: 12 }}>Technical details</summary>
+            <pre style={{ marginTop: 8, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#c0c0c8', fontSize: 11 }}>{this.state.message || 'An unexpected error occurred.'}</pre>
+          </details>
           <button
             type="button"
             onClick={this.reset}
-            className="mt-4 rounded-lg px-4 py-1.5 text-xs font-medium transition-all hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-            style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444' }}
-            aria-label="Try to recover this section"
+            style={{ marginTop: 18, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}
           >
             Try again
+          </button>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{ marginTop: 10, marginLeft: 8, border: '1px solid rgba(255,255,255,.12)', borderRadius: 10, padding: '9px 18px', background: 'rgba(255,255,255,.05)', color: '#ddd', cursor: 'pointer' }}
+          >
+            Reload page
           </button>
         </div>
       </div>
@@ -65,23 +78,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 export function AppErrorFallback() {
   return (
-    <div
-      role="alert"
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: '#0a0a0c' }}
-    >
-      <div className="mx-4 w-[min(28rem,calc(100vw-2rem))] max-w-md rounded-2xl border border-red-500/25 p-6 text-center glass red-glow">
-        <div className="text-3xl" aria-hidden="true">{'\u26A0'}</div>
-        <h1 className="mt-3 text-base font-semibold" style={{ color: '#e5e5e5' }}>
-          Friday hit an unexpected error
-        </h1>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="mt-4 rounded-lg px-5 py-2 text-xs font-medium transition-all hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-          style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-bright))', color: '#000' }}
-          aria-label="Reload Friday"
-        >
+    <div role="alert" style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'grid', placeItems: 'center', background: '#0a0a0c', color: '#f0f0f0' }}>
+      <div style={{ width: 'min(28rem,calc(100vw - 2rem))', padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 28 }} aria-hidden="true">⚠</div>
+        <h1 style={{ marginTop: 12, fontSize: 16 }}>Friday hit an unexpected error</h1>
+        <button type="button" onClick={() => window.location.reload()} style={{ marginTop: 16, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}>
           Reload app
         </button>
       </div>
