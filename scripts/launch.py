@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import webbrowser
 from pathlib import Path
 
 
@@ -25,6 +26,14 @@ def _log(message: str) -> None:
     with LAUNCH_LOG.open("a", encoding="utf-8") as handle:
         handle.write(f"[{stamp}] {message}\n")
     print(message, file=sys.stderr)
+
+
+def print_colored(text: str, color_code: str = "37") -> None:
+    print(f"\033[{color_code}m{text}\033[0m")
+
+
+def get_terminal_width() -> int:
+    return shutil.get_terminal_size((80, 20)).columns
 
 
 def _detach_windows_ui() -> bool:
@@ -62,6 +71,115 @@ def _run_update(*, build: bool = False) -> None:
         _log("Friday update was skipped because the local checkout is not safely fast-forwardable; using current checkout.")
 
 
+def _terminate_processes(procs: list[subprocess.Popen]) -> None:
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.2)
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+
+def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float = 30.0) -> None:
+    """Wait until a child service accepts connections, or fail with its exit code."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"Friday UI service exited before port {port} became ready (exit code {proc.returncode})."
+            )
+        try:
+            import socket
+            with socket.create_connection((host, port), timeout=0.5):
+                return
+        except OSError as exc:
+            last_error = exc
+        time.sleep(0.25)
+    raise RuntimeError(f"Friday UI service did not become ready on {host}:{port} within {timeout:.0f}s ({last_error}).")
+
+
+def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
+    api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
+    if sys.platform == "win32":
+        npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
+        if not npm_cmd:
+            raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
+        front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
+    else:
+        front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
+
+    procs: list[subprocess.Popen] = []
+    try:
+        api = subprocess.Popen(api_cmd, cwd=desktop)
+        procs.append(api)
+        _wait_for_port("127.0.0.1", 8080, api)
+
+        front = subprocess.Popen(front_cmd, cwd=desktop)
+        procs.append(front)
+        _wait_for_port("127.0.0.1", 5173, front)
+        return procs
+    except Exception:
+        _terminate_processes(procs)
+        raise
+
+
+def _open_ui_browser() -> None:
+    url = "http://127.0.0.1:5173/"
+    print_colored(f"Friday UI ready — opening {url}", "32")
+    webbrowser.open(url)
+
+
+def _launch_ui() -> None:
+    """Launch the UI and keep its source/runtime synchronized with origin/main."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    desktop = os.path.join(root, "desktop")
+    print_colored("Friday desktop UI starting…", "36")
+    update_event = __import__("threading").Event()
+    stop_event = __import__("threading").Event()
+    procs: list[subprocess.Popen] = []
+    try:
+        procs = _start_ui_processes(desktop)
+        _open_ui_browser()
+        while True:
+            time.sleep(1.0)
+            if update_event.is_set():
+                _terminate_processes(procs)
+                procs.clear()
+                result = subprocess.run(
+                    [sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False
+                )
+                if result.returncode == 0:
+                    stop_event.set()
+                    os.execv(sys.executable, [sys.executable, *sys.argv])
+                update_event.clear()
+                stop_event.clear()
+                procs = _start_ui_processes(desktop)
+                _open_ui_browser()
+            elif any(p.poll() is not None for p in procs):
+                _terminate_processes(procs)
+                procs.clear()
+                time.sleep(2.0)
+                procs = _start_ui_processes(desktop)
+                _open_ui_browser()
+    except KeyboardInterrupt:
+        print_colored("\nShutting down Friday UI…", "33")
+    except RuntimeError as exc:
+        print_colored(f"\nFriday UI startup failed: {exc}", "31")
+    finally:
+        stop_event.set()
+        _terminate_processes(procs)
+
+
 def main() -> int:
     args = sys.argv[1:]
 
@@ -70,10 +188,6 @@ def main() -> int:
         return 0
 
     if "--ui" in args:
-        # Do this before starting Vite so an older local checkout cannot present
-        # an outdated UI while the background monitor waits for its first poll.
-        # --build also installs any newly required frontend dependencies and
-        # clears a stale Vite process on 5173 before the supervisor starts.
         _run_update(build=True)
     else:
         _run_update()
@@ -81,9 +195,6 @@ def main() -> int:
     if "--ui" not in args:
         return subprocess.run([sys.executable, str(MAIN), *args], cwd=ROOT, check=False).returncode
 
-    # If the supervisor itself crashes before it can recover its child services,
-    # keep the desktop launcher alive and restart it. Normal service recovery
-    # remains inside main.py.
     attempt = 0
     while True:
         attempt += 1
