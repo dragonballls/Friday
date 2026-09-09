@@ -1,6 +1,8 @@
 ﻿import type { DiaryDay, DiaryPage } from '../types'
 
-const API_BASE = 'http://127.0.0.1:8080/api/v1'
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080/api/v1'
+).replace(/\/$/, '')
 
 const AUTH_KEY = 'friday_api_secret'
 
@@ -23,7 +25,7 @@ export interface ApiError {
   body?: any
 }
 
-/* â”€â”€â”€ Low-level fetch with auth + base URL â”€â”€â”€ */
+/* ── Low-level fetch with auth + base URL ── */
 export async function fetchApi<T = any>(
   path: string,
   options: RequestInit = {},
@@ -54,7 +56,7 @@ export async function fetchApi<T = any>(
   }
 }
 
-/* â”€â”€â”€ SSE streaming helper â”€â”€â”€ */
+/* ── SSE streaming helper ── */
 async function streamEndpoint(
   path: string,
   body: Record<string, unknown>,
@@ -110,8 +112,6 @@ async function streamEndpoint(
       }
     }
 
-    // Flush any UTF-8 bytes buffered by TextDecoder and process the final
-    // event even when the server closes without a trailing newline.
     buffer += decoder.decode()
     if (buffer.trim()) {
       try {
@@ -153,7 +153,7 @@ export function streamAutopilot(
   return controller
 }
 
-/* â”€â”€â”€ Typed endpoint helpers â”€â”€â”€ */
+/* ── Typed endpoint helpers ── */
 
 export async function checkHealth(): Promise<{ status: string; sessions: number }> {
   return fetchApi('/health')
@@ -189,7 +189,7 @@ export async function setOutputDir(path: string, sessionId = 'default') {
   })
 }
 
-/* â”€â”€â”€ Tool call approvals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Tool call approvals ── */
 
 export async function getApprovals(): Promise<{ approvals: any[] }> {
   return fetchApi('/approvals')
@@ -265,7 +265,7 @@ export async function deleteMemory(entryId: string) {
   return fetchApi(`/memory/${encodeURIComponent(entryId)}`, { method: 'DELETE' })
 }
 
-/* â”€â”€â”€ Knowledge graph API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Knowledge graph API ── */
 
 export interface KnowledgeEntity {
   name: string
@@ -298,7 +298,7 @@ export async function getKnowledgeContinuity(): Promise<{ continuity: string }> 
   return fetchApi('/knowledge/continuity')
 }
 
-/* â”€â”€â”€ Computer control API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Computer control API ── */
 
 export interface ComputerStatus {
   platform: string
@@ -335,7 +335,7 @@ export async function getComputerSummary(): Promise<ComputerSummary> {
   return fetchApi('/computer/summary')
 }
 
-/* â”€â”€â”€ Plugin marketplace API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Plugin marketplace API ── */
 
 export interface MarketplacePlugin {
   name: string
@@ -357,194 +357,3 @@ export async function installPlugin(name: string): Promise<{ success: boolean; m
 export async function uninstallPlugin(name: string): Promise<{ success: boolean; message?: string; error?: string }> {
   return fetchApi('/plugins/uninstall', { method: 'POST', body: JSON.stringify({ name }) })
 }
-
-/* â”€â”€â”€ Custom tool builder API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export interface CustomTool {
-  name: string
-  description: string
-  parameters: { type: string; properties: Record<string, unknown>; required: string[] }
-  body: string
-  source: string
-}
-
-export async function getCustomTools(): Promise<CustomTool[]> {
-  const res = await fetchApi<{ tools: CustomTool[] }>('/tools/custom')
-  return res.tools
-}
-
-export async function createCustomTool(description: string): Promise<{ tool?: CustomTool; error?: string }> {
-  return fetchApi('/tools/custom', { method: 'POST', body: JSON.stringify({ description }) })
-}
-
-export async function deleteCustomTool(name: string): Promise<{ success?: boolean; error?: string }> {
-  return fetchApi(`/tools/custom/${encodeURIComponent(name)}`, { method: 'DELETE' })
-}
-
-/* â”€â”€â”€ Privacy (blackout mode) API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export interface PrivacyStatus {
-  enabled: boolean
-  local_provider: string
-  blocked_tools: string[]
-}
-
-export async function getPrivacyStatus(): Promise<PrivacyStatus> {
-  return fetchApi('/privacy')
-}
-
-export async function setPrivacy(enabled: boolean): Promise<PrivacyStatus> {
-  return fetchApi('/privacy', { method: 'POST', body: JSON.stringify({ enabled }) })
-}
-
-/* â”€â”€â”€ Diary API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export async function getDiaryRecent(): Promise<{ days: DiaryDay[] }> {
-  return fetchApi('/diary/recent')
-}
-
-export async function getDiaryPage(dateStr?: string): Promise<DiaryPage> {
-  const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : ''
-  return fetchApi(`/diary${q}`)
-}
-
-export async function writeNightlyDigest(): Promise<{ path: string; success: boolean }> {
-  return fetchApi('/diary/nightly', { method: 'POST' })
-}
-
-export async function getGoogleAuth(): Promise<any> {
-  return fetchApi('/auth/google')
-}
-
-export async function getCalendarEvents(): Promise<any> {
-  return fetchApi('/calendar/events')
-}
-
-export async function getEmailInbox(): Promise<any> {
-  return fetchApi('/email/inbox')
-}
-
-export async function getEmailUnread(): Promise<any> {
-  return fetchApi('/email/unread')
-}
-
-export async function getAlerts(): Promise<{ alerts: any[]; count: number }> {
-  return fetchApi('/alerts')
-}
-
-/* â”€â”€â”€ Automations API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export async function getAutomations(): Promise<{ automations: any[] }> {
-  return fetchApi('/automations')
-}
-
-export async function createAutomation(data: {
-  name: string; trigger_type: string; trigger_config: Record<string, any>;
-  action: string; action_params?: Record<string, any>;
-}): Promise<any> {
-  return fetchApi('/automations', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function updateAutomation(id: string, data: Record<string, any>): Promise<any> {
-  return fetchApi(`/automations/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function deleteAutomation(id: string): Promise<any> {
-  return fetchApi(`/automations/${id}`, { method: 'DELETE' })
-}
-
-export async function toggleAutomation(id: string): Promise<any> {
-  return fetchApi(`/automations/${id}/toggle`, { method: 'POST' })
-}
-
-export async function triggerAutomation(id: string): Promise<any> {
-  return fetchApi(`/automations/${id}/trigger`, { method: 'POST' })
-}
-
-/* â”€â”€â”€ Vision API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export async function analyzeVisionImage(image: string, prompt?: string): Promise<{
-  description: string; text: string | null; timestamp: number
-}> {
-  return fetchApi('/vision/analyze', {
-    method: 'POST',
-    body: JSON.stringify({ image, prompt }),
-  })
-}
-
-export async function getVisionScreen(): Promise<{
-  description: string; text: string | null; width: number; height: number; timestamp: number
-}> {
-  return fetchApi('/vision/screen')
-}
-
-/* â”€â”€â”€ SSE EventSource connection â”€â”€â”€ */
-export type ServerEvent = {
-  type: string
-  data: any
-}
-
-export function connectEventSource(
-  onEvent: (event: ServerEvent) => void,
-  onError?: () => void,
-  onStatus?: (connected: boolean) => void,
-): () => void {
-  let es: EventSource | null = null
-  let closed = false
-
-  function connect() {
-    if (closed) return
-    const key = getApiKey()
-    const url = key ? `${API_BASE}/events?key=${encodeURIComponent(key)}` : `${API_BASE}/events`
-    es = new EventSource(url)
-
-    es.onmessage = (msg) => {
-      try {
-        const parsed = JSON.parse(msg.data)
-        onEvent(parsed)
-      } catch {
-        // skip malformed messages
-      }
-    }
-
-    es.onopen = () => {
-      onStatus?.(true)
-    }
-
-    es.onerror = () => {
-      // EventSource fires error while reconnecting too. CONNECTING is
-      // transient and must not make the UI declare the backend offline.
-      if (closed) return
-
-      const state = es?.readyState
-
-      if (state === EventSource.CLOSED) {
-        onStatus?.(false)
-        onError?.()
-      }
-      // CONNECTING means EventSource is actively recovering.
-      // Keep the existing UI/session state intact until onopen fires.
-    }
-  }
-
-  connect()
-
-  return () => {
-    closed = true
-    es?.close()
-    es = null
-  }
-}
-
-
-
-
-
-
-
