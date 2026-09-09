@@ -22,36 +22,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-
       - name: Install dependencies
         working-directory: desktop
         run: npm ci
-
       - name: Verify frontend
         working-directory: desktop
         run: |
           npm run lint
           npm run test
           npm run build
-
       - name: Verify Pages artifact
         working-directory: desktop
         run: |
-          test -f dist/index.html
-          test -f dist/404.html
-          grep -q '/Friday/assets/' dist/index.html
+          test -s dist/index.html
           grep -q '<title>Friday</title>' dist/index.html
-
+          grep -q 'Friday/assets/' dist/index.html
+          test -f dist/404.html
       - name: Configure Pages
         uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
@@ -68,18 +62,18 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
       - name: Verify published page
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          echo "Checking $PAGE_URL"
+          echo "Published URL: $PAGE_URL"
           for attempt in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --location --max-time 20 "$PAGE_URL" | grep -q '<title>Friday</title>'; then
+            status=$(curl --location --silent --show-error --output /tmp/friday-page.html --write-out '%{http_code}' --max-time 20 "$PAGE_URL" || true)
+            echo "Attempt $attempt HTTP $status"
+            if [ "$status" = "200" ] && grep -q '<title>Friday</title>' /tmp/friday-page.html; then
               echo "Published Friday page is reachable."
               exit 0
             fi
-            echo "Published page not ready yet (attempt $attempt); waiting..."
             sleep 10
           done
           echo "Published Friday page did not become reachable."
