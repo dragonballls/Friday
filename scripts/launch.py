@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Start Friday after safely applying available source updates.
 
-This is the normal source-checkout launcher. It never overwrites local work:
-if the checkout is dirty, the updater refuses the update and Friday starts at
-the current revision. A network/update failure is also non-fatal so an already
-working checkout can still launch.
+The desktop UI already has a background update monitor, so its launcher should
+not block startup on a network Git fetch. The normal CLI path still performs
+the safe startup update check.
 """
 
 from __future__ import annotations
@@ -20,11 +19,18 @@ MAIN = ROOT / "main.py"
 
 
 def main() -> int:
-    result = subprocess.run([sys.executable, str(UPDATER)], cwd=ROOT, check=False)
-    if result.returncode not in (0, 2, 3, 4):
-        print(f"Friday update failed (code {result.returncode}); launching current checkout.", file=sys.stderr)
+    args = sys.argv[1:]
 
-    return subprocess.run([sys.executable, str(MAIN), *sys.argv[1:]], cwd=ROOT, check=False).returncode
+    # The UI supervisor checks origin/main in the background once it is running.
+    # Avoid making the user wait on Git/network availability before the UI can
+    # even start. This also prevents a slow/offline Git remote from looking like
+    # a broken Friday launch.
+    if "--ui" not in args:
+        result = subprocess.run([sys.executable, str(UPDATER)], cwd=ROOT, check=False)
+        if result.returncode not in (0, 2, 3, 4):
+            print(f"Friday update failed (code {result.returncode}); launching current checkout.", file=sys.stderr)
+
+    return subprocess.run([sys.executable, str(MAIN), *args], cwd=ROOT, check=False).returncode
 
 
 if __name__ == "__main__":
