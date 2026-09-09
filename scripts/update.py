@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Safely update a Friday source checkout from its configured Git remote.
 
-The updater never resets, force-checks out, or overwrites local changes. It only
-performs a fast-forward merge when the checkout is clean. For launcher use it
-can safely switch a clean feature-branch checkout back to the requested branch;
-the original branch and its commits remain intact.
+The updater never resets, force-checks out, or overwrites local changes. When a
+clean checkout is on another branch, it safely switches to the requested branch
+so the desktop launcher cannot remain stuck on an old feature branch. The
+original branch and its commits remain intact.
 """
 
 from __future__ import annotations
@@ -109,11 +109,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
     parser.add_argument("--branch", default="main", help="Remote branch (default: main)")
-    parser.add_argument(
-        "--switch-to-branch",
-        action="store_true",
-        help="If clean, switch the local checkout to the requested branch before updating",
-    )
     parser.add_argument("--build", action="store_true", help="Install frontend dependencies and build after updating")
     args = parser.parse_args()
 
@@ -123,23 +118,20 @@ def main() -> int:
 
     branch = current_branch()
     if branch != args.branch:
-        if not args.switch_to_branch:
-            print(f"Refusing to update branch '{branch or 'detached HEAD'}'; expected '{args.branch}'.", file=sys.stderr)
-            return 4
         if not working_tree_is_clean():
+            print(
+                f"Refusing to switch from '{branch or 'detached HEAD'}' to '{args.branch}' because local changes exist.",
+                file=sys.stderr,
+            )
             return 2
         print(
-            f"Local checkout is on '{branch or 'detached HEAD'}'; safely switching to '{args.branch}' "
-            "without overwriting local changes or deleting the original branch."
+            f"Local checkout is on '{branch or 'detached HEAD'}'; safely switching to '{args.branch}'. "
+            "The original branch and its commits are preserved."
         )
         if run(["git", "fetch", "--prune", args.remote, args.branch]) != 0:
             return 3
         if run(["git", "checkout", args.branch]) != 0:
             print("Unable to switch to the requested branch; leaving the checkout unchanged.", file=sys.stderr)
-            return 4
-        branch = current_branch()
-        if branch != args.branch:
-            print(f"Checkout ended on '{branch or 'detached HEAD'}'; expected '{args.branch}'.", file=sys.stderr)
             return 4
 
     if not working_tree_is_clean():
