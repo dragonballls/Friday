@@ -21,6 +21,8 @@ LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
 AUTO_UPDATE_INTERVAL = 1
 STARTUP_TASK_NAME = "Friday UI"
+STARTUP_RETRY_DELAY = 5
+MAX_STARTUP_RETRY_DELAY = 30
 
 
 def _log(message: str) -> None:
@@ -265,49 +267,63 @@ def _launch_ui():
     root = str(ROOT)
     desktop = os.path.join(root, "desktop")
     print_colored("Friday desktop UI starting…", "36")
-    update_event = threading.Event()
-    stop_event = threading.Event()
-    _start_auto_update_monitor(root, update_event, stop_event)
-    procs: list[subprocess.Popen] = []
-    try:
-        procs = _start_ui_processes(desktop)
-        _open_ui_browser()
-        while True:
-            time.sleep(1.0)
-            if update_event.is_set():
-                print_colored("\nFriday update detected — restarting safely…", "33")
-                _terminate_processes(procs)
-                procs.clear()
-                result = subprocess.run(
-                    [sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False
-                )
-                if result.returncode == 0:
-                    stop_event.set()
-                    os.execv(sys.executable, [sys.executable, *sys.argv])
-                print_colored(
-                    "Update could not be fully applied; restarting Friday on the latest source available.", "31"
-                )
-                update_event.clear()
-                stop_event.clear()
-                _start_auto_update_monitor(root, update_event, stop_event)
-                procs = _start_ui_processes(desktop)
+    retry_delay = STARTUP_RETRY_DELAY
+    browser_opened = False
+
+    while True:
+        update_event = threading.Event()
+        stop_event = threading.Event()
+        _start_auto_update_monitor(root, update_event, stop_event)
+        procs: list[subprocess.Popen] = []
+        try:
+            procs = _start_ui_processes(desktop)
+            retry_delay = STARTUP_RETRY_DELAY
+            if not browser_opened:
                 _open_ui_browser()
-            elif any(p.poll() is not None for p in procs):
-                print_colored(
-                    "\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33"
-                )
-                _terminate_processes(procs)
-                procs.clear()
-                time.sleep(2.0)
-                procs = _start_ui_processes(desktop)
-                _open_ui_browser()
-    except KeyboardInterrupt:
-        print_colored("\nShutting down Friday UI…", "33")
-    except RuntimeError as exc:
-        print_colored(f"\nFriday UI startup failed: {exc}", "31")
-    finally:
-        stop_event.set()
-        _terminate_processes(procs)
+                browser_opened = True
+
+            while True:
+                time.sleep(1.0)
+                if update_event.is_set():
+                    print_colored("\nFriday update detected — restarting safely…", "33")
+                    _terminate_processes(procs)
+                    procs.clear()
+                    result = subprocess.run(
+                        [sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False
+                    )
+                    if result.returncode == 0:
+                        stop_event.set()
+                        os.execv(sys.executable, [sys.executable, *sys.argv])
+                    _log("Update could not be fully applied; restarting Friday on the latest source available.")
+                    update_event.clear()
+                    stop_event.clear()
+                    _start_auto_update_monitor(root, update_event, stop_event)
+                    procs = _start_ui_processes(desktop)
+                elif any(p.poll() is not None for p in procs):
+                    print_colored(
+                        "\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33"
+                    )
+                    _terminate_processes(procs)
+                    procs.clear()
+                    time.sleep(2.0)
+                    procs = _start_ui_processes(desktop)
+        except KeyboardInterrupt:
+            print_colored("\nShutting down Friday UI…", "33")
+            stop_event.set()
+            _terminate_processes(procs)
+            return
+        except RuntimeError as exc:
+            _log(f"Friday UI startup/recovery failed: {exc}")
+            stop_event.set()
+            _terminate_processes(procs)
+            print_colored(
+                f"Friday UI will retry automatically in {retry_delay}s instead of exiting.", "33"
+            )
+            time.sleep(retry_delay)
+            retry_delay = min(MAX_STARTUP_RETRY_DELAY, retry_delay * 2)
+        finally:
+            stop_event.set()
+            _terminate_processes(procs)
 
 
 def main():
