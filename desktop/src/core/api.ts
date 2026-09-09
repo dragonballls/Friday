@@ -112,6 +112,8 @@ async function streamEndpoint(
       }
     }
 
+    // Flush any UTF-8 bytes buffered by TextDecoder and process the final
+    // event even when the server closes without a trailing newline.
     buffer += decoder.decode()
     if (buffer.trim()) {
       try {
