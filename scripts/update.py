@@ -63,6 +63,48 @@ def _npm_command() -> str | None:
     return shutil.which("npm")
 
 
+def _clear_frontend_port() -> None:
+    """Kill only the Windows process tree currently owning Vite's port."""
+    if sys.platform != "win32":
+        return
+
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return
+
+    if result.returncode != 0:
+        return
+
+    pids: set[str] = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[0].upper() != "TCP":
+            continue
+        local_address = parts[1]
+        state = parts[3].upper()
+        pid = parts[4]
+        if state != "LISTENING":
+            continue
+        if local_address.rsplit(":", 1)[-1] == "5173" and pid.isdigit():
+            pids.add(pid)
+
+    for pid in pids:
+        subprocess.run(
+            ["taskkill", "/PID", pid, "/T", "/F"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
@@ -95,6 +137,7 @@ def main() -> int:
         if not DESKTOP.is_dir():
             print(f"Desktop directory not found: {DESKTOP}", file=sys.stderr)
             return 6
+        _clear_frontend_port()
         if run([npm, "ci"], cwd=DESKTOP) != 0:
             return 7
         if run([npm, "run", "build"], cwd=DESKTOP) != 0:
