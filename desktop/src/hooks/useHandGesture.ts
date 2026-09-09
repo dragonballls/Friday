@@ -45,55 +45,66 @@ export function useHandGesture(
     video.srcObject = stream
     video.playsInline = true
     video.muted = true
-    video.play()
+    video.play().catch(() => {
+      // Camera playback can be rejected by browser autoplay policy.
+    })
 
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      video.srcObject = null
+      video.pause()
+      return
+    }
 
     const tick = () => {
       if (video.readyState < 2) return
-      ctx.drawImage(video, 0, 0, W, H)
-      const img = ctx.getImageData(0, 0, W, H)
-      const d = img.data
+      try {
+        ctx.drawImage(video, 0, 0, W, H)
+        const img = ctx.getImageData(0, 0, W, H)
+        const d = img.data
 
-      let skinCount = 0
-      let totalPixels = 0
-      let sx = 0, sy = 0
+        let skinCount = 0
+        let totalPixels = 0
+        let sx = 0, sy = 0
 
-      for (let y = 0; y < H; y += 2) {
-        for (let x = 0; x < W; x += 2) {
-          const i = (y * W + x) * 4
-          totalPixels++
-          if (isSkin(d[i], d[i + 1], d[i + 2])) {
-            skinCount++
-            sx += x
-            sy += y
+        for (let y = 0; y < H; y += 2) {
+          for (let x = 0; x < W; x += 2) {
+            const i = (y * W + x) * 4
+            totalPixels++
+            if (isSkin(d[i], d[i + 1], d[i + 2])) {
+              skinCount++
+              sx += x
+              sy += y
+            }
           }
         }
-      }
 
-      const ratio = skinCount / totalPixels
-      const value = ratio > 0.04
-        ? Math.round(Math.min((ratio - 0.04) / 0.26, 1) * 100) / 100
-        : null
+        const ratio = skinCount / totalPixels
+        const value = ratio > 0.04
+          ? Math.round(Math.min((ratio - 0.04) / 0.26, 1) * 100) / 100
+          : null
 
-      if (skinCount > 0) {
-        const cx = (sx / skinCount / W) * 2 - 1
-        const cy = -(sy / skinCount / H) * 2 + 1
-        setPosition({ x: Math.max(-1, Math.min(1, cx)), y: Math.max(-1, Math.min(1, cy)) })
-      } else {
-        setPosition(null)
-      }
+        if (skinCount > 0) {
+          const cx = (sx / skinCount / W) * 2 - 1
+          const cy = -(sy / skinCount / H) * 2 + 1
+          setPosition({ x: Math.max(-1, Math.min(1, cx)), y: Math.max(-1, Math.min(1, cy)) })
+        } else {
+          setPosition(null)
+        }
 
-      const prev = lastValueRef.current
-      const now = Date.now()
+        const prev = lastValueRef.current
+        const now = Date.now()
 
-      if (value !== prev || now - lastTimeRef.current > 400) {
-        lastValueRef.current = value
-        lastTimeRef.current = now
-        setOpenness(value)
+        if (value !== prev || now - lastTimeRef.current > 400) {
+          lastValueRef.current = value
+          lastTimeRef.current = now
+          setOpenness(value)
+        }
+      } catch {
+        // Camera frames can become unavailable while permissions or tracks change.
       }
     }
 
