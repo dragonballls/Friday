@@ -35,19 +35,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.props.fallback) return this.props.fallback
 
     return (
-      <div
-        role="alert"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 100,
-          display: 'grid',
-          placeItems: 'center',
-          padding: 24,
-          background: '#0a0a0c',
-          color: '#f0f0f0',
-        }}
-      >
+      <div role="alert" style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'grid', placeItems: 'center', padding: 24, background: '#0a0a0c', color: '#f0f0f0' }}>
         <div style={{ width: 'min(560px, 100%)', padding: 28, borderRadius: 18, border: '1px solid rgba(239,68,68,.28)', background: 'rgba(255,255,255,.04)', textAlign: 'center' }}>
           <div style={{ fontSize: 28 }} aria-hidden="true">⚠</div>
           <h1 style={{ marginTop: 12, fontSize: 18 }}>Friday hit an unexpected error</h1>
@@ -56,20 +44,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <summary style={{ cursor: 'pointer', color: '#fca5a5', fontSize: 12 }}>Technical details</summary>
             <pre style={{ marginTop: 8, maxHeight: 260, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#c0c0c8', fontSize: 11 }}>{this.state.message || 'An unexpected error occurred.'}</pre>
           </details>
-          <button
-            type="button"
-            onClick={this.reset}
-            style={{ marginTop: 18, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}
-          >
-            Try again
-          </button>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{ marginTop: 10, marginLeft: 8, border: '1px solid rgba(255,255,255,.12)', borderRadius: 10, padding: '9px 18px', background: 'rgba(255,255,255,.05)', color: '#ddd', cursor: 'pointer' }}
-          >
-            Reload page
-          </button>
+          <button type="button" onClick={this.reset} style={{ marginTop: 18, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}>Try again</button>
+          <button type="button" onClick={() => window.location.reload()} style={{ marginTop: 10, marginLeft: 8, border: '1px solid rgba(255,255,255,.12)', borderRadius: 10, padding: '9px 18px', background: 'rgba(255,255,255,.05)', color: '#ddd', cursor: 'pointer' }}>Reload page</button>
         </div>
       </div>
     )
@@ -82,9 +58,7 @@ export function AppErrorFallback() {
       <div style={{ width: 'min(28rem,calc(100vw - 2rem))', padding: 24, textAlign: 'center' }}>
         <div style={{ fontSize: 28 }} aria-hidden="true">⚠</div>
         <h1 style={{ marginTop: 12, fontSize: 16 }}>Friday hit an unexpected error</h1>
-        <button type="button" onClick={() => window.location.reload()} style={{ marginTop: 16, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}>
-          Reload app
-        </button>
+        <button type="button" onClick={() => window.location.reload()} style={{ marginTop: 16, border: 0, borderRadius: 10, padding: '9px 18px', background: 'linear-gradient(135deg, #f59e0b, #ffd166)', color: '#000', cursor: 'pointer', fontWeight: 600 }}>Reload app</button>
       </div>
     </div>
   )
