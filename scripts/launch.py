@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Start Friday safely, with fast desktop startup and crash recovery."""
+"""Start Friday safely, with fast desktop startup and crash recovery.
+
+The normal CLI path applies the safe source updater first. The desktop path
+starts immediately and relies on the UI supervisor's background update monitor,
+with an outer recovery loop for supervisor crashes.
+"""
 
 from __future__ import annotations
 
 import datetime as _dt
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -61,7 +67,6 @@ def main() -> int:
 
         _log(f"Friday desktop supervisor exited with code {result.returncode}; retrying in 2 seconds.")
         try:
-            import time
             time.sleep(2.0)
         except KeyboardInterrupt:
             _log("Friday desktop launcher stopped by user.")
