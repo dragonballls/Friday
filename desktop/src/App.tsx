@@ -70,44 +70,33 @@ function writeLocalStorage(key: string, value: string): void {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
-    const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [camActive, setCamActive] = useState(false)
   const [backendOnline, setBackendOnline] = useState(true)
-  const backendOnlineDebug = (value: boolean, source: string) => {
-    console.log('[BACKEND ONLINE]', value, source)
-    setBackendOnline(value)
-  }
+  const backendOnlineDebug = (value: boolean, source: string) => { console.log('[BACKEND ONLINE]', value, source); setBackendOnline(value) }
   const [outputDir, setOutputDirState] = useState(() => readLocalStorage('friday_output_dir'))
   const [dataLoaded, setDataLoaded] = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const [alerts, setAlerts] = useState<ProactiveAlert[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [intelligenceOpen, setIntelligenceOpen] = useState(() => readLocalStorage('friday_intelligence_open', '1') !== '0')
-  const [personaPrompts, setPersonaPrompts] = useState<Record<string, string>>(() => {
-    try {
-      const raw = readLocalStorage('friday_persona_prompts')
-      return raw ? JSON.parse(raw) : {}
-    } catch { return {} }
-  })
-const [briefing, setBriefing] = useState<{ summary: string; sections: string[]; greeting: string; yesterday?: string } | null>(null)
-const [automations, setAutomations] = useState<Automation[]>([])
-const [visionScreenResult, setVisionScreenResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
-const [visionCameraResult, setVisionCameraResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
-const [visionAnalyzing, setVisionAnalyzing] = useState(false)
-const [holodeckExpanded, setHolodeckExpanded] = useState(true)
-const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null)
+  const [personaPrompts, setPersonaPrompts] = useState<Record<string, string>>(() => { try { const raw = readLocalStorage('friday_persona_prompts'); return raw ? JSON.parse(raw) : {} } catch { return {} } })
+  const [briefing, setBriefing] = useState<{ summary: string; sections: string[]; greeting: string; yesterday?: string } | null>(null)
+  const [automations, setAutomations] = useState<Automation[]>([])
+  const [visionScreenResult, setVisionScreenResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
+  const [visionCameraResult, setVisionCameraResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
+  const [visionAnalyzing, setVisionAnalyzing] = useState(false)
+  const [holodeckExpanded, setHolodeckExpanded] = useState(true)
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null)
   const [autopilotRun, setAutopilotRun] = useState<AutopilotRun | null>(null)
   const [now, setNow] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }))
   const [continuity, setContinuity] = useState('')
   const [computerReady, setComputerReady] = useState(false)
   const [computerStatus, setComputerStatus] = useState<{ platform: string; mouse_keyboard: boolean; window_management: boolean } | null>(null)
   const [blackout, setBlackout] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    try { return readLocalStorage('friday_onboarded', '1') !== '1' } catch { return true }
-  })
+  const [showOnboarding, setShowOnboarding] = useState(() => readLocalStorage('friday_onboarded', '1') !== '1')
 
-  // ── Fine-grained Zustand selectors (before any hooks that use them) ───
   const sessions = useStore(s => s.sessions)
   const activeSessionId = useStore(s => s.activeSessionId)
   const loading = useStore(s => s.loading)
@@ -118,16 +107,9 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
   const metricsState = useStore(s => s.metrics)
   const zen = useStore(s => s.zen)
   const handsFree = useStore(s => s.handsFree)
-  const active = useStore(s => {
-    const found = s.sessions.find(ses => ses.id === s.activeSessionId)
-    return found || s.sessions[0]
-  })
+  const active = useStore(s => s.sessions.find(ses => ses.id === s.activeSessionId) || s.sessions[0])
 
-  const [systemInfo, setSystemInfo] = useState<SystemInfo>({
-    hostname: '-', os: '-', cpu_cores: 0, python_version: '-',
-    uptime_seconds: 0, llm_calls: 0, tokens_used: 0, failures: 0, retries: 0,
-    model: '-', provider: '-',
-  })
+  const [systemInfo, setSystemInfo] = useState<SystemInfo>({ hostname: '-', os: '-', cpu_cores: 0, python_version: '-', uptime_seconds: 0, llm_calls: 0, tokens_used: 0, failures: 0, retries: 0, model: '-', provider: '-' })
   const [news, setNews] = useState<NewsItem[]>([])
   const [weather, setWeather] = useState<WeatherData | null>(null)
   const [stocks, setStocks] = useState<any[]>([])
@@ -137,59 +119,174 @@ const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(n
   const [space, setSpace] = useState<SpaceData | null>(null)
   const [cve, setCve] = useState<CveItem[]>([])
   const [clocks, setClocks] = useState<WorldClock[]>([])
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const handleGoogleConnect = useCallback(() => {
-    getGoogleAuth().then(d => {
-      if (d.url) {
-        const popup = window.open(d.url, '_blank')
-        if (!popup || popup.closed) {
-          alert('Please allow popups for this site to connect Google Calendar and Email.')
-        }
-      }
-    }).catch(() => {})
-  }, [])
-
+  const handleGoogleConnect = useCallback(() => { getGoogleAuth().then(d => { if (d.url) { const popup = window.open(d.url, '_blank'); if (!popup || popup.closed) alert('Please allow popups for this site to connect Google Calendar and Email.') } }).catch(() => {}) }, [])
   const { stream, status: camStatus, requestAccess, stop: stopCam } = useCamera()
   const { openness, position: handPosition } = useHandGesture(stream, camActive)
+  const { isSupported: voiceInputSupported, status: voiceInputStatus, interimTranscript, finalTranscript, startListening: startVoiceInput, stopListening: stopVoiceInput, cancelAutoRestart, resetTranscript } = useVoiceInput()
+  const { enabled: voiceOutputEnabled, setEnabled: setVoiceOutputEnabled, status: voiceOutputStatus, speak: speakResponse, stop: stopVoiceOutput } = useVoiceOutput()
+  const { active: wakeWordActive, start: startWakeWord, stop: stopWakeWord } = useWakeWord(() => { cancelAutoRestart(); resetTranscript(); if (!ambientActive) setAmbientActive(true); startVoiceInput(voiceLanguage, true) })
 
-  const {
-    isSupported: voiceInputSupported,
-    status: voiceInputStatus,
-    interimTranscript,
-    finalTranscript,
-    startListening: startVoiceInput,
-    stopListening: stopVoiceInput,
-    cancelAutoRestart,
-    resetTranscript,
-  } = useVoiceInput()
-
-  const {
-    enabled: voiceOutputEnabled,
-    setEnabled: setVoiceOutputEnabled,
-    status: voiceOutputStatus,
-    speak: speakResponse,
-    stop: stopVoiceOutput,
-  } = useVoiceOutput()
-
-  const {
-    active: wakeWordActive,
-    start: startWakeWord,
-    stop: stopWakeWord,
-  } = useWakeWord(() => {
-    cancelAutoRestart()
-    resetTranscript()
-    if (!ambientActive) {
-      setAmbientActive(true)
-    }
-    startVoiceInput(voiceLanguage, true)
-  })
-
-  // ── Ambient Voice Mode ─────────────────────────────────────────────────
   const [ambientActive, setAmbientActive] = useState(false)
   const ambientTranscriptRef = useRef('')
   const ambientSilenceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ambientActiveRef = useRef(false)
+  const clearAmbientSilence = useCallback(() => { if (ambientSilenceRef.current) { clearTimeout(ambientSilenceRef.current); ambientSilenceRef.current = null } }, [])
+  const exitAmbient = useCallback(() => { clearAmbientSilence(); cancelAutoRestart(); stopVoiceInput(); ambientActiveRef.current = false; setAmbientActive(false) }, [clearAmbientSilence, cancelAutoRestart, stopVoiceInput])
+  const enterAmbient = useCallback(() => { cancelAutoRestart(); resetTranscript(); ambientTranscriptRef.current = ''; ambientActiveRef.current = true; setAmbientActive(true); startVoiceInput(voiceLanguage, true) }, [cancelAutoRestart, resetTranscript, startVoiceInput, voiceLanguage])
+  useEffect(() => { if (handsFree && voiceInputSupported && !ambientActive) enterAmbient() }, [handsFree, voiceInputSupported, ambientActive, enterAmbient])
+  const handleToggleHandsFree = useCallback(() => { const next = !handsFree; state.setHandsFree(next); if (next) enterAmbient(); else exitAmbient() }, [handsFree, enterAmbient, exitAmbient])
+  useEffect(() => { if (!ambientActiveRef.current) return; if (voiceInputStatus === 'idle' && finalTranscript && finalTranscript !== ambientTranscriptRef.current) { ambientTranscriptRef.current = finalTranscript; clearAmbientSilence(); const text = finalTranscript.trim(); if (text) { resetTranscript(); handleSendRef.current(text) } } }, [ambientActive, voiceInputStatus, finalTranscript, clearAmbientSilence, resetTranscript])
+  useEffect(() => { if (!ambientActiveRef.current) return; clearAmbientSilence(); if (voiceInputStatus === 'idle' && voiceOutputStatus === 'idle') ambientSilenceRef.current = setTimeout(() => { if (ambientActiveRef.current) exitAmbient() }, 5000); return clearAmbientSilence }, [ambientActive, voiceInputStatus, voiceOutputStatus, clearAmbientSilence, exitAmbient])
+  useEffect(() => { theme.init() }, [])
+  useEffect(() => { const end = messagesEndRef.current; const container = end?.parentElement; if (!end || !container) return; const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight; if (distanceFromBottom < 160) end.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [active.messages])
+  useEffect(() => { const handleKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setCommandOpen(o => !o) } }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey) }, [])
 
-  const clearAmbientSilence = useCallback(() => {
+  useEffect(() => {
+    let cancelled = false
+    const handleEvent = (ev: ServerEvent) => {
+      if (cancelled) return
+      switch (ev.type) {
+        case 'metrics': state.setMetrics({ latency: ev.data.latency || 0, tokenUsage: ev.data.tokenUsage || 0 }); break
+        case 'system_info': setSystemInfo(prev => ({ ...prev, ...ev.data })); break
+        case 'memory': setMemoryData(prev => prev ? { ...prev, ...ev.data } : null); if (ev.data.vector_count != null) state.setMetrics({ memory: ev.data.vector_count }); break
+        case 'alert': setAlerts(prev => { if (prev.some(a => a.timestamp === ev.data.timestamp && a.title === ev.data.title)) return prev; const next = [ev.data, ...prev].slice(0, 5); if (ev.data.severity === 'warning') showNativeNotification(ev.data.title, ev.data.description); return next }); break
+        case 'screen': setScreenData(ev.data); break
+        case 'clocks': setClocks(ev.data.clocks || []); break
+        case 'briefing': setBriefing(ev.data); break
+        case 'diary': setDiaryRefreshToken(t => t + 1); break
+        case 'automation_run': setAutomations(prev => prev.map(a => a.id === ev.data.id ? { ...a, last_run: ev.data.timestamp, last_status: ev.data.status, run_count: a.run_count + 1 } : a)); break
+        case 'vision': setVisionScreenResult(ev.data); break
+      }
+    }
+    const unsub = connectEventSource(handleEvent, () => { if (!cancelled) setSseConnected(false) }, connected => { if (!cancelled) { setSseConnected(connected); if (connected) backendOnlineDebug(true, 'SSE connected') } })
+    return () => { cancelled = true; unsub() }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const init = async () => {
+      try {
+        const health = await checkHealth()
+        if (cancelled) return
+        backendOnlineDebug(health.status === 'ok', 'health')
+        let sessionResponse: { sessions: { id: string; language: string }[] } = { sessions: [] }
+        try { sessionResponse = await getSessions() } catch {}
+        if (cancelled) return
+        if (sessionResponse.sessions.length > 0) state.set({ sessions: sessionResponse.sessions.map((s: any) => ({ id: s.id, title: s.language === 'hinglish' ? 'Hinglish session' : 'Session', messages: [], createdAt: Date.now() })), activeSessionId: sessionResponse.sessions[0].id })
+        else { const created = await createSession(); if (!cancelled) state.set({ sessions: [{ id: created.session_id, title: 'Session', messages: [], createdAt: Date.now() }], activeSessionId: created.session_id }) }
+        const fetchRemaining = async () => {
+          const results = await Promise.allSettled([
+            getGoogleAuth(), getNews(), getWeather(), getStocks(), getGithubTrending(), getEarthquakes(), getCrypto(), getSpace(), getCve(), getMemory(), getScreen(), getAutomations(),
+          ])
+          const authResp = results[0].status === 'fulfilled' ? results[0].value : null
+          if (results[1].status === 'fulfilled') setNews(results[1].value.articles || [])
+          if (results[2].status === 'fulfilled') setWeather(results[2].value)
+          if (results[3].status === 'fulfilled') setStocks(results[3].value.stocks || [])
+          if (results[4].status === 'fulfilled') setRepos(results[4].value.repos || [])
+          if (results[5].status === 'fulfilled') setEarthquakes(results[5].value.earthquakes || [])
+          if (results[6].status === 'fulfilled') setCrypto(results[6].value.crypto || [])
+          if (results[7].status === 'fulfilled') setSpace(results[7].value)
+          if (results[8].status === 'fulfilled') setCve(results[8].value.cve || [])
+          if (results[9].status === 'fulfilled') setMemoryData(results[9].value)
+          if (results[10].status === 'fulfilled') setScreenData(results[10].value)
+          if (results[11].status === 'fulfilled') setAutomations(results[11].value.automations || [])
+          const authStatus = authResp?.status || ''; setCalendarAuth(authStatus); setEmailAuth(authStatus)
+          if (authStatus === 'authenticated') await Promise.allSettled([getCalendarEvents().then(d => setCalendarEvents(d.events || [])), getEmailInbox().then(d => setEmailMessages(d.messages || [])), getEmailUnread().then(d => setEmailUnread(d.unread || 0))])
+        }
+        await fetchRemaining()
+        getKnowledgeContinuity().then(d => { if (!cancelled) setContinuity(d.continuity || '') }).catch(() => {})
+        getComputerStatus().then(d => { if (!cancelled) { setComputerReady(Boolean(d.mouse_keyboard && d.window_management)); setComputerStatus(d) } }).catch(() => {})
+        getPrivacyStatus().then(d => { if (!cancelled) setBlackout(d.enabled) }).catch(() => {})
+        if (!cancelled) setDataLoaded(true)
+      } catch { if (!cancelled) toast('warning', 'Some Friday startup data could not be loaded.') }
+    }
+    init(); return () => { cancelled = true }
+  }, [])
+
+  const dismissAlert = useCallback((idx: number) => setAlerts(prev => prev.filter((_, i) => i !== idx)), [])
+  const [memoryData, setMemoryData] = useState<MemoryData | null>(null)
+  const [screenData, setScreenData] = useState<ScreenData | null>(null)
+  const [diaryRefreshToken, setDiaryRefreshToken] = useState(0)
+  const [calendarAuth, setCalendarAuth] = useState('')
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [emailAuth, setEmailAuth] = useState('')
+  const [emailMessages, setEmailMessages] = useState<EmailMessage[]>([])
+  const [emailUnread, setEmailUnread] = useState(0)
+  useEffect(() => { getOutputDir(activeSessionId).then((d: any) => { if (d) setOutputDirState(d.output_dir) }).catch(() => {}) }, [activeSessionId])
+  const lastMsgRef = useRef('')
+  useEffect(() => { if (!voiceOutputEnabled || active.messages.length === 0) return; const lastMsg = active.messages[active.messages.length - 1]; if (lastMsg.role === 'assistant' && !lastMsg.streaming && lastMsg.content && lastMsg.content !== lastMsgRef.current && lastMsg.content.length > 10) { lastMsgRef.current = lastMsg.content; speakResponse(lastMsg.content, PERSONA_TTS[persona]) } }, [active.messages, voiceOutputEnabled, speakResponse, persona])
+  const toggleCamera = useCallback(() => { setCamActive(prev => { if (prev) { stopCam(); return false } return true }) }, [stopCam])
+  const handleNewSession = useCallback(async () => { const curSessions = state.get().sessions; try { const data = await createSession(); state.set({ sessions: [...curSessions, { id: data.session_id, title: 'Session', messages: [], createdAt: Date.now() }], activeSessionId: data.session_id }) } catch { const id = `local_${Date.now()}`; state.set({ sessions: [...curSessions, { id, title: 'Session (offline)', messages: [], createdAt: Date.now() }], activeSessionId: id }) } }, [])
+  const handleSetOutputDir = useCallback(async (path: string) => { setOutputDirState(path); writeLocalStorage('friday_output_dir', path); try { await setOutputDir(path, state.get().activeSessionId) } catch {} }, [])
+  const handleDeleteSession = useCallback((id: string) => { deleteSession(id).catch(() => {}); const cur = state.get(); const next = cur.sessions.filter(x => x.id !== id); state.set({ sessions: next, activeSessionId: cur.activeSessionId === id ? (next[0]?.id || 'default') : cur.activeSessionId }) }, [])
+  const handleDeleteMemory = useCallback((id: string) => { deleteMemory(id).catch(() => {}); setMemoryData(prev => { if (!prev) return prev; const vectorRemoved = (prev.vector_memories || []).some(m => m.id === id); const embeddingRemoved = (prev.embedding_memories || []).some(m => m.id === id); const filter = (list?: any[]) => (list || []).filter(m => m.id !== id); return { ...prev, vector_memories: filter(prev.vector_memories), embedding_memories: filter(prev.embedding_memories), vector_count: Math.max(0, (prev.vector_count ?? 0) - (vectorRemoved ? 1 : 0)), embedding_count: Math.max(0, (prev.embedding_count ?? 0) - (embeddingRemoved ? 1 : 0)) } }) }, [])
+  const handleApproval = useCallback((requestId: string, allowed: boolean) => { setPendingApproval(null); resolveApproval(requestId, allowed).catch(() => {}) }, [])
+  useEffect(() => { const id = setInterval(() => setNow(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })), 1000); return () => clearInterval(id) }, [])
+  useEffect(() => { const handleKey = (e: KeyboardEvent) => { const mod = e.metaKey || e.ctrlKey; if (!mod) return; if (e.key === 'n' && !e.shiftKey) { e.preventDefault(); handleNewSession() } else if (e.key === ',') { e.preventDefault(); setSettingsOpen(true) } else if (e.key === 'b' && !e.shiftKey) { e.preventDefault(); state.toggleZen() } }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey) }, [handleNewSession])
+  const abortRef = useRef<AbortController | null>(null)
+  const handleStop = useCallback(() => { abortRef.current?.abort(); abortRef.current = null; setAutopilotRun(null); state.setLoading(false); state.updateMessages(msgs => msgs.map(m => m.streaming ? { ...m, streaming: false } : m)); state.setOrb('idle') }, [])
+  const [searchQuery, setSearchQuery] = useState('')
+  const filteredMessages = searchQuery ? active.messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())) : active.messages
+  const [lastUserMsg, setLastUserMsg] = useState('')
+  const lastUserMsgRef = useRef('')
+  useEffect(() => { lastUserMsgRef.current = lastUserMsg })
+  const handleSend = useCallback(async (text: string) => {
+    if (loading) return
+    setLastUserMsg(text); abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller; state.setLoading(true); state.setOrb('thinking')
+    const trimmed = text.trim(); const isAuto = /^\/autopilot\b/i.test(trimmed) || (/^autopilot\s*[-:ØŒ]?\s/i.test(trimmed) && trimmed.replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim().length > 0); const goal = isAuto ? trimmed.replace(/^\/autopilot\b/i, '').replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim() : ''
+    if (isAuto && goal.length === 0) { state.setLoading(false); abortRef.current = null; setAutopilotRun(null); state.setOrb('idle'); return }
+    state.updateMessages(msgs => [...msgs, { id: nextId(), role: 'user', content: text }]); const aid = nextId(); state.updateMessages(msgs => [...msgs, { id: aid, role: 'assistant', content: '', streaming: true, toolCalls: [] }]); if (isAuto) setAutopilotRun({ goal, phase: 'planning', steps: [] })
+    const applyAutoEvent = (ev: any) => setAutopilotRun(prev => { const base = prev ?? { goal: ev.goal ?? '', phase: 'planning' as const, steps: [] as AutopilotRun['steps'] }; switch (ev.event) { case 'plan': return { ...base, goal: ev.goal ?? base.goal, phase: 'running' as const, steps: (ev.tasks || []).map((t: any) => ({ id: t.id, description: t.description, tool: t.tool, status: 'pending' as AutopilotStepStatus, error: null })) }; case 'step_start': return { ...base, phase: 'running' as const, steps: base.steps.map(s => s.id === ev.task.id ? { ...s, status: 'running' as AutopilotStepStatus } : s) }; case 'step_done': return { ...base, steps: base.steps.map(s => s.id === ev.task.id ? { ...s, status: (ev.task.status === 'failed' ? 'failed' : 'completed') as AutopilotStepStatus, result: ev.task.result, error: ev.task.error } : s) }; case 'step_skipped': return { ...base, steps: base.steps.map(s => s.id === ev.task.id ? { ...s, status: 'skipped' as AutopilotStepStatus } : s) }; case 'aborted': return { ...base, phase: 'aborted' as const, abortedReason: ev.reason }; case 'done': return { ...base, phase: 'done' as const, stats: ev.stats }; default: return base } })
+    let acc = ''; let lastFlush = 0; const TOKEN_THROTTLE = 40; const flushTokens = () => { lastFlush = performance.now(); state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: acc } : m)) }
+    const stream = isAuto ? streamAutopilot({ goal, session_id: activeSessionId }, ev => { if (ev.type === 'autopilot') { applyAutoEvent(ev); return } switch (ev.type) { case 'tokens': acc += ev.content; if (performance.now() - lastFlush >= TOKEN_THROTTLE) flushTokens(); break; case 'tool_result': flushTokens(); state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls || []), ...(ev.tools || [])] } : m)); state.setOrb('executing'); break; case 'requires_confirmation': setPendingApproval({ id: ev.request_id, tool: ev.tool, args: ev.args }); state.setOrb('idle'); break; case 'done': flushTokens(); if (ev.final) { state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: ev.content || acc, streaming: false } : m)); state.setOrb('idle') } break } }, err => { const isNetwork = err?.message?.includes('network') || err?.status === 0; setAutopilotRun(prev => prev ? { ...prev, phase: 'aborted', abortedReason: err?.message || 'error' } : prev); state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: isNetwork ? 'Backend offline — start `python api_server.py` on port 8080' : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m)); state.setOrb('error'); setTimeout(() => state.setOrb('idle'), 2000) }, () => { state.setLoading(false); abortRef.current = null }) : streamChat({ message: text, session_id: activeSessionId, persona, persona_prompt: personaPrompts[persona] || undefined }, ev => { switch (ev.type) { case 'plan': state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, plan: ev.tasks.map((t: any, i: number) => `${i + 1}. ${t.description}`).join('\n') } : m)); state.setOrb('thinking'); break; case 'task_start': { const desc = (ev.task?.description || '').toLowerCase(); if (desc.includes('search') || desc.includes('browse')) state.setOrb('searching'); else if (desc.includes('code') || desc.includes('parse') || desc.includes('lint') || desc.includes('format')) state.setOrb('coding'); else state.setOrb('reasoning'); break } case 'tokens': acc += ev.content; if (performance.now() - lastFlush >= TOKEN_THROTTLE) flushTokens(); break; case 'tool_result': flushTokens(); state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls || []), ...(ev.tools || [])] } : m)); state.setOrb('executing'); break; case 'requires_confirmation': setPendingApproval({ id: ev.request_id, tool: ev.tool, args: ev.args }); state.setOrb('idle'); break; case 'task_done': flushTokens(); state.setOrb('reasoning'); break; case 'fast': state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: ev.content, streaming: false, reflex: ev.reflex } : m)); state.setOrb('idle'); break; case 'done': flushTokens(); if (ev.final) { state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: ev.content || acc, streaming: false } : m)); state.setOrb('idle') } break } }, err => { const isNetwork = err?.message?.includes('network') || err?.status === 0; state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: isNetwork ? 'Backend offline — start `python api_server.py` on port 8080' : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m)); state.setOrb('error'); setTimeout(() => state.setOrb('idle'), 2000) }, () => { state.setLoading(false); abortRef.current = null })
+    abortRef.current = stream
+  }, [loading, activeSessionId, persona, personaPrompts])
+  const handleSendRef = useRef<(text: string) => void>(null as any); useEffect(() => { handleSendRef.current = handleSend })
+  const prevOpennessRef = useRef<number | null>(null); const gestureVoiceActive = useRef(false)
+  useEffect(() => { if (!camActive || openness == null) return; const prev = prevOpennessRef.current; prevOpennessRef.current = openness; if (openness > 0.7 && (prev == null || prev <= 0.5) && !gestureVoiceActive.current) { gestureVoiceActive.current = true; resetTranscript(); startVoiceInput(); return } if (openness < 0.3 && prev != null && prev >= 0.5 && gestureVoiceActive.current) { gestureVoiceActive.current = false; const transcript = stopVoiceInput(); if (transcript.trim()) handleSendRef.current(transcript.trim()) } }, [camActive, openness, startVoiceInput, stopVoiceInput, resetTranscript])
+  const sendMessage = useCallback((text: string) => { if (!text.trim() || loading) return; handleSend(text) }, [loading, handleSend])
+  const [, setCommandDraft] = useState<string | undefined>(); const handleCommandTemplate = useCallback((prompt: string) => setCommandDraft(`${prompt} `), []); const handleRegenerate = useCallback(() => { const msg = lastUserMsgRef.current; if (!msg || state.get().loading) return; state.updateMessages(msgs => { const idx = msgs.findLastIndex(m => m.role === 'assistant'); if (idx === -1) return msgs; return msgs.slice(0, idx) }); handleSendRef.current(msg) }, [])
+  const recentTools = active.messages.flatMap(m => m.toolCalls || []).slice(-8)
+  const handleToggleVoiceOutput = useCallback(() => { const next = !voiceOutputEnabled; setVoiceOutputEnabled(next); state.set({ voiceOutputEnabled: next }); if (!next) stopVoiceOutput() }, [voiceOutputEnabled, setVoiceOutputEnabled, stopVoiceOutput])
+  const handleCycleLanguage = useCallback(() => { const current = state.get().voiceLanguage; const idx = LANG_CYCLE.indexOf(current); state.setVoiceLanguage(LANG_CYCLE[(idx + 1) % LANG_CYCLE.length]) }, [])
+  const handleSetPersona = useCallback((key: string) => state.setPersona(key), [])
+  const handleSetPersonaPrompt = useCallback((prompt: string) => { setPersonaPrompts(prev => { const next = { ...prev, [persona]: prompt }; writeLocalStorage('friday_persona_prompts', JSON.stringify(next)); return next }) }, [persona])
+  const handleAutomationToggle = useCallback(async (id: string) => { try { const updated = await toggleAutomation(id); setAutomations(prev => prev.map(a => a.id === id ? { ...a, enabled: updated.enabled } : a)) } catch {} }, [])
+  const handleAutomationDelete = useCallback(async (id: string) => { try { await deleteAutomation(id); setAutomations(prev => prev.filter(a => a.id !== id)) } catch {} }, [])
+  const handleAutomationTrigger = useCallback(async (id: string) => { try { await triggerAutomation(id) } catch {} }, [])
+  const handleVisionCaptureCamera = useCallback(async () => { if (visionAnalyzing || !stream) return; setVisionAnalyzing(true); try { const frame = captureFrame(stream); if (frame) setVisionCameraResult(await analyzeVisionImage(frame)) } catch {} setVisionAnalyzing(false) }, [visionAnalyzing, stream])
+  const handleVisionCaptureScreen = useCallback(async () => { if (visionAnalyzing) return; setVisionAnalyzing(true); try { setVisionScreenResult(await getVisionScreen()) } catch {} setVisionAnalyzing(false) }, [visionAnalyzing])
+  const playBriefing = useCallback(() => { if (briefing && voiceOutputEnabled) speakResponse(briefing.summary, PERSONA_TTS[persona]) }, [briefing, voiceOutputEnabled, speakResponse, persona])
+  useEffect(() => { writeLocalStorage('friday_voice_output_enabled', String(voiceOutputEnabled)) }, [voiceOutputEnabled])
+  useEffect(() => { writeLocalStorage('friday_voice_language', voiceLanguage) }, [voiceLanguage])
+  useEffect(() => { writeLocalStorage('friday_wake_word_enabled', String(wakeWordActive)) }, [wakeWordActive])
+
+  const commandActions = [
+    { id: 'new-session', label: 'New session', action: handleNewSession }, { id: 'toggle-zen', label: zen ? 'Exit zen mode (dashboard)' : 'Enter zen mode', action: () => state.toggleZen() }, { id: 'toggle-handsfree', label: handsFree ? 'Disable hands-free listening' : 'Enable hands-free listening', action: handleToggleHandsFree }, { id: 'toggle-sidebar', label: 'Toggle sessions sidebar', action: () => setSidebarOpen(o => !o) }, { id: 'toggle-workspace', label: workspaceOpen ? 'Close workspace preview' : 'Open workspace preview', action: () => setWorkspaceOpen(o => !o) }, { id: 'toggle-camera', label: 'Gesture control', action: toggleCamera }, { id: 'toggle-voice-output', label: 'Toggle voice output', action: handleToggleVoiceOutput }, { id: 'cycle-language', label: `Voice language: ${voiceLanguage}`, action: handleCycleLanguage }, { id: 'persona-friday', label: 'Persona: FRIDAY', action: () => handleSetPersona('friday') }, { id: 'persona-jarvis', label: 'Persona: J.A.R.V.I.S.', action: () => handleSetPersona('jarvis') }, { id: 'persona-cortana', label: 'Persona: Cortana', action: () => handleSetPersona('cortana') }, { id: 'persona-adonis', label: 'Persona: ADONIS', action: () => handleSetPersona('adonis') }, { id: 'vision-screen', label: 'Analyze screen', action: handleVisionCaptureScreen }, { id: 'vision-camera', label: 'Capture camera', action: handleVisionCaptureCamera }, { id: 'toggle-holodeck', label: holodeckExpanded ? 'Hide Holodeck' : 'Show Holodeck', action: () => setHolodeckExpanded(e => !e) },
+  ]
+  if (ambientActive) commandActions.push({ id: 'exit-ambient', label: 'Exit ambient conversation', action: exitAmbient })
+  if (voiceInputSupported && !ambientActive) commandActions.push({ id: 'ambient-voice', label: 'Start ambient conversation', action: enterAmbient })
+  if (voiceInputSupported) commandActions.push({ id: 'voice-input', label: 'Voice input (hold mic)', action: () => startVoiceInput() })
+  if (wakeWordActive) commandActions.push({ id: 'stop-wake-word', label: 'Disable wake word', action: stopWakeWord }); else if (voiceInputSupported) commandActions.push({ id: 'start-wake-word', label: 'Enable wake word ("Hey Friday")', action: startWakeWord })
+
+  return <div className="h-full flex flex-col" style={{ background: 'var(--bg)' }}>
+    {!backendOnline && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}>Backend offline — start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080</div>}
+    {backendOnline && !sseConnected && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs" style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fde68a' }}>Reconnecting…</div>}
+    {alerts.length > 0 && <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">{alerts.map((a, i) => <AlertToast key={a.timestamp + '-' + i} alert={a} onDismiss={() => dismissAlert(i)} />)}</div>}
+    {pendingApproval && <ApprovalDialog request={pendingApproval} onResolve={handleApproval} />}
+    <ToastContainer />
+    <CameraIndicator stream={camActive ? stream : null} active={camActive} openness={openness} onToggle={toggleCamera} voiceInputStatus={voiceInputStatus} voiceOutputStatus={voiceOutputStatus} />
+    {camActive && camStatus === 'idle' && <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}><div className="rounded-2xl p-8 text-center max-w-sm w-full glass blue-glow"><p className="text-sm mb-2" style={{ color: '#e5e5e5' }}>Gesture Control</p><p className="text-xs mb-3" style={{ color: '#a0a0a8' }}>Friday needs camera access to detect hand gestures.</p><button onClick={requestAccess} className="px-6 py-2 rounded-xl text-sm transition-all hover:scale-105 active:scale-95" style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-bright))', color: '#000', fontWeight: 500 }}>Grant Access</button></div></div>}
+    {camActive && camStatus === 'denied' && <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}><div className="rounded-2xl p-8 text-center max-w-sm w-full glass"><p className="text-sm mb-2" style={{ color: '#e5e5e5' }}>Camera Access Denied</p><p className="text-xs mb-6" style={{ color: '#a0a0a8' }}>Allow camera access in browser settings and try again.</p><button onClick={toggleCamera} className="px-6 py-2 rounded-xl text-sm transition-all hover:scale-105 active:scale-95 glass glass-hover" style={{ color: '#a0a0a8' }}>Dismiss</button></div></div>}
+    <div className="relative flex flex-col h-full" style={{ zIndex: 10 }}>
+      {zen ? <div className="relative h-full"><ZenStage orbState={orb} metrics={{ latency: metricsState.latency, model: metricsState.model, provider: metricsState.provider, memory: metricsState.memory, tokenUsage: metricsState.tokenUsage }} messages={active.messages} autopilotRun={autopilotRun} onSend={sendMessage} onStop={handleStop} onRegenerate={handleRegenerate} loading={loading} voiceInputSupported={voiceInputSupported} voiceStatus={voiceInputStatus} voiceInterim={interimTranscript} voiceLanguage={voiceLanguage} onVoiceStart={() => { exitAmbient(); cancelAutoRestart(); resetTranscript(); startVoiceInput(voiceLanguage) }} onVoiceStop={() => { cancelAutoRestart(); return stopVoiceInput() }} onCycleLanguage={handleCycleLanguage} personaName={personaName} onToggleDashboard={() => state.toggleZen()} handsFree={handsFree} ambientActive={ambientActive} onToggleHandsFree={handleToggleHandsFree} persona={persona} continuity={continuity} greeting={personaName} computerReady={computerReady} blackout={blackout} temperature={weather?.temperature ?? null} location={weather?.location ?? ''} time={now} handPosition={handPosition} voiceActivity={voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking'} />{showOnboarding && <Onboarding onDismiss={() => setShowOnboarding(false)} onSuggest={text => sendMessage(text)} />}</div> : <><StatusRibbon systemInfo={systemInfo} latency={metricsState.latency} orbState={orb} memory={metricsState.memory} backendOnline={backendOnline} onCommandPalette={() => setCommandOpen(o => !o)} voiceOutputEnabled={voiceOutputEnabled} onToggleVoiceOutput={handleToggleVoiceOutput} voiceInputStatus={voiceInputStatus} voiceOutputStatus={voiceOutputStatus} ambientActive={ambientActive} onExitAmbient={exitAmbient} persona={persona} /><div className="flex-1 flex min-h-0">{sidebarOpen && <LeftSidebar sessions={sessions} activeId={activeSessionId} onSelect={id => state.set({ activeSessionId: id })} onNew={handleNewSession} onDelete={handleDeleteSession} onSettings={() => setSettingsOpen(true)} outputDir={outputDir} onSetOutputDir={handleSetOutputDir} />}<main className="flex-1 flex flex-col min-w-0"><div className="flex-1 flex flex-col items-center relative min-h-0"><div className="w-full max-w-[720px] flex-1 min-h-0 flex flex-col"><div className={`relative flex flex-col min-h-0 ${autopilotRun ? 'flex-1' : ''}`}><AiCore orbState={orb} metrics={{ latency: metricsState.latency, model: metricsState.model, provider: metricsState.provider, memory: metricsState.memory, tokenUsage: metricsState.tokenUsage }} onCommand={handleCommandTemplate} hasMessages={!autopilotRun && active.messages.length > 0} handPosition={handPosition} persona={persona} voiceActivity={voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking'} />{autopilotRun && <BrainView run={autopilotRun} size={320} />}</div>{active.messages.length > 0 && <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-8 pb-4">{active.messages.length > 1 && <div className="sticky top-0 z-10 pb-2" style={{ background: 'var(--bg)' }}><input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search messages..." className="w-full rounded-xl px-3 py-2 text-xs outline-none transition-all" style={{ background: 'rgba(255,255,255,0.04)', border: searchQuery ? '1px solid rgba(212,160,64,0.2)' : '1px solid rgba(255,255,255,0.06)', color: '#999' }} /></div>}{filteredMessages.length === 0 && searchQuery && <div className="text-center py-8 text-xs" style={{ color: '#666' }}>No messages match "{searchQuery}"</div>}{filteredMessages.map((m, idx) => <MessageBubble key={m.id} message={m} index={idx} onRegenerate={m.role === 'assistant' && !m.streaming ? handleRegenerate : undefined} onStop={m.role === 'assistant' && m.streaming ? handleStop : undefined} />)}<div ref={messagesEndRef} /></div>}</div></div><InputBar onSend={sendMessage} loading={loading} onVoiceStart={() => { exitAmbient(); cancelAutoRestart(); resetTranscript(); startVoiceInput(voiceLanguage) }} onVoiceStop={() => { cancelAutoRestart(); return stopVoiceInput() }} voiceStatus={voiceInputStatus} voiceInterim={interimTranscript} isVoiceSupported={voiceInputSupported} voiceLanguage={voiceLanguage} onCycleLanguage={handleCycleLanguage} personaName={personaName} /></main><Suspense fallback={<div className="w-10 shrink-0" />}><button type="button" aria-label={intelligenceOpen ? 'Hide intelligence panel' : 'Show intelligence panel'} onClick={() => setIntelligenceOpen(open => { const next = !open; writeLocalStorage('friday_intelligence_open', next ? '1' : '0'); return next })} className="w-8 shrink-0 self-stretch border-l border-white/[.06] text-[10px] text-[#666] transition-colors hover:text-[#00a8ff]">{intelligenceOpen ? '‹' : '›'}</button>{intelligenceOpen && <IntelligencePanel news={news} weather={weather} stocks={stocks} repos={repos} systemInfo={systemInfo} recentTools={recentTools} loading={!dataLoaded} earthquakes={earthquakes} crypto={crypto} space={space} cve={cve} clocks={clocks} memoryData={memoryData} onMemoryDelete={handleDeleteMemory} screenData={screenData} computerStatus={computerStatus} onRefreshComputer={() => { getComputerStatus().then(d => { setComputerReady(Boolean(d.mouse_keyboard && d.window_management)); setComputerStatus(d) }).catch(() => {}) }} calendarEvents={calendarEvents} calendarAuth={calendarAuth} emailMessages={emailMessages} emailUnread={emailUnread} emailAuth={emailAuth} onCalendarConnect={handleGoogleConnect} onEmailConnect={handleGoogleConnect} briefing={briefing} onPlayBriefing={playBriefing} voiceOutputEnabled={voiceOutputEnabled} automations={automations} onAutomationToggle={handleAutomationToggle} onAutomationDelete={handleAutomationDelete} onAutomationTrigger={handleAutomationTrigger} visionScreenResult={visionScreenResult} visionCameraResult={visionCameraResult} onVisionCaptureCamera={handleVisionCaptureCamera} onVisionCaptureScreen={handleVisionCaptureScreen} visionAnalyzing={visionAnalyzing} holodeckMetrics={{ latency: metricsState.latency, memory: metricsState.memory, tokenUsage: metricsState.tokenUsage }} holodeckGesturePosition={handPosition ?? undefined} holodeckGestureOpenness={openness ?? undefined} holodeckExpanded={holodeckExpanded} onHolodeckToggle={() => setHolodeckExpanded(e => !e)} diaryRefreshToken={diaryRefreshToken} />}</Suspense></div></>}
+    </div>
+    <Suspense fallback={null}><CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} commands={commandActions} /></Suspense>
+    {workspaceOpen && <WorkspaceBrowser onClose={() => setWorkspaceOpen(false)} />}
+    {settingsOpen && <Suspense fallback={null}><SettingsPanel onClose={() => setSettingsOpen(false)} voiceOutputEnabled={voiceOutputEnabled} onToggleVoiceOutput={handleToggleVoiceOutput} voiceLanguage={voiceLanguage} onCycleLanguage={handleCycleLanguage} wakeWordActive={wakeWordActive} onToggleWakeWord={wakeWordActive ? stopWakeWord : startWakeWord} camActive={camActive} onToggleCamera={toggleCamera} backendOnline={backendOnline} calendarAuth={calendarAuth} emailAuth={emailAuth} onGoogleConnect={handleGoogleConnect} persona={persona} onSetPersona={handleSetPersona} personaPrompt={personaPrompts[persona] || ''} onSetPersonaPrompt={handleSetPersonaPrompt} /></Suspense>}
+  </div>
+}
+
+export default App
