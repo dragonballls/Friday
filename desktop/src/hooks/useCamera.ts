@@ -9,14 +9,25 @@ interface UseCameraReturn {
   stop: () => void
 }
 
+function stopTracks(stream: MediaStream | null): void {
+  try {
+    stream?.getTracks().forEach(track => track.stop())
+  } catch {
+    // A browser may invalidate a track while permissions or devices change.
+  }
+}
+
 export function useCamera(): UseCameraReturn {
   const [status, setStatus] = useState<CameraStatus>('idle')
   const [stream, setStream] = useState<MediaStream | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const requestGenerationRef = useRef(0)
 
   useEffect(() => {
     return () => {
-      streamRef.current?.getTracks().forEach(t => t.stop())
+      requestGenerationRef.current += 1
+      stopTracks(streamRef.current)
+      streamRef.current = null
     }
   }, [])
 
@@ -26,17 +37,29 @@ export function useCamera(): UseCameraReturn {
       return
     }
 
+    const generation = ++requestGenerationRef.current
+    stopTracks(streamRef.current)
+    streamRef.current = null
+    setStream(null)
     setStatus('loading')
+
     try {
-      streamRef.current?.getTracks().forEach(t => t.stop())
-      const s = await navigator.mediaDevices.getUserMedia({
+      const nextStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 160, height: 120, facingMode: 'user' },
         audio: false,
       })
-      streamRef.current = s
-      setStream(s)
+
+      // A newer request or unmount won the race. Do not publish or leak this stream.
+      if (generation !== requestGenerationRef.current) {
+        stopTracks(nextStream)
+        return
+      }
+
+      streamRef.current = nextStream
+      setStream(nextStream)
       setStatus('active')
     } catch {
+      if (generation !== requestGenerationRef.current) return
       streamRef.current = null
       setStream(null)
       setStatus('denied')
@@ -44,7 +67,8 @@ export function useCamera(): UseCameraReturn {
   }, [])
 
   const stop = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop())
+    requestGenerationRef.current += 1
+    stopTracks(streamRef.current)
     streamRef.current = null
     setStream(null)
     setStatus('idle')
