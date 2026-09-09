@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
@@ -17,11 +17,19 @@ if (!root) {
   throw new Error('Friday root element was not found.')
 }
 
+function MountReady() {
+  useEffect(() => {
+    window.dispatchEvent(new Event('friday:ready'))
+  }, [])
+  return null
+}
+
 createRoot(root).render(
   <StrictMode>
     <ErrorBoundary fallback={<AppErrorFallback />}>
       <StartupGuard>
         <App />
+        <MountReady />
       </StartupGuard>
       <div className="fixed bottom-3 right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl glass px-4 shadow-lg">
         <UpdateSection />
