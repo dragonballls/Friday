@@ -108,7 +108,7 @@ export const ShareMoment = memo(function ShareMoment({
     link.download = `friday-moment-${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-  }, [orbState, persona, message, time, displayName, visual.color])
+  }, [orbState, message, time, displayName, visual.color])
 
   if (!open) return null
 
