@@ -74,10 +74,15 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
     const gen = sessionGenRef.current
 
     recognition.onresult = (event: any) => {
+      if (!activeRef.current || gen !== sessionGenRef.current || recognitionRef.current !== recognition) return
       const now = Date.now()
       if (now - cooldownRef.current < COOLDOWN_MS) return
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript.toLowerCase()
+      const results = event?.results
+      const resultIndex = Number.isInteger(event?.resultIndex) ? event.resultIndex : 0
+      if (!results || typeof results.length !== 'number') return
+      for (let i = Math.max(0, resultIndex); i < results.length; i++) {
+        const transcript = results[i]?.[0]?.transcript
+        if (typeof transcript !== 'string') continue
         if (WAKE_PATTERN.test(transcript)) {
           cooldownRef.current = now
           onWakeRef.current()
@@ -87,12 +92,15 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
     }
 
     recognition.onerror = (event: any) => {
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        setError(event.error || 'Wake word detection error')
+      if (gen !== sessionGenRef.current || recognitionRef.current !== recognition) return
+      const code = event?.error || 'unknown'
+      if (code !== 'no-speech' && code !== 'aborted') {
+        setError(code || 'Wake word detection error')
       }
     }
 
     recognition.onend = () => {
+      if (gen !== sessionGenRef.current) return
       setListening(false)
       if (recognitionRef.current === recognition) {
         recognitionRef.current = null
