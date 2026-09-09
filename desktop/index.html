@@ -7,11 +7,22 @@
     <style>
       html, body { height: 100%; margin: 0; }
       body { background: #0a0a0f; color: #f0f0f0; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      #friday-loading { min-height: 100%; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, rgba(0,168,255,.10), transparent 42%), #0a0a0f; }
-      #friday-loading-card { text-align: center; padding: 28px; }
+      #root { min-height: 100%; }
+      #friday-loading { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, rgba(0,168,255,.10), transparent 42%), #0a0a0f; transition: opacity .2s ease; }
+      #friday-loading-card { text-align: center; padding: 28px; max-width: 440px; }
       #friday-loading-title { font-size: 22px; font-weight: 600; letter-spacing: .02em; }
       #friday-loading-status { margin-top: 8px; color: #a0a0a8; font-size: 13px; }
+      #friday-loading-detail { margin-top: 10px; color: #666b75; font-size: 11px; line-height: 1.5; }
+      #friday-loading-error { display: none; margin: 14px auto 0; max-width: 520px; padding: 10px 12px; border: 1px solid rgba(239,68,68,.28); border-radius: 10px; color: #fca5a5; background: rgba(239,68,68,.06); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; text-align: left; white-space: pre-wrap; word-break: break-word; }
       #friday-loading-spinner { width: 22px; height: 22px; margin: 18px auto 0; border: 2px solid rgba(255,255,255,.12); border-top-color: #33ccff; border-radius: 50%; animation: friday-spin .8s linear infinite; }
+      #friday-loading-actions { display: none; gap: 8px; justify-content: center; margin-top: 18px; }
+      #friday-loading-actions button { border: 0; border-radius: 9px; padding: 8px 14px; cursor: pointer; font: inherit; font-size: 12px; }
+      #friday-loading-reload { background: linear-gradient(135deg, #f0b84b, #ffd166); color: #000; font-weight: 600; }
+      #friday-loading-dismiss { background: rgba(255,255,255,.06); color: #bbb; }
+      #friday-loading.failed #friday-loading-spinner { display: none; }
+      #friday-loading.failed #friday-loading-status { color: #fca5a5; }
+      #friday-loading.failed #friday-loading-actions { display: flex; }
+      #friday-loading.has-error #friday-loading-error { display: block; }
       @keyframes friday-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { #friday-loading-spinner { animation: none; } }
     </style>
@@ -21,15 +32,54 @@
       <div id="friday-loading-card">
         <div id="friday-loading-title">Friday</div>
         <div id="friday-loading-status">Starting the interface…</div>
+        <div id="friday-loading-detail">Loading the workspace without requiring a backend connection.</div>
+        <div id="friday-loading-error" role="alert"></div>
         <div id="friday-loading-spinner" aria-hidden="true"></div>
+        <div id="friday-loading-actions">
+          <button id="friday-loading-reload" type="button">Reload Friday</button>
+          <button id="friday-loading-dismiss" type="button">Keep waiting</button>
+        </div>
       </div>
     </div>
     <div id="root"></div>
     <script>
       (() => {
         const loading = document.getElementById('friday-loading')
-        const removeLoading = () => loading?.remove()
+        const status = document.getElementById('friday-loading-status')
+        const detail = document.getElementById('friday-loading-detail')
+        const errorBox = document.getElementById('friday-loading-error')
+        let ready = false
+        const showStartupError = (message) => {
+          if (ready || !loading) return
+          loading.classList.add('failed', 'has-error')
+          if (status) status.textContent = 'Friday hit a startup error.'
+          if (detail) detail.textContent = 'The error below happened before the interface reported ready. This is useful for diagnosing a broken deployment.'
+          if (errorBox) errorBox.textContent = String(message || 'Unknown startup error')
+        }
+        const removeLoading = () => {
+          ready = true
+          if (!loading) return
+          loading.style.opacity = '0'
+          window.setTimeout(() => loading.remove(), 220)
+        }
+        const failLoading = () => {
+          if (!loading || ready) return
+          loading.classList.add('failed')
+          if (status) status.textContent = 'Friday did not finish starting.'
+          if (detail) detail.textContent = 'The interface did not report a ready state. Reload to retry, or keep waiting while you inspect the browser console.'
+        }
+        window.addEventListener('error', (event) => {
+          const message = event.error?.stack || event.message || `Script error at ${event.filename || 'unknown source'}:${event.lineno || 0}:${event.colno || 0}`
+          showStartupError(message)
+        })
+        window.addEventListener('unhandledrejection', (event) => {
+          const reason = event.reason
+          showStartupError(reason?.stack || reason?.message || String(reason || 'Unhandled promise rejection'))
+        })
         window.addEventListener('friday:ready', removeLoading, { once: true })
+        document.getElementById('friday-loading-reload')?.addEventListener('click', () => window.location.reload())
+        document.getElementById('friday-loading-dismiss')?.addEventListener('click', () => removeLoading())
+        window.setTimeout(failLoading, 12000)
         const hideTransientReconnectNotice = () => {
           document.querySelectorAll('body *').forEach((el) => {
             const text = el.textContent?.trim() || ''
