@@ -76,7 +76,7 @@ def _terminate_processes(procs: list[subprocess.Popen]):
                 proc.terminate()
             except OSError:
                 pass
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 5
     while time.monotonic() < deadline and any(p.poll() is None for p in procs):
         time.sleep(0.2)
     for proc in procs:
@@ -100,31 +100,54 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
                 return
         except OSError as exc:
             last_error = exc
-        time.sleep(0.25)
+        time.sleep(0.15)
     raise RuntimeError(f"Friday UI service did not become ready on {host}:{port} within {timeout:.0f}s ({last_error}).")
 
 
 def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
+    """Start API and frontend together, then wait for both readiness probes."""
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
     if sys.platform == "win32":
         npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
         if not npm_cmd:
             raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
-        # Vite may resolve localhost to IPv6 (::1) on Windows. Bind explicitly to
-        # IPv4 so the readiness probe and browser use the same reachable endpoint.
         front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
     else:
         front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
 
     procs: list[subprocess.Popen] = []
     try:
+        # Start both services before waiting. API initialization can be the slow
+        # part, so Vite gets to start and become ready at the same time.
         api = subprocess.Popen(api_cmd, cwd=desktop)
         procs.append(api)
-        _wait_for_port("127.0.0.1", 8080, api)
-
         front = subprocess.Popen(front_cmd, cwd=desktop)
         procs.append(front)
-        _wait_for_port("127.0.0.1", 5173, front)
+
+        # Probe both independently so the total startup timeout is bounded by
+        # the slower service instead of the sum of both startup times.
+        errors: list[Exception] = []
+        ready = threading.Event()
+
+        def wait_for(port: int, proc: subprocess.Popen) -> None:
+            try:
+                _wait_for_port("127.0.0.1", port, proc)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                ready.set()
+
+        threads = [
+            threading.Thread(target=wait_for, args=(8080, api), daemon=True),
+            threading.Thread(target=wait_for, args=(5173, front), daemon=True),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        if errors:
+            raise errors[0]
         return procs
     except Exception:
         _terminate_processes(procs)
