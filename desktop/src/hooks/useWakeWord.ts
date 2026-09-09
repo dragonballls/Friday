@@ -12,6 +12,7 @@ interface UseWakeWordReturn {
 const WAKE_PATTERN = /\bhey\s*friday\b/i
 const COOLDOWN_MS = 5000
 const SESSION_RENEW_INTERVAL = 40000
+const RESTART_DEBOUNCE = 300
 
 export function useWakeWord(onWake: () => void): UseWakeWordReturn {
   const [active, setActive] = useState(false)
@@ -22,6 +23,7 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
   const activeRef = useRef(false)
   const sessionGenRef = useRef(0)
   const renewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onWakeRef = useRef(onWake)
   onWakeRef.current = onWake
 
@@ -34,11 +36,16 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
       clearInterval(renewIntervalRef.current)
       renewIntervalRef.current = null
     }
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
     if (recognitionRef.current) {
       try { recognitionRef.current.abort() } catch {}
       recognitionRef.current = null
     }
     activeRef.current = false
+    sessionGenRef.current += 1
     setActive(false)
     setListening(false)
   }, [])
@@ -48,7 +55,18 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
 
     const SpeechRecognitionCtor =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const recognition = new SpeechRecognitionCtor()
+
+    let recognition: any
+    try {
+      recognition = new SpeechRecognitionCtor()
+    } catch {
+      setError('Failed to initialize wake word detection')
+      setActive(false)
+      setListening(false)
+      activeRef.current = false
+      return
+    }
+
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
@@ -70,15 +88,23 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
 
     recognition.onerror = (event: any) => {
       if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        setError(event.error)
+        setError(event.error || 'Wake word detection error')
       }
     }
 
     recognition.onend = () => {
       setListening(false)
-      recognitionRef.current = null
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null
+      }
       if (activeRef.current && gen === sessionGenRef.current) {
-        startSession()
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null
+          if (activeRef.current && gen === sessionGenRef.current) {
+            startSession()
+          }
+        }, RESTART_DEBOUNCE)
       }
     }
 
@@ -87,11 +113,13 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
     try {
       recognition.start()
       setListening(true)
+      setError(null)
     } catch {
+      if (recognitionRef.current === recognition) recognitionRef.current = null
       setError('Failed to start wake word detection')
-      setActive(false)
       setListening(false)
       activeRef.current = false
+      setActive(false)
     }
   }, [])
 
@@ -112,6 +140,10 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
     renewIntervalRef.current = setInterval(() => {
       if (!activeRef.current) return
       sessionGenRef.current += 1
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current)
+        restartTimerRef.current = null
+      }
       if (recognitionRef.current) {
         try { recognitionRef.current.abort() } catch {}
         recognitionRef.current = null
@@ -122,12 +154,13 @@ export function useWakeWord(onWake: () => void): UseWakeWordReturn {
 
   useEffect(() => {
     return () => {
-      if (renewIntervalRef.current) {
-        clearInterval(renewIntervalRef.current)
-      }
+      if (renewIntervalRef.current) clearInterval(renewIntervalRef.current)
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
       if (recognitionRef.current) {
         try { recognitionRef.current.abort() } catch {}
       }
+      activeRef.current = false
+      sessionGenRef.current += 1
     }
   }, [])
 
