@@ -11,6 +11,7 @@ interface UseCameraReturn {
 
 export function useCamera(): UseCameraReturn {
   const [status, setStatus] = useState<CameraStatus>('idle')
+  const [stream, setStream] = useState<MediaStream | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
@@ -20,15 +21,24 @@ export function useCamera(): UseCameraReturn {
   }, [])
 
   const requestAccess = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('denied')
+      return
+    }
+
     setStatus('loading')
     try {
+      streamRef.current?.getTracks().forEach(t => t.stop())
       const s = await navigator.mediaDevices.getUserMedia({
         video: { width: 160, height: 120, facingMode: 'user' },
         audio: false,
       })
       streamRef.current = s
+      setStream(s)
       setStatus('active')
     } catch {
+      streamRef.current = null
+      setStream(null)
       setStatus('denied')
     }
   }, [])
@@ -36,8 +46,9 @@ export function useCamera(): UseCameraReturn {
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+    setStream(null)
     setStatus('idle')
   }, [])
 
-  return { stream: streamRef.current, status, requestAccess, stop }
+  return { stream, status, requestAccess, stop }
 }
