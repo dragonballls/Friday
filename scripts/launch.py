@@ -6,8 +6,10 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path
@@ -18,6 +20,7 @@ UPDATER = ROOT / "scripts" / "update.py"
 MAIN = ROOT / "main.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
+AUTO_UPDATE_INTERVAL = 60
 
 
 def _log(message: str) -> None:
@@ -45,9 +48,8 @@ def _detach_windows_ui() -> bool:
     new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
     env = os.environ.copy()
     env["FRIDAY_DETACHED_UI"] = "1"
-    command = [sys.executable, str(Path(__file__).resolve()), "--ui"]
     subprocess.Popen(
-        command,
+        [sys.executable, str(Path(__file__).resolve()), "--ui"],
         cwd=ROOT,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -59,19 +61,66 @@ def _detach_windows_ui() -> bool:
     return True
 
 
-def _run_update(*, build: bool = False) -> None:
-    """Synchronize the clean main checkout before startup; never make it fatal."""
-    command = [sys.executable, str(UPDATER)]
-    if build:
-        command.append("--build")
-    result = subprocess.run(command, cwd=ROOT, check=False)
-    if result.returncode not in (0, 2, 3, 4):
-        _log(f"Friday update failed (code {result.returncode}); launching current checkout.")
-    elif result.returncode in (2, 4):
-        _log("Friday update was skipped because the local checkout is not safely fast-forwardable; using current checkout.")
+def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
+    """Watch origin/main while the UI supervisor is alive."""
+    raw_interval = os.environ.get("FRIDAY_AUTO_UPDATE_INTERVAL", str(AUTO_UPDATE_INTERVAL))
+    try:
+        interval = max(15, int(raw_interval))
+    except ValueError:
+        interval = AUTO_UPDATE_INTERVAL
+    first_check = True
+    while not stop_event.is_set():
+        if not first_check and stop_event.wait(interval):
+            return
+        first_check = False
+        try:
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            if branch != "main":
+                continue
+            status = subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=all"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if status.returncode != 0 or status.stdout.strip():
+                continue
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main", "--prune"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                continue
+            local = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "rev-parse", "origin/main"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            if local and remote and local != remote:
+                update_event.set()
+                return
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
 
 
-def _terminate_processes(procs: list[subprocess.Popen]) -> None:
+def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
+    monitor = threading.Thread(
+        target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True
+    )
+    monitor.start()
+    return monitor
+
+
+def _terminate_processes(procs: list[subprocess.Popen]):
     for proc in procs:
         if proc.poll() is None:
             try:
@@ -99,7 +148,6 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
                 f"Friday UI service exited before port {port} became ready (exit code {proc.returncode})."
             )
         try:
-            import socket
             with socket.create_connection((host, port), timeout=0.5):
                 return
         except OSError as exc:
@@ -114,6 +162,8 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
         if not npm_cmd:
             raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
+        # Vite may resolve localhost to IPv6 (::1) on Windows. Bind explicitly to
+        # IPv4 so the readiness probe and browser use the same reachable endpoint.
         front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
     else:
         front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
@@ -133,19 +183,21 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         raise
 
 
-def _open_ui_browser() -> None:
+def _open_ui_browser():
+    """Open the actual Vite frontend, not the API's default port."""
     url = "http://127.0.0.1:5173/"
     print_colored(f"Friday UI ready — opening {url}", "32")
     webbrowser.open(url)
 
 
-def _launch_ui() -> None:
+def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
     root = os.path.dirname(os.path.abspath(__file__))
     desktop = os.path.join(root, "desktop")
     print_colored("Friday desktop UI starting…", "36")
-    update_event = __import__("threading").Event()
-    stop_event = __import__("threading").Event()
+    update_event = threading.Event()
+    stop_event = threading.Event()
+    _start_auto_update_monitor(root, update_event, stop_event)
     procs: list[subprocess.Popen] = []
     try:
         procs = _start_ui_processes(desktop)
@@ -153,6 +205,7 @@ def _launch_ui() -> None:
         while True:
             time.sleep(1.0)
             if update_event.is_set():
+                print_colored("\nFriday update detected — restarting safely…", "33")
                 _terminate_processes(procs)
                 procs.clear()
                 result = subprocess.run(
@@ -161,11 +214,18 @@ def _launch_ui() -> None:
                 if result.returncode == 0:
                     stop_event.set()
                     os.execv(sys.executable, [sys.executable, *sys.argv])
+                print_colored(
+                    "Update could not be fully applied; restarting Friday on the latest source available.", "31"
+                )
                 update_event.clear()
                 stop_event.clear()
+                _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
                 _open_ui_browser()
             elif any(p.poll() is not None for p in procs):
+                print_colored(
+                    "\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33"
+                )
                 _terminate_processes(procs)
                 procs.clear()
                 time.sleep(2.0)
@@ -180,7 +240,14 @@ def _launch_ui() -> None:
         _terminate_processes(procs)
 
 
-def main() -> int:
+def main():
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except (AttributeError, ValueError):
+                pass
+
     args = sys.argv[1:]
 
     if "--ui" in args and _detach_windows_ui():
@@ -215,6 +282,18 @@ def main() -> int:
         except KeyboardInterrupt:
             _log("Friday desktop launcher stopped by user.")
             return 0
+
+
+def _run_update(*, build: bool = False) -> None:
+    """Synchronize the clean main checkout before startup; never make it fatal."""
+    command = [sys.executable, str(UPDATER)]
+    if build:
+        command.append("--build")
+    result = subprocess.run(command, cwd=ROOT, check=False)
+    if result.returncode not in (0, 2, 3, 4):
+        _log(f"Friday update failed (code {result.returncode}); launching current checkout.")
+    elif result.returncode in (2, 4):
+        _log("Friday update was skipped because the local checkout is not safely fast-forwardable; using current checkout.")
 
 
 if __name__ == "__main__":
