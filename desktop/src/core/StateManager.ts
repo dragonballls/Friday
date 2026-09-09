@@ -35,6 +35,14 @@ const createDefaultSession = (): Session => ({
   createdAt: Date.now(),
 })
 
+function readStorage(key: string, fallback = ''): string {
+  try { return window.localStorage.getItem(key) ?? fallback } catch { return fallback }
+}
+
+function writeStorage(key: string, value: string): void {
+  try { window.localStorage.setItem(key, value) } catch { /* Ignore restricted/private storage failures. */ }
+}
+
 const initialState: AppState = {
   orb: 'idle',
   sessions: [createDefaultSession()],
@@ -44,11 +52,11 @@ const initialState: AppState = {
   voiceOutputEnabled: false,
   wakeWordEnabled: false,
   voiceLanguage: 'en-US',
-  persona: (() => { try { return localStorage.getItem('friday_persona') || 'friday' } catch { return 'friday' } })(),
+  persona: readStorage('friday_persona', 'friday'),
   loading: false,
   metrics: DEFAULT_METRICS,
   zen: false,
-  handsFree: (() => { try { return localStorage.getItem('friday_hands_free') === '1' } catch { return false } })(),
+  handsFree: readStorage('friday_hands_free') === '1',
 }
 
 export const useStore = create<AppState>()(() => initialState)
@@ -110,12 +118,12 @@ class StateManager {
 
   setPersona(key: string) {
     useStore.setState({ persona: key })
-    try { localStorage.setItem('friday_persona', key) } catch {}
+    writeStorage('friday_persona', key)
   }
 
   setZen(zen: boolean) {
     useStore.setState({ zen })
-    try { localStorage.setItem('friday_ui_zen', zen ? '1' : '0') } catch {}
+    writeStorage('friday_ui_zen', zen ? '1' : '0')
   }
 
   toggleZen() {
@@ -124,7 +132,7 @@ class StateManager {
 
   setHandsFree(v: boolean) {
     useStore.setState({ handsFree: v })
-    try { localStorage.setItem('friday_hands_free', v ? '1' : '0') } catch {}
+    writeStorage('friday_hands_free', v ? '1' : '0')
   }
 
   toggleHandsFree() {
