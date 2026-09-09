@@ -65,7 +65,14 @@ class StateManager {
   }
 
   set(partial: Partial<AppState>) {
-    useStore.setState(partial)
+    const current = useStore.getState()
+    const nextSessions = partial.sessions ?? current.sessions
+    const sessions = nextSessions.length > 0 ? nextSessions : [createDefaultSession()]
+    const requestedActiveId = partial.activeSessionId ?? current.activeSessionId
+    const activeSessionId = sessions.some(session => session.id === requestedActiveId)
+      ? requestedActiveId
+      : sessions[0].id
+    useStore.setState({ ...partial, sessions, activeSessionId })
   }
 
   updateMessages(fn: (msgs: Message[]) => Message[]) {
