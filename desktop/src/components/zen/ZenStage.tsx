@@ -5,7 +5,7 @@ import { ZenInput } from './ZenInput'
 import { MessageBubble } from '../chat/MessageBubble'
 import { BrainView } from '../autopilot/BrainView'
 import { ShareMoment } from './ShareMoment'
-import { PERSONA_VISUALS } from '../center/AiCore'
+import { PERSONA_VISUALS } from '../center/personaVisuals'
 
 interface ZenStageProps {
   orbState: OrbState

@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from 'react'
 import type { SystemInfo } from '../../types'
-import { PERSONA_VISUALS } from '../center/AiCore'
+import { PERSONA_VISUALS } from '../center/personaVisuals'
 
 interface StatusRibbonProps {
   systemInfo: SystemInfo

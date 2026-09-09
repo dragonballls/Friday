@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef } from 'react'
 import type { OrbState } from '../../types'
-import { PERSONA_VISUALS } from '../center/AiCore'
+import { PERSONA_VISUALS } from '../center/personaVisuals'
 
 const ORB_STATE_LABELS: Record<string, string> = {
   idle: 'IDLE',
@@ -108,7 +108,7 @@ export const ShareMoment = memo(function ShareMoment({
     link.download = `friday-moment-${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-  }, [orbState, persona, message, time, displayName, visual.color])
+  }, [orbState, message, time, displayName, visual.color])
 
   if (!open) return null
 

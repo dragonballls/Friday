@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 
 interface OnboardingProps {
   onDismiss: () => void
@@ -22,12 +22,12 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
   const firstSuggestionRef = useRef<HTMLButtonElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     try { localStorage.setItem('friday_onboarded', '1') } catch {}
     setVisible(false)
     onDismiss()
     requestAnimationFrame(() => restoreFocusRef.current?.focus())
-  }
+  }, [onDismiss])
 
   useEffect(() => {
     try {
@@ -74,7 +74,7 @@ export const Onboarding = memo(function Onboarding({ onDismiss, onSuggest }: Onb
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [visible])
+  }, [dismiss, visible])
 
   if (!visible) return null
 

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
@@ -6,6 +6,7 @@ import { ErrorBoundary, AppErrorFallback } from './components/common/ErrorBounda
 import { StartupGuard } from './components/common/StartupGuard'
 import { UpdateSection } from './components/settings/UpdateSection'
 import { watchForUpdates } from './core/autoUpdate'
+import { MountReady } from './components/common/MountReady'
 
 // Vite HMR handles development. Production builds refresh themselves when a new
 // hashed asset set is deployed, so an already-open Friday stays current.
@@ -15,13 +16,6 @@ const root = document.getElementById('root')
 
 if (!root) {
   throw new Error('Friday root element was not found.')
-}
-
-function MountReady() {
-  useEffect(() => {
-    window.dispatchEvent(new Event('friday:ready'))
-  }, [])
-  return null
 }
 
 createRoot(root).render(

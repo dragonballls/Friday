@@ -1,6 +1,7 @@
-﻿import { memo } from 'react'
+import { memo } from 'react'
 import type { OrbState } from '../../types'
-import { JarvisOrb, PERSONA_VISUALS } from '../center/AiCore'
+import { JarvisOrb } from '../center/AiCore'
+import { PERSONA_VISUALS } from '../center/personaVisuals'
 
 /* ─── Zen monochrome palette ─── */
 const C_SECONDARY = '#a0a0a8'

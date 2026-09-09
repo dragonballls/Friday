@@ -9,6 +9,7 @@ import {
   createRingMaterial,
   makeGlowTexture,
 } from './shaders'
+import { PERSONA_VISUALS } from './personaVisuals'
 
 /* â”€â”€â”€ Monochrome palette (orb only) â”€â”€â”€ */
 const C_DARK = '#2B2F36'
@@ -16,13 +17,6 @@ const C_MEDIUM = '#6E737C'
 const C_LIGHT = '#BFC4CC'
 const C_WHITE = '#FFFFFF'
 let webglDisabled = false
-
-export const PERSONA_VISUALS: Record<string, { name: string; color: string }> = {
-  friday: { name: 'FRIDAY', color: '#00a8ff' },
-  jarvis: { name: 'J.A.R.V.I.S.', color: '#65d9ff' },
-  cortana: { name: 'CORTANA', color: '#8b7cff' },
-  adonis: { name: 'ADONIS', color: '#f0a35b' },
-}
 
 /* â”€â”€â”€ State configuration â”€â”€â”€ */
 interface StateConfig {

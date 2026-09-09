@@ -1,10 +1,11 @@
-﻿import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { theme } from './core/ThemeEngine'
 import { state, useStore } from './core/StateManager'
 import { LeftSidebar } from './components/sidebar/LeftSidebar'
 import { StatusRibbon } from './components/topbar/TopBar'
 import { WorkspaceBrowser } from './components/workspace/WorkspaceBrowser'
-import { AiCore, PERSONA_VISUALS } from './components/center/AiCore'
+import { AiCore } from './components/center/AiCore'
+import { PERSONA_VISUALS } from './components/center/personaVisuals'
 import { MessageBubble } from './components/chat/MessageBubble'
 import { InputBar } from './components/chat/InputBar'
 import { CameraIndicator } from './components/common/CameraIndicator'
@@ -701,7 +702,7 @@ if (sessions.sessions.length > 0) {
           setAutopilotRun(prev => prev ? { ...prev, phase: 'aborted', abortedReason: err?.message || 'error' } : prev)
           state.updateMessages(msgs => msgs.map(m =>
             m.id === aid ? { ...m, content: isNetwork
-              ? 'Backend offline â€” start `python api_server.py` on port 8080'
+              ? 'Backend offline — start `python api_server.py` on port 8080'
               : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
           ))
           state.setOrb('error')
@@ -768,7 +769,7 @@ if (sessions.sessions.length > 0) {
         const isNetwork = err?.message?.includes('network') || err?.status === 0
         state.updateMessages(msgs => msgs.map(m =>
           m.id === aid ? { ...m, content: isNetwork
-            ? 'Backend offline â€” start `python api_server.py` on port 8080'
+            ? 'Backend offline — start `python api_server.py` on port 8080'
             : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
         ))
         state.setOrb('error')
@@ -780,7 +781,7 @@ if (sessions.sessions.length > 0) {
       },
     )
     abortRef.current = stream
-  }, [loading, activeSessionId, persona])
+  }, [loading, activeSessionId, persona, personaPrompts])
 
   // Stable ref for handleSend so effects always have the latest version
   const handleSendRef = useRef<(text: string) => void>(null as any)
@@ -981,14 +982,14 @@ if (sessions.sessions.length > 0) {
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
           style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
         >
-          Backend offline â€” start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080
+          Backend offline — start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080
         </div>
       )}
       {backendOnline && !sseConnected && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
           style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fde68a' }}
         >
-          Reconnectingâ€¦
+          Reconnecting…
         </div>
       )}
 
