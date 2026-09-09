@@ -19,7 +19,10 @@ if (!root) {
 
 function MountReady() {
   useEffect(() => {
-    window.dispatchEvent(new Event('friday:ready'))
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new Event('friday:ready'))
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
   return null
 }
