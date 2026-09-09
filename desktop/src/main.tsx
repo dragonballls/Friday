@@ -4,8 +4,13 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary, AppErrorFallback } from './components/common/ErrorBoundary'
 import { StartupGuard } from './components/common/StartupGuard'
-import { UpdateSection } from './components/settings/UpdateSection'
 import { MountReady } from './components/common/MountReady'
+import { watchForUpdates } from './core/autoUpdate'
+
+// Production updates are detected automatically every second. The watcher is
+// deliberately non-visual: the application itself must remain the primary UI.
+// Vite HMR handles development.
+if (import.meta.env.PROD) watchForUpdates()
 
 const root = document.getElementById('root')
 
@@ -20,9 +25,6 @@ createRoot(root).render(
         <App />
         <MountReady />
       </StartupGuard>
-      <div className="fixed bottom-3 right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl glass px-4 shadow-lg">
-        <UpdateSection />
-      </div>
     </ErrorBoundary>
   </StrictMode>,
 )
