@@ -28,9 +28,16 @@ const DEFAULT_METRICS: SystemMetrics = {
   provider: 'OpenRouter',
 }
 
+const createDefaultSession = (): Session => ({
+  id: 'default',
+  title: 'New session',
+  messages: [],
+  createdAt: Date.now(),
+})
+
 const initialState: AppState = {
   orb: 'idle',
-  sessions: [{ id: 'default', title: 'New session', messages: [], createdAt: Date.now() }],
+  sessions: [createDefaultSession()],
   activeSessionId: 'default',
   sidebarCollapsed: false,
   commandPaletteOpen: false,
@@ -54,7 +61,7 @@ class StateManager {
 
   get activeSession(): Session {
     const s = useStore.getState()
-    return s.sessions.find(ses => ses.id === s.activeSessionId) || s.sessions[0]
+    return s.sessions.find(ses => ses.id === s.activeSessionId) || s.sessions[0] || createDefaultSession()
   }
 
   set(partial: Partial<AppState>) {
@@ -64,9 +71,15 @@ class StateManager {
   updateMessages(fn: (msgs: Message[]) => Message[]) {
     const s = useStore.getState()
     const active = s.sessions.find(ses => ses.id === s.activeSessionId) || s.sessions[0]
-    active.messages = fn(active.messages)
+    if (!active) {
+      const fallback = createDefaultSession()
+      fallback.messages = fn(fallback.messages)
+      useStore.setState({ sessions: [fallback], activeSessionId: fallback.id })
+      return
+    }
+    const updated = { ...active, messages: fn(active.messages) }
     useStore.setState({
-      sessions: s.sessions.map(x => x.id === active.id ? active : x),
+      sessions: s.sessions.map(x => x.id === active.id ? updated : x),
     })
   }
 
@@ -113,4 +126,3 @@ class StateManager {
 }
 
 export const state = new StateManager()
-
