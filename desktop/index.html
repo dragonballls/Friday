@@ -81,13 +81,9 @@
         document.getElementById('friday-loading-dismiss')?.addEventListener('click', () => removeLoading())
         window.setTimeout(failLoading, 12000)
         const hideTransientReconnectNotice = () => {
-          document.querySelectorAll('body *').forEach((el) => {
-            const text = el.textContent?.trim() || ''
-            if (el.children.length === 0 && text.toLowerCase().startsWith('reconnecting')) {
-              const parent = el.parentElement
-              parent?.setAttribute('data-friday-transient-status', 'hidden')
-              parent?.style.setProperty('display', 'none', 'important')
-            }
+          document.querySelectorAll('[data-friday-reconnect-notice]').forEach((el) => {
+            el.setAttribute('data-friday-transient-status', 'hidden')
+            el.style.setProperty('display', 'none', 'important')
           })
         }
         new MutationObserver(hideTransientReconnectNotice).observe(document.documentElement, {

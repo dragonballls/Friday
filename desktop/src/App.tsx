@@ -986,7 +986,9 @@ if (sessions.sessions.length > 0) {
         </div>
       )}
       {backendOnline && !sseConnected && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
+        <div
+          data-friday-reconnect-notice="true"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
           style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fde68a' }}
         >
           Reconnecting…
