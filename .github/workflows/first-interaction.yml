@@ -17,16 +17,16 @@ jobs:
     steps:
       - uses: actions/first-interaction@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          issue-message: |
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          issue_message: |
             👋 Thanks for opening your first issue! A maintainer will take a look soon.
 
             In the meantime:
-            - Check the [README](https://github.com/dragonballls/Friday#readme) for existing docs
-            - Search [existing issues](https://github.com/dragonballls/Friday/issues) for duplicates
-            - Join [Discussions](https://github.com/dragonballls/Friday/discussions) for questions
+            - Check the [README](https://github.com/alimaandev/Friday#readme) for existing docs
+            - Search [existing issues](https://github.com/alimaandev/Friday/issues) for duplicates
+            - Join [Discussions](https://github.com/alimaandev/Friday/discussions) for questions
 
-          pr-message: |
+          pr_message: |
             🎉 Thanks for your first pull request! A maintainer will review it soon.
 
             Please ensure:
