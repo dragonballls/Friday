@@ -18,6 +18,9 @@ export class StartupGuard extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Friday startup render failed:', error, info.componentStack)
+    window.dispatchEvent(new CustomEvent('friday:app-error', {
+      detail: { message: error.stack || error.message || String(error) },
+    }))
   }
 
   private reload = () => window.location.reload()
