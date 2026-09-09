@@ -17,10 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "scripts" / "update.py"
-MAIN = ROOT / "main.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
-AUTO_UPDATE_INTERVAL = 60
+AUTO_UPDATE_INTERVAL = 15
 STARTUP_TASK_NAME = "Friday UI"
 
 
@@ -108,6 +107,7 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
                 ["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False
             ).stdout.strip()
             if branch != "main":
+                _log(f"Auto-update paused: local checkout is on '{branch or 'detached HEAD'}', not main.")
                 continue
             status = subprocess.run(
                 ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -117,7 +117,10 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
                 timeout=15,
                 check=False,
             )
-            if status.returncode != 0 or status.stdout.strip():
+            if status.returncode != 0:
+                continue
+            if status.stdout.strip():
+                _log("Auto-update paused: local changes are present; refusing to overwrite them.")
                 continue
             fetch = subprocess.run(
                 ["git", "fetch", "origin", "main", "--prune"],
@@ -136,6 +139,7 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
                 ["git", "rev-parse", "origin/main"], cwd=root, capture_output=True, text=True, timeout=15, check=False
             ).stdout.strip()
             if local and remote and local != remote:
+                _log(f"Auto-update detected new main: {local[:12]} -> {remote[:12]}.")
                 update_event.set()
                 return
         except (OSError, subprocess.SubprocessError, ValueError):
@@ -220,7 +224,7 @@ def _open_ui_browser():
 
 def _launch_ui():
     """Launch the UI and keep its source/runtime synchronized with origin/main."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = str(ROOT)
     desktop = os.path.join(root, "desktop")
     print_colored("Friday desktop UI starting…", "36")
     update_event = threading.Event()
@@ -272,7 +276,7 @@ def main():
     if sys.platform == "win32":
         for stream in (sys.stdout, sys.stderr):
             try:
-                stream.reconfigure(encoding="utf-8")
+                stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError):
                 pass
 
@@ -287,32 +291,10 @@ def main():
 
     if "--ui" in args:
         _run_update(build=True)
-    else:
-        _run_update()
+        _launch_ui()
+        return 0
 
-    if "--ui" not in args:
-        return subprocess.run([sys.executable, str(MAIN), *args], cwd=ROOT, check=False).returncode
-
-    attempt = 0
-    while True:
-        attempt += 1
-        _log(f"Starting Friday desktop supervisor (attempt {attempt}).")
-        try:
-            result = subprocess.run([sys.executable, str(MAIN), *args], cwd=ROOT, check=False)
-        except KeyboardInterrupt:
-            _log("Friday desktop launcher stopped by user.")
-            return 0
-
-        if result.returncode == 0:
-            _log("Friday desktop supervisor exited normally.")
-            return 0
-
-        _log(f"Friday desktop supervisor exited with code {result.returncode}; retrying in 2 seconds.")
-        try:
-            time.sleep(2.0)
-        except KeyboardInterrupt:
-            _log("Friday desktop launcher stopped by user.")
-            return 0
+    return subprocess.run([sys.executable, str(ROOT / "main.py"), *args], cwd=ROOT, check=False).returncode
 
 
 def _run_update(*, build: bool = False) -> None:
