@@ -6,12 +6,28 @@ const API_BASE = (
 
 const AUTH_KEY = 'friday_api_secret'
 
+function getStorage(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
 function getApiKey(): string {
-  return localStorage.getItem(AUTH_KEY) || ''
+  try {
+    return getStorage()?.getItem(AUTH_KEY) || ''
+  } catch {
+    return ''
+  }
 }
 
 export function setApiKey(key: string) {
-  localStorage.setItem(AUTH_KEY, key)
+  try {
+    getStorage()?.setItem(AUTH_KEY, key)
+  } catch {
+    // Ignore storage failures in restricted/private browser contexts.
+  }
 }
 
 function authHeaders(): Record<string, string> {
@@ -235,15 +251,22 @@ export function connectEventSource(onEvent: (event: ServerEvent) => void, onErro
     if (closed) return
     const key = getApiKey()
     const url = key ? `${API_BASE}/events?key=${encodeURIComponent(key)}` : `${API_BASE}/events`
-    es = new EventSource(url)
-    es.onmessage = (msg) => {
-      try { onEvent(JSON.parse(msg.data)) } catch { /* skip malformed messages */ }
-    }
-    es.onopen = () => onStatus?.(true)
-    es.onerror = () => {
-      if (closed) return
-      onStatus?.(false)
-      if (es?.readyState === EventSource.CLOSED) {
+    try {
+      es = new EventSource(url)
+      es.onmessage = (msg) => {
+        try { onEvent(JSON.parse(msg.data)) } catch { /* skip malformed messages */ }
+      }
+      es.onopen = () => onStatus?.(true)
+      es.onerror = () => {
+        if (closed) return
+        onStatus?.(false)
+        if (es?.readyState === EventSource.CLOSED) {
+          onError?.()
+        }
+      }
+    } catch (err) {
+      if (!closed) {
+        onStatus?.(false)
         onError?.()
       }
     }
