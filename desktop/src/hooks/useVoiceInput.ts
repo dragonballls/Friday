@@ -93,28 +93,45 @@ export function useVoiceInput(): UseVoiceInputReturn {
       }, RESTART_DEBOUNCE)
     }
 
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = langRef.current
+    try {
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = langRef.current
+    } catch {
+      setStatus('error')
+      setError('Failed to configure speech recognition')
+      return
+    }
 
     recognition.onresult = (event: any) => {
       if (sessionGenRef.current !== generation) return
+
+      const results = event?.results
+      if (!results || typeof results.length !== 'number') return
+
+      const rawIndex = event?.resultIndex
+      const resultIndex = Number.isInteger(rawIndex) && rawIndex >= 0 ? rawIndex : 0
       let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
+
+      for (let i = resultIndex; i < results.length; i++) {
+        const result = results[i]
+        const transcript = result?.[0]?.transcript
+        if (typeof transcript !== 'string') continue
+
+        if (result?.isFinal) {
           finalRef.current += transcript
           setFinalTranscript(finalRef.current)
         } else {
           interim += transcript
         }
       }
+
       setInterimTranscript(interim)
     }
 
     recognition.onerror = (event: any) => {
       if (sessionGenRef.current !== generation) return
-      const code = event?.error || 'unknown'
+      const code = typeof event?.error === 'string' ? event.error : 'unknown'
       if (code === 'no-speech' || code === 'aborted') {
         setStatus('idle')
         scheduleRestart()
@@ -145,6 +162,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         recognitionRef.current = null
         setStatus('error')
         setError('Failed to start recognition')
+        scheduleRestart()
       }
     }
   }, [isSupported, cancelAutoRestart, clearRestartTimer])
@@ -168,6 +186,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       clearRestartTimer()
       if (recognitionRef.current) {
         try { recognitionRef.current.abort() } catch {}
+        recognitionRef.current = null
       }
     }
   }, [clearRestartTimer])
