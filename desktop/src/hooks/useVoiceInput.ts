@@ -65,7 +65,16 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     const SpeechRecognitionCtor =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const recognition = new SpeechRecognitionCtor()
+
+    let recognition: any
+    try {
+      recognition = new SpeechRecognitionCtor()
+    } catch {
+      setStatus('error')
+      setError('Failed to initialize speech recognition')
+      return
+    }
+
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = langRef.current
@@ -122,6 +131,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     try {
       recognition.start()
     } catch {
+      recognitionRef.current = null
       setStatus('error')
       setError('Failed to start recognition')
     }
