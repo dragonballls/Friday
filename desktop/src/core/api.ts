@@ -242,8 +242,8 @@ export function connectEventSource(onEvent: (event: ServerEvent) => void, onErro
     es.onopen = () => onStatus?.(true)
     es.onerror = () => {
       if (closed) return
+      onStatus?.(false)
       if (es?.readyState === EventSource.CLOSED) {
-        onStatus?.(false)
         onError?.()
       }
     }
