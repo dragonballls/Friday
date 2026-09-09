@@ -20,6 +20,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Friday crashed a component:', error, info.componentStack)
+    window.dispatchEvent(new CustomEvent('friday:app-error', {
+      detail: { message: error.stack || error.message || String(error) },
+    }))
   }
 
   private reset = () => {
