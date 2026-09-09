@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-const POLL_INTERVAL = 60_000
+const POLL_INTERVAL = 1_000
+const MIN_POLL_INTERVAL = 1_000
 const ASSET_PATTERN = /(?:src|href)="([^"]+\.(?:js|css))"/g
 
 type UpdateStatus = 'checking' | 'current' | 'available' | 'offline'
@@ -25,35 +26,57 @@ async function fetchFingerprint(): Promise<string | null> {
 
 export function UpdateSection() {
   const [status, setStatus] = useState<UpdateStatus>('checking')
-  const [baseline, setBaseline] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const baselineRef = useRef<string | null>(null)
+  const checkingRef = useRef(false)
 
   const check = useCallback(async () => {
+    if (checkingRef.current) return
+    checkingRef.current = true
     setStatus('checking')
-    const current = await fetchFingerprint()
-    if (current === null) {
-      setStatus('offline')
-      return
-    }
-    if (baseline === null) {
-      setBaseline(current)
+    try {
+      const current = await fetchFingerprint()
+      if (current === null) {
+        setStatus('offline')
+        return
+      }
+      if (baselineRef.current === null) {
+        baselineRef.current = current
+        setStatus('current')
+        return
+      }
+      if (current !== baselineRef.current) {
+        baselineRef.current = current
+        setStatus('available')
+        window.location.reload()
+        return
+      }
       setStatus('current')
-      return
+    } finally {
+      checkingRef.current = false
     }
-    setStatus(current === baseline ? 'current' : 'available')
-  }, [baseline])
+  }, [])
 
   useEffect(() => {
     void check()
-    const timer = window.setInterval(() => void check(), POLL_INTERVAL)
-    return () => window.clearInterval(timer)
+    const timer = window.setInterval(() => void check(), Math.max(MIN_POLL_INTERVAL, POLL_INTERVAL))
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void check()
+    }
+    const onOnline = () => void check()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('online', onOnline)
+    }
   }, [check])
 
-  const reload = () => window.location.reload()
   const label = status === 'checking'
     ? 'Checking…'
     : status === 'available'
-      ? 'Update available'
+      ? 'Update available — reloading…'
       : status === 'offline'
         ? 'Update check offline'
         : 'Friday is up to date'
@@ -76,28 +99,17 @@ export function UpdateSection() {
       {expanded && (
         <div className="pt-2 flex items-center justify-between gap-2">
           <span className="text-[10px]" style={{ color: '#555' }}>
-            Checks every minute while this page is open.
+            Checks every second while this page is open.
           </span>
-          {status === 'available' ? (
-            <button
-              type="button"
-              onClick={reload}
-              className="shrink-0 px-2.5 py-1 rounded-lg text-[10px]"
-              style={{ color: '#00a8ff', border: '1px solid rgba(0,168,255,0.2)' }}
-            >
-              Update now
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void check()}
-              disabled={status === 'checking'}
-              className="shrink-0 px-2.5 py-1 rounded-lg text-[10px] disabled:opacity-40"
-              style={{ color: '#888', border: '1px solid rgba(255,255,255,0.08)' }}
-            >
-              Check now
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void check()}
+            disabled={status === 'checking'}
+            className="shrink-0 px-2.5 py-1 rounded-lg text-[10px] disabled:opacity-40"
+            style={{ color: '#888', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            Check now
+          </button>
         </div>
       )}
     </div>
