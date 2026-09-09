@@ -74,6 +74,8 @@ describe('StateManager', () => {
   it('should handle empty sessions gracefully', () => {
     useStore.setState({ sessions: [], activeSessionId: '' })
     const session = state.activeSession
-    expect(session).toBeUndefined()
+    expect(session).toBeDefined()
+    expect(session.id).toBe('default')
+    expect(session.messages).toEqual([])
   })
 })
