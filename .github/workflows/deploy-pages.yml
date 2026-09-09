@@ -60,3 +60,12 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Smoke test published site
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          test -n "$PAGE_URL"
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-all-errors "$PAGE_URL" -o /tmp/friday-index.html
+          grep -qi "Friday" /tmp/friday-index.html
