@@ -41,26 +41,35 @@ export function useHandGesture(
       return
     }
 
+    let disposed = false
     const video = document.createElement('video')
     video.srcObject = stream
     video.playsInline = true
     video.muted = true
-    video.play().catch(() => {
-      // Camera playback can be rejected by browser autoplay policy.
-    })
+
+    try {
+      const playResult = video.play()
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {
+          // Camera playback can be rejected by browser autoplay policy.
+        })
+      }
+    } catch {
+      // Some browsers can throw synchronously when playback is unavailable.
+    }
 
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
     const ctx = canvas.getContext('2d')
     if (!ctx) {
+      try { video.pause() } catch {}
       video.srcObject = null
-      video.pause()
       return
     }
 
     const tick = () => {
-      if (video.readyState < 2) return
+      if (disposed || video.readyState < 2) return
       try {
         ctx.drawImage(video, 0, 0, W, H)
         const img = ctx.getImageData(0, 0, W, H)
@@ -81,6 +90,8 @@ export function useHandGesture(
             }
           }
         }
+
+        if (disposed) return
 
         const ratio = skinCount / totalPixels
         const value = ratio > 0.04
@@ -112,9 +123,10 @@ export function useHandGesture(
     tick()
 
     return () => {
+      disposed = true
       clearInterval(id)
+      try { video.pause() } catch {}
       video.srcObject = null
-      video.pause()
     }
   }, [stream, active])
 
