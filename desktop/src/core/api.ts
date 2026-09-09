@@ -41,6 +41,10 @@ export interface ApiError {
   body?: any
 }
 
+function pathSegment(value: string): string {
+  return encodeURIComponent(value)
+}
+
 /* ── Low-level fetch with auth + base URL ── */
 export async function fetchApi<T = any>(
   path: string,
@@ -173,11 +177,11 @@ export async function checkHealth(): Promise<{ status: string; sessions: number 
 export async function getMetrics(): Promise<any> { return fetchApi('/metrics') }
 export async function getSessions(): Promise<{ sessions: { id: string; language: string }[] }> { return fetchApi('/sessions') }
 export async function createSession(language = 'english') { return fetchApi('/sessions', { method: 'POST', body: JSON.stringify({ language }) }) }
-export async function deleteSession(sessionId: string) { return fetchApi(`/sessions/${sessionId}`, { method: 'DELETE' }) }
-export async function getOutputDir(sessionId = 'default') { return fetchApi<{ output_dir: string }>(`/output-dir?session_id=${sessionId}`) }
+export async function deleteSession(sessionId: string) { return fetchApi(`/sessions/${pathSegment(sessionId)}`, { method: 'DELETE' }) }
+export async function getOutputDir(sessionId = 'default') { return fetchApi<{ output_dir: string }>(`/output-dir?session_id=${pathSegment(sessionId)}`) }
 export async function setOutputDir(path: string, sessionId = 'default') { return fetchApi('/output-dir', { method: 'PUT', body: JSON.stringify({ session_id: sessionId, path }) }) }
 export async function getApprovals(): Promise<{ approvals: any[] }> { return fetchApi('/approvals') }
-export async function resolveApproval(requestId: string, allowed: boolean) { return fetchApi(`/approvals/${encodeURIComponent(requestId)}`, { method: 'POST', body: JSON.stringify({ allowed }) }) }
+export async function resolveApproval(requestId: string, allowed: boolean) { return fetchApi(`/approvals/${pathSegment(requestId)}`, { method: 'POST', body: JSON.stringify({ allowed }) }) }
 export async function getSystemInfo(): Promise<any> { return fetchApi('/system-info') }
 export async function getNews(): Promise<{ articles: any[] }> { return fetchApi('/news') }
 export async function getWeather(): Promise<any> { return fetchApi('/weather') }
@@ -192,7 +196,7 @@ export async function getScreen(): Promise<any> { return fetchApi('/screen') }
 export async function getMemory(): Promise<any> { return fetchApi('/memory') }
 export async function searchMemory(query: string, topK = 5): Promise<any> { return fetchApi('/memory/search', { method: 'POST', body: JSON.stringify({ query, top_k: topK }) }) }
 export async function clearMemory() { return fetchApi('/memory', { method: 'DELETE' }) }
-export async function deleteMemory(entryId: string) { return fetchApi(`/memory/${encodeURIComponent(entryId)}`, { method: 'DELETE' }) }
+export async function deleteMemory(entryId: string) { return fetchApi(`/memory/${pathSegment(entryId)}`, { method: 'DELETE' }) }
 
 export interface KnowledgeEntity { name: string; type: string; mentions: number; source?: string; first_seen?: number; last_seen?: number }
 export async function getKnowledge(): Promise<{ entities: KnowledgeEntity[]; count: number }> { return fetchApi('/knowledge') }
@@ -216,7 +220,7 @@ export async function uninstallPlugin(name: string): Promise<{ success: boolean;
 export interface CustomTool { name: string; description: string; parameters: { type: string; properties: Record<string, unknown>; required: string[] }; body: string; source: string }
 export async function getCustomTools(): Promise<CustomTool[]> { const res = await fetchApi<{ tools: CustomTool[] }>('/tools/custom'); return res.tools }
 export async function createCustomTool(description: string): Promise<{ tool?: CustomTool; error?: string }> { return fetchApi('/tools/custom', { method: 'POST', body: JSON.stringify({ description }) }) }
-export async function deleteCustomTool(name: string): Promise<{ success?: boolean; error?: string }> { return fetchApi(`/tools/custom/${encodeURIComponent(name)}`, { method: 'DELETE' }) }
+export async function deleteCustomTool(name: string): Promise<{ success?: boolean; error?: string }> { return fetchApi(`/tools/custom/${pathSegment(name)}`, { method: 'DELETE' }) }
 
 export interface PrivacyStatus { enabled: boolean; local_provider: string; blocked_tools: string[] }
 export async function getPrivacyStatus(): Promise<PrivacyStatus> { return fetchApi('/privacy') }
@@ -233,10 +237,10 @@ export async function getAlerts(): Promise<{ alerts: any[]; count: number }> { r
 
 export async function getAutomations(): Promise<{ automations: any[] }> { return fetchApi('/automations') }
 export async function createAutomation(data: { name: string; trigger_type: string; trigger_config: Record<string, any>; action: string; action_params?: Record<string, any> }): Promise<any> { return fetchApi('/automations', { method: 'POST', body: JSON.stringify(data) }) }
-export async function updateAutomation(id: string, data: Record<string, any>): Promise<any> { return fetchApi(`/automations/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
-export async function deleteAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}`, { method: 'DELETE' }) }
-export async function toggleAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}/toggle`, { method: 'POST' }) }
-export async function triggerAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}/trigger`, { method: 'POST' }) }
+export async function updateAutomation(id: string, data: Record<string, any>): Promise<any> { return fetchApi(`/automations/${pathSegment(id)}`, { method: 'PUT', body: JSON.stringify(data) }) }
+export async function deleteAutomation(id: string): Promise<any> { return fetchApi(`/automations/${pathSegment(id)}`, { method: 'DELETE' }) }
+export async function toggleAutomation(id: string): Promise<any> { return fetchApi(`/automations/${pathSegment(id)}/toggle`, { method: 'POST' }) }
+export async function triggerAutomation(id: string): Promise<any> { return fetchApi(`/automations/${pathSegment(id)}/trigger`, { method: 'POST' }) }
 
 export async function analyzeVisionImage(image: string, prompt?: string): Promise<{ description: string; text: string | null; timestamp: number }> { return fetchApi('/vision/analyze', { method: 'POST', body: JSON.stringify({ image, prompt }) }) }
 export async function getVisionScreen(): Promise<{ description: string; text: string | null; width: number; height: number; timestamp: number }> { return fetchApi('/vision/screen') }
@@ -264,7 +268,7 @@ export function connectEventSource(onEvent: (event: ServerEvent) => void, onErro
           onError?.()
         }
       }
-    } catch (err) {
+    } catch {
       if (!closed) {
         onStatus?.(false)
         onError?.()
