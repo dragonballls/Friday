@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Start Friday safely, with fast desktop startup and crash recovery.
-
-The normal CLI path applies the safe source updater first. The desktop path
-starts immediately and relies on the UI supervisor's background update monitor,
-with an outer recovery loop for supervisor crashes.
-"""
+"""Start Friday safely, keeping the desktop UI synchronized with GitHub."""
 
 from __future__ import annotations
 
@@ -30,27 +25,36 @@ def _log(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-def _run_update() -> None:
-    """Run the normal safe updater without making failures fatal."""
-    result = subprocess.run([sys.executable, str(UPDATER)], cwd=ROOT, check=False)
+def _run_update(*, build: bool = False) -> None:
+    """Synchronize the clean main checkout before startup; never make it fatal."""
+    command = [sys.executable, str(UPDATER)]
+    if build:
+        command.append("--build")
+    result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode not in (0, 2, 3, 4):
         _log(f"Friday update failed (code {result.returncode}); launching current checkout.")
+    elif result.returncode in (2, 4):
+        _log("Friday update was skipped because the local checkout is not safely fast-forwardable; using current checkout.")
 
 
 def main() -> int:
     args = sys.argv[1:]
 
-    # Desktop startup must never wait for a Git/network operation. The UI's own
-    # updater can check for updates after the services are already responsive.
-    if "--ui" not in args:
+    if "--ui" in args:
+        # Do this before starting Vite so an older local checkout cannot present
+        # an outdated UI while the background monitor waits for its first poll.
+        # --build also installs any newly required frontend dependencies and
+        # clears a stale Vite process on 5173 before the supervisor starts.
+        _run_update(build=True)
+    else:
         _run_update()
 
     if "--ui" not in args:
         return subprocess.run([sys.executable, str(MAIN), *args], cwd=ROOT, check=False).returncode
 
     # If the supervisor itself crashes before it can recover its child services,
-    # keep the desktop launcher alive and restart it. This is intentionally a
-    # last-resort outer guard; normal service recovery remains inside main.py.
+    # keep the desktop launcher alive and restart it. Normal service recovery
+    # remains inside main.py.
     attempt = 0
     while True:
         attempt += 1
