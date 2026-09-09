@@ -20,6 +20,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Friday crashed a component:', error, info.componentStack)
+    // If rendering fails before MountReady can run, release the static loader so
+    // the React error fallback is visible instead of leaving a black/loading page.
+    window.dispatchEvent(new Event('friday:ready'))
   }
 
   private reset = () => {
