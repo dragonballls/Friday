@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import datetime as _dt
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -25,6 +27,29 @@ def _log(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+def _detach_windows_ui() -> bool:
+    """Re-launch the UI supervisor without tying it to the current console."""
+    if sys.platform != "win32" or os.environ.get("FRIDAY_DETACHED_UI") == "1":
+        return False
+
+    detached_process = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+    new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+    env = os.environ.copy()
+    env["FRIDAY_DETACHED_UI"] = "1"
+    command = [sys.executable, str(Path(__file__).resolve()), "--ui"]
+    subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=detached_process | new_process_group,
+        env=env,
+    )
+    return True
+
+
 def _run_update(*, build: bool = False) -> None:
     """Synchronize the clean main checkout before startup; never make it fatal."""
     command = [sys.executable, str(UPDATER)]
@@ -39,6 +64,10 @@ def _run_update(*, build: bool = False) -> None:
 
 def main() -> int:
     args = sys.argv[1:]
+
+    if "--ui" in args and _detach_windows_ui():
+        print_colored("Friday UI detached — it will keep running after this PowerShell window closes.", "32")
+        return 0
 
     if "--ui" in args:
         # Do this before starting Vite so an older local checkout cannot present
