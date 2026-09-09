@@ -33,12 +33,15 @@ describe('fetchApi', () => {
     expect(callHeaders['X-API-Key']).toBe('secret-123')
   })
 
-  it('should abort on timeout', async () => {
+  it('should normalize an aborted request into an ApiError', async () => {
     mockFetch.mockImplementationOnce((_url: string, options: RequestInit) => new Promise((_, reject) => {
       const signal = (options as any)?.signal as AbortSignal
       if (signal) signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
     }))
-    await expect(fetchApi('/slow', {}, 50)).rejects.toThrow('Aborted')
+    await expect(fetchApi('/slow', {}, 50)).rejects.toMatchObject({
+      status: 0,
+      message: 'Request timed out or was cancelled',
+    })
   })
 })
 
