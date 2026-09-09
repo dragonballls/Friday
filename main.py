@@ -124,18 +124,13 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
         front = subprocess.Popen(front_cmd, cwd=desktop)
         procs.append(front)
 
-        # Probe both independently so the total startup timeout is bounded by
-        # the slower service instead of the sum of both startup times.
         errors: list[Exception] = []
-        ready = threading.Event()
 
         def wait_for(port: int, proc: subprocess.Popen) -> None:
             try:
                 _wait_for_port("127.0.0.1", port, proc)
             except Exception as exc:
                 errors.append(exc)
-            finally:
-                ready.set()
 
         threads = [
             threading.Thread(target=wait_for, args=(8080, api), daemon=True),
