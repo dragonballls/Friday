@@ -23,11 +23,24 @@ interface UseVoiceOutputReturn {
 
 const VOICE_STORAGE_KEY = 'friday_tts_voice_uri'
 
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // Ignore storage failures in restricted/private browser contexts.
+  }
+}
+
 export function useVoiceOutput(): UseVoiceOutputReturn {
-  const [enabled, setEnabled] = useState(() => {
-    const saved = localStorage.getItem('friday_voice_output_enabled')
-    return saved ? saved === 'true' : false
-  })
+  const [enabled, setEnabled] = useState(() => readStorage('friday_voice_output_enabled') === 'true')
   const [status, setStatus] = useState<VoiceOutputStatus>('idle')
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [selectedVoice, setSelectedVoiceState] = useState<SpeechSynthesisVoice | null>(null)
@@ -101,12 +114,12 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
   const setVoice = useCallback((voice: SpeechSynthesisVoice) => {
     selectedVoiceRef.current = voice
     setSelectedVoiceState(voice)
-    try { localStorage.setItem(VOICE_STORAGE_KEY, voice.voiceURI) } catch {}
+    writeStorage(VOICE_STORAGE_KEY, voice.voiceURI)
   }, [])
 
   const setEnabledWrapped = useCallback((v: boolean) => {
     setEnabled(v)
-    try { localStorage.setItem('friday_voice_output_enabled', String(v)) } catch {}
+    writeStorage('friday_voice_output_enabled', String(v))
   }, [])
 
   useEffect(() => {
@@ -118,7 +131,7 @@ export function useVoiceOutput(): UseVoiceOutputReturn {
       const v = synth.getVoices()
       if (v.length > 0) {
         setVoices(v)
-        const savedURI = localStorage.getItem(VOICE_STORAGE_KEY)
+        const savedURI = readStorage(VOICE_STORAGE_KEY)
         if (savedURI) {
           const match = v.find(vo => vo.voiceURI === savedURI)
           if (match) {
