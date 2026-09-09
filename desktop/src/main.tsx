@@ -19,7 +19,21 @@ if (!root) {
 
 function MountReady() {
   useEffect(() => {
-    window.dispatchEvent(new Event('friday:ready'))
+    let cancelled = false
+    let frame1 = 0
+    let frame2 = 0
+
+    frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        if (!cancelled) window.dispatchEvent(new Event('friday:ready'))
+      })
+    })
+
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frame1)
+      window.cancelAnimationFrame(frame2)
+    }
   }, [])
   return null
 }
@@ -29,8 +43,8 @@ createRoot(root).render(
     <ErrorBoundary fallback={<AppErrorFallback />}>
       <StartupGuard>
         <App />
-        <MountReady />
       </StartupGuard>
+      <MountReady />
       <div className="fixed bottom-3 right-3 z-40 w-[min(320px,calc(100vw-24px))] rounded-xl glass px-4 shadow-lg">
         <UpdateSection />
       </div>
