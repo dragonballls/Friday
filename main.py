@@ -92,10 +92,20 @@ def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_ev
 
 
 def _terminate_processes(procs: list[subprocess.Popen]):
+    """Terminate child process trees so Windows npm/Vite children cannot linger."""
     for proc in procs:
         if proc.poll() is None:
             try:
-                proc.terminate()
+                if sys.platform == "win32":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                else:
+                    proc.terminate()
             except OSError:
                 pass
     deadline = time.monotonic() + 10
@@ -398,7 +408,7 @@ The assistant has tools for:
             """
 Commands:
   /help               Yeh help message
-  /clear              Baat-cheet reset karo
+  /clear              Baat-cheet clear karo
   /voice              Voice mode mein jao (bolo, assistant jawab dega)
   /lang <language>    Language badlo: english ya hinglish
   /exit               Band karo
