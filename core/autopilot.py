@@ -50,13 +50,9 @@ class Autopilot:
     ):
         self._planner = planner
         self.workspace_root = os.path.realpath(os.path.abspath(workspace)) if workspace else None
-        self.workspace_prefix = (
-            os.path.join(self.workspace_root, "") if self.workspace_root else None
-        )
+        self.workspace_prefix = os.path.join(self.workspace_root, "") if self.workspace_root else None
         self._workspace_cmp_root = os.path.normcase(self.workspace_root) if self.workspace_root else None
-        self._workspace_cmp_prefix = (
-            os.path.normcase(self.workspace_prefix) if self.workspace_prefix else None
-        )
+        self._workspace_cmp_prefix = os.path.normcase(self.workspace_prefix) if self.workspace_prefix else None
         self.verify_enabled = verify
         self.tool_allowlist = list(tool_allowlist) if tool_allowlist else None
         self.max_retries = max_retries
@@ -189,8 +185,7 @@ class Autopilot:
                     expanded = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
                     expanded_cmp = os.path.normcase(expanded)
                     if not (
-                        expanded_cmp == self._workspace_cmp_root
-                        or expanded_cmp.startswith(self._workspace_cmp_prefix)
+                        expanded_cmp == self._workspace_cmp_root or expanded_cmp.startswith(self._workspace_cmp_prefix)
                     ):
                         return {"error": f"Path '{value}' is outside the workspace ({self.workspace_root})"}
             return handler(**kwargs)

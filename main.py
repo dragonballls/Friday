@@ -45,17 +45,37 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
             return
         first_check = False
         try:
-            branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
             if branch != "main":
                 continue
-            status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=root, capture_output=True, text=True, timeout=15, check=False)
+            status = subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=all"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
             if status.returncode != 0 or status.stdout.strip():
                 continue
-            fetch = subprocess.run(["git", "fetch", "origin", "main", "--prune"], cwd=root, capture_output=True, text=True, timeout=60, check=False)
+            fetch = subprocess.run(
+                ["git", "fetch", "origin", "main", "--prune"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
             if fetch.returncode != 0:
                 continue
-            local = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
-            remote = subprocess.run(["git", "rev-parse", "origin/main"], cwd=root, capture_output=True, text=True, timeout=15, check=False).stdout.strip()
+            local = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "rev-parse", "origin/main"], cwd=root, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
             if local and remote and local != remote:
                 update_event.set()
                 return
@@ -64,7 +84,9 @@ def _auto_update_monitor(root: str, update_event: threading.Event, stop_event: t
 
 
 def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_event: threading.Event):
-    monitor = threading.Thread(target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True)
+    monitor = threading.Thread(
+        target=_auto_update_monitor, args=(root, update_event, stop_event), name="friday-auto-updater", daemon=True
+    )
     monitor.start()
     return monitor
 
@@ -93,7 +115,9 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
     last_error = None
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {proc.returncode}).")
+            raise RuntimeError(
+                f"Friday UI service exited before port {port} became ready (exit code {proc.returncode})."
+            )
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return
@@ -158,18 +182,24 @@ def _launch_ui():
                 print_colored("\nFriday update detected — restarting safely…", "33")
                 _terminate_processes(procs)
                 procs.clear()
-                result = subprocess.run([sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False)
+                result = subprocess.run(
+                    [sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False
+                )
                 if result.returncode == 0:
                     stop_event.set()
                     os.execv(sys.executable, [sys.executable, *sys.argv])
-                print_colored("Update could not be fully applied; restarting Friday on the latest source available.", "31")
+                print_colored(
+                    "Update could not be fully applied; restarting Friday on the latest source available.", "31"
+                )
                 update_event.clear()
                 stop_event.clear()
                 _start_auto_update_monitor(root, update_event, stop_event)
                 procs = _start_ui_processes(desktop)
                 _open_ui_browser()
             elif any(p.poll() is not None for p in procs):
-                print_colored("\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33")
+                print_colored(
+                    "\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33"
+                )
                 _terminate_processes(procs)
                 procs.clear()
                 time.sleep(2.0)
@@ -196,9 +226,15 @@ def main():
         except (AttributeError, ValueError):
             pass
     parser = argparse.ArgumentParser(description="Friday — AI Assistant")
-    parser.add_argument("--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)")
-    parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls")
-    parser.add_argument("--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)")
+    parser.add_argument(
+        "--lang", choices=["english", "hinglish"], default="english", help="Language (default: english)"
+    )
+    parser.add_argument(
+        "--no-confirm", action="store_true", help="Skip confirmation prompts for destructive tool calls"
+    )
+    parser.add_argument(
+        "--ui", action="store_true", help="Launch the full desktop UI (API server + frontend dev server)"
+    )
     args = parser.parse_args()
     if args.ui:
         _launch_ui()
@@ -310,7 +346,9 @@ def _handle_command(cmd: str, agent: Agent):
         return "exit"
     elif cmd == "/clear":
         agent.clear()
-        print_colored("Conversation cleared! ✅" if agent.language == "english" else "Baat-cheet clear ho gayi! ✅", "33")
+        print_colored(
+            "Conversation cleared! ✅" if agent.language == "english" else "Baat-cheet clear ho gayi! ✅", "33"
+        )
     elif cmd == "/voice":
         _voice_loop(agent)
     elif cmd.startswith("/lang"):
@@ -336,7 +374,8 @@ def _handle_command(cmd: str, agent: Agent):
 
 def _print_help(lang: str):
     if lang == "english":
-        print_colored("""
+        print_colored(
+            """
 Commands:
   /help               Show this help
   /clear              Reset conversation
@@ -351,9 +390,12 @@ The assistant has tools for:
   - Persistent memory (remember/recall)
   - File/content search
   - System information
-""", "33")
+""",
+            "33",
+        )
     else:
-        print_colored("""
+        print_colored(
+            """
 Commands:
   /help               Yeh help message
   /clear              Baat-cheet reset karo
@@ -368,7 +410,10 @@ Assistant ke paas tools hain:
   - Persistent memory (remember/recall)
   - File search
   - System information
-""", "33")
+""",
+            "33",
+        )
+
 
 if __name__ == "__main__":
     main()

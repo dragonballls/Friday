@@ -1,4 +1,4 @@
-﻿"""Blackout mode (P5) â€” one-toggle local-only privacy.
+"""Blackout mode (P5) â€” one-toggle local-only privacy.
 
 When enabled:
 - LLM provider is forced to a local endpoint (Ollama by default)
@@ -91,4 +91,3 @@ def resolve_provider(requested: str | None) -> str:
     if is_blackout():
         return _LOCAL_PROVIDER
     return requested
-

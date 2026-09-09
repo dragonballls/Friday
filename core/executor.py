@@ -90,22 +90,14 @@ class Executor:
                     yield event
 
                 elif event_type == "error":
-                    provider_error = (
-                        event.get("error")
-                        or event.get("content")
-                        or "Provider error"
-                    )
+                    provider_error = event.get("error") or event.get("content") or "Provider error"
                     yield event
 
                 elif event_type == "done":
                     collected = event.get("content", "")
                     tool_calls = event.get("tool_calls") or []
 
-                    if (
-                        not tool_calls
-                        and isinstance(collected, str)
-                        and collected.startswith("Error:")
-                    ):
+                    if not tool_calls and isinstance(collected, str) and collected.startswith("Error:"):
                         provider_error = collected
 
             if provider_error:
@@ -163,7 +155,9 @@ class Executor:
                                 "content": json.dumps(result, ensure_ascii=False),
                             }
                         )
-                        tool_summary.append({"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]})
+                        tool_summary.append(
+                            {"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]}
+                        )
                         continue
 
                     if not isinstance(args, dict):
@@ -175,7 +169,9 @@ class Executor:
                                 "content": json.dumps(result, ensure_ascii=False),
                             }
                         )
-                        tool_summary.append({"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]})
+                        tool_summary.append(
+                            {"name": func_name, "args": "", "result": json.dumps(result, ensure_ascii=False)[:300]}
+                        )
                         continue
 
                     if self.output_dir and func_name == "write_file" and "path" in args:
@@ -188,11 +184,7 @@ class Executor:
                         try:
                             with Timer(f"tool:{func_name}"):
                                 result = yield from self._execute_with_confirmation(func_name, args, handler)
-                            if (
-                                is_coding_task
-                                and func_name in coding_tools
-                                and not result.get("error")
-                            ):
+                            if is_coding_task and func_name in coding_tools and not result.get("error"):
                                 coding_tool_executed = True
                             if (
                                 is_coding_task
@@ -266,7 +258,9 @@ class Executor:
                     task.error = "Required coding gates did not pass: " + ", ".join(missing)
                     yield {
                         "type": "done",
-                        "content": "Coding task failed closed: required gates did not pass (" + ", ".join(missing) + ").",
+                        "content": "Coding task failed closed: required gates did not pass ("
+                        + ", ".join(missing)
+                        + ").",
                         "final": True,
                     }
                     return

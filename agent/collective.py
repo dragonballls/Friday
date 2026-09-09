@@ -23,11 +23,7 @@ def should_use_collective(
 
     Normal/simple requests remain single-model for speed.
     """
-    text = " ".join(
-        str(m.get("content", ""))
-        for m in messages
-        if isinstance(m, dict)
-    ).lower()
+    text = " ".join(str(m.get("content", "")) for m in messages if isinstance(m, dict)).lower()
 
     complexity_markers = (
         "analyze",
@@ -108,9 +104,7 @@ def run_collective(
             result = call_provider(provider, messages)
 
             # Support Friday providers that return streaming generators.
-            if hasattr(result, "__iter__") and not isinstance(
-                result, (str, bytes, dict, list)
-            ):
+            if hasattr(result, "__iter__") and not isinstance(result, (str, bytes, dict, list)):
                 events = list(result)
 
                 content_parts: list[str] = []
@@ -121,15 +115,11 @@ def run_collective(
                         continue
 
                     if event.get("type") == "tokens":
-                        content_parts.append(
-                            str(event.get("content", ""))
-                        )
+                        content_parts.append(str(event.get("content", "")))
 
                     if event.get("type") == "done":
                         if event.get("content"):
-                            content_parts = [
-                                str(event["content"])
-                            ]
+                            content_parts = [str(event["content"])]
                         tool_calls = event.get("tool_calls")
 
                 return {
@@ -163,13 +153,8 @@ def run_collective(
                 "error": str(exc),
             }
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=max(1, len(providers))
-    ) as executor:
-        futures = [
-            executor.submit(run_one, provider)
-            for provider in providers
-        ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(providers))) as executor:
+        futures = [executor.submit(run_one, provider) for provider in providers]
 
         for future in futures:
             results.append(future.result())
@@ -186,9 +171,7 @@ def build_synthesis_prompt(
     """
 
     original_text = "\n".join(
-        str(message.get("content", ""))
-        for message in original_messages
-        if isinstance(message, dict)
+        str(message.get("content", "")) for message in original_messages if isinstance(message, dict)
     )
 
     evidence: list[str] = []
@@ -200,10 +183,7 @@ def build_synthesis_prompt(
         provider = result.get("provider", "unknown")
         content = result.get("content", "")
 
-        evidence.append(
-            f"=== {provider.upper()} INDEPENDENT ANALYSIS ===\n"
-            f"{content}"
-        )
+        evidence.append(f"=== {provider.upper()} INDEPENDENT ANALYSIS ===\n{content}")
 
     combined = "\n\n".join(evidence)
 

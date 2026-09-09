@@ -95,9 +95,7 @@ class OllamaProvider(BaseProvider):
 
             for chunk in stream:
                 if time.monotonic() - stream_started > self._timeout:
-                    raise TimeoutError(
-                        f"Ollama stream exceeded timeout of {self._timeout:.1f}s"
-                    )
+                    raise TimeoutError(f"Ollama stream exceeded timeout of {self._timeout:.1f}s")
 
                 stream_started = time.monotonic()
 
@@ -189,12 +187,7 @@ class OllamaProvider(BaseProvider):
             }
 
         except Exception as exc:
-            error_text = (
-                f"Ollama request failed "
-                f"(model={model}, "
-                f"url={self._base_url}): "
-                f"{type(exc).__name__}: {exc}"
-            )
+            error_text = f"Ollama request failed (model={model}, url={self._base_url}): {type(exc).__name__}: {exc}"
 
             yield {
                 "type": "error",

@@ -42,7 +42,6 @@ def _is_retryable_err(e: Exception) -> bool:
     return False
 
 
-
 def _parse_text_tool_calls(content: str) -> list[dict]:
     """Parse tool calls emitted as ordinary assistant text."""
 
@@ -100,18 +99,9 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
                 if not isinstance(obj, dict):
                     continue
 
-                name = (
-                    obj.get("name")
-                    or obj.get("tool")
-                    or obj.get("function", {}).get("name")
-                )
+                name = obj.get("name") or obj.get("tool") or obj.get("function", {}).get("name")
 
-                arguments = (
-                    obj.get("arguments")
-                    or obj.get("args")
-                    or obj.get("function", {}).get("arguments")
-                    or {}
-                )
+                arguments = obj.get("arguments") or obj.get("args") or obj.get("function", {}).get("arguments") or {}
 
                 if not name:
                     continue
@@ -264,11 +254,7 @@ class OpenAICompatibleProvider(BaseProvider):
             yield {"type": "tokens", "content": "".join(buffer)}
 
         content = "".join(content_parts)
-        tool_calls = (
-            [v for _, v in sorted(tool_calls_acc.items())]
-            if tool_calls_acc
-            else None
-        )
+        tool_calls = [v for _, v in sorted(tool_calls_acc.items())] if tool_calls_acc else None
 
         if not tool_calls and content:
             parsed_tool_calls = _parse_text_tool_calls(content)

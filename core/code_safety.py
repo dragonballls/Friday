@@ -21,10 +21,7 @@ PROTECTED_PATH_PARTS = (
 
 def is_protected_path(path: str) -> bool:
     normalized = os.path.abspath(path).replace("\\", "/").lower()
-    return any(
-        normalized.endswith(part.lower()) or f"/{part.lower()}" in normalized
-        for part in PROTECTED_PATH_PARTS
-    )
+    return any(normalized.endswith(part.lower()) or f"/{part.lower()}" in normalized for part in PROTECTED_PATH_PARTS)
 
 
 def backup_file(path: str, backup_root: str | None = None) -> str | None:

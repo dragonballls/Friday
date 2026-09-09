@@ -333,7 +333,8 @@ class Agent:
                         for event in events
                         if isinstance(event, dict)
                         and event.get("type") in ("coding_transaction", "error", "test", "verification")
-                    ] or ["coding transaction did not pass all completion gates"],
+                    ]
+                    or ["coding transaction did not pass all completion gates"],
                 }
                 return
 
@@ -349,8 +350,9 @@ class Agent:
                 "tests": [
                     event.get("content", "coding execution completed")
                     for event in events
-                    if isinstance(event, dict)
-                    and event.get("type") in ("done", "test", "verification")
-                ] or ["coding transaction completed"],
+                    if isinstance(event, dict) and event.get("type") in ("done", "test", "verification")
+                ]
+                or ["coding transaction completed"],
             }
+
         return run()

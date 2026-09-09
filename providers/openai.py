@@ -7,7 +7,6 @@ from providers.registry import register_provider
 
 
 class OpenAIProvider(BaseProvider):
-
     @property
     def name(self) -> str:
         return "openai"
@@ -17,15 +16,10 @@ class OpenAIProvider(BaseProvider):
 
         from openai import OpenAI
 
-        api_key = (
-            os.environ.get("OPENAI_API_KEY")
-            or config.get("api_key")
-        )
+        api_key = os.environ.get("OPENAI_API_KEY") or config.get("api_key")
 
         if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not configured."
-            )
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
 
         self._client = OpenAI(
             api_key=api_key,
@@ -68,15 +62,12 @@ class OpenAIProvider(BaseProvider):
         if tools:
             kwargs["tools"] = tools
 
-        stream = self._client.chat.completions.create(
-            **kwargs
-        )
+        stream = self._client.chat.completions.create(**kwargs)
 
         full_text = ""
         tool_calls = {}
 
         for chunk in stream:
-
             if not chunk.choices:
                 continue
 
@@ -91,9 +82,7 @@ class OpenAIProvider(BaseProvider):
                 }
 
             if delta.tool_calls:
-
                 for call in delta.tool_calls:
-
                     index = call.index
 
                     if index not in tool_calls:
@@ -112,22 +101,13 @@ class OpenAIProvider(BaseProvider):
                         current["id"] = call.id
 
                     if call.function:
-
                         if call.function.name:
-                            current["function"]["name"] = (
-                                call.function.name
-                            )
+                            current["function"]["name"] = call.function.name
 
                         if call.function.arguments:
-                            current["function"]["arguments"] += (
-                                call.function.arguments
-                            )
+                            current["function"]["arguments"] += call.function.arguments
 
-        normalized_tools = (
-            list(tool_calls.values())
-            if tool_calls
-            else None
-        )
+        normalized_tools = list(tool_calls.values()) if tool_calls else None
 
         yield {
             "type": "done",

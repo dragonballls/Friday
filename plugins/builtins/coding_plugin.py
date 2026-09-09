@@ -246,7 +246,12 @@ class GitCommitChangesPlugin(ToolPlugin):
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {"success": False, "error": f"Unable to create commit: {exc}"}
-        return {"success": result.returncode == 0, "stdout": result.stdout[-4000:], "stderr": result.stderr[-4000:], "exit_code": result.returncode}
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout[-4000:],
+            "stderr": result.stderr[-4000:],
+            "exit_code": result.returncode,
+        }
 
 
 class GitPushBranchPlugin(ToolPlugin):
@@ -284,7 +289,12 @@ class GitPushBranchPlugin(ToolPlugin):
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {"success": False, "error": f"Unable to push branch: {exc}"}
-        return {"success": result.returncode == 0, "stdout": result.stdout[-4000:], "stderr": result.stderr[-4000:], "exit_code": result.returncode}
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout[-4000:],
+            "stderr": result.stderr[-4000:],
+            "exit_code": result.returncode,
+        }
 
 
 class AppCodingCheckpointPlugin(ToolPlugin):
@@ -358,10 +368,7 @@ class AppCodingCheckpointPlugin(ToolPlugin):
             )
             diff_path.write_text(diff.stdout, encoding="utf-8")
             with log_path.open("a", encoding="utf-8") as log:
-                log.write(
-                    f"[{stamp}] checkpoint root={git_root} "
-                    f"status={status.stdout.strip()!r} diff={diff_path}\n"
-                )
+                log.write(f"[{stamp}] checkpoint root={git_root} status={status.stdout.strip()!r} diff={diff_path}\n")
         except (OSError, subprocess.TimeoutExpired) as exc:
             return {"success": False, "error": f"Unable to write coding checkpoint: {exc}"}
 
@@ -624,7 +631,8 @@ class ReviewCodeChangePlugin(ToolPlugin):
 
         if not selected:
             selected = [
-                path for path in root.rglob("*")
+                path
+                for path in root.rglob("*")
                 if path.is_file()
                 and ".git" not in path.parts
                 and path.suffix.lower() in {".py", ".js", ".jsx", ".ts", ".tsx"}
@@ -641,11 +649,13 @@ class ReviewCodeChangePlugin(ToolPlugin):
                 timeout=120,
                 shell=False,
             )
-            checks.append({
-                "name": "python_syntax",
-                "passed": result.returncode == 0,
-                "output": (result.stdout + result.stderr)[-6000:],
-            })
+            checks.append(
+                {
+                    "name": "python_syntax",
+                    "passed": result.returncode == 0,
+                    "output": (result.stdout + result.stderr)[-6000:],
+                }
+            )
 
         if (root / "package.json").is_file():
             npm = "npm.cmd" if os.name == "nt" else "npm"
@@ -657,11 +667,13 @@ class ReviewCodeChangePlugin(ToolPlugin):
                 timeout=300,
                 shell=False,
             )
-            checks.append({
-                "name": "frontend_build",
-                "passed": result.returncode == 0,
-                "output": (result.stdout + result.stderr)[-6000:],
-            })
+            checks.append(
+                {
+                    "name": "frontend_build",
+                    "passed": result.returncode == 0,
+                    "output": (result.stdout + result.stderr)[-6000:],
+                }
+            )
 
         return {
             "success": bool(checks) and all(check["passed"] for check in checks),

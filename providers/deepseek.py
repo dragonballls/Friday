@@ -1,11 +1,10 @@
-﻿import os
+import os
 
 from providers.base import BaseProvider
 from providers.registry import register_provider
 
 
 class DeepSeekProvider(BaseProvider):
-
     @property
     def name(self) -> str:
         return "deepseek"
@@ -15,15 +14,10 @@ class DeepSeekProvider(BaseProvider):
 
         from openai import OpenAI
 
-        api_key = (
-            os.environ.get("DEEPSEEK_API_KEY")
-            or config.get("api_key")
-        )
+        api_key = os.environ.get("DEEPSEEK_API_KEY") or config.get("api_key")
 
         if not api_key:
-            raise RuntimeError(
-                "DEEPSEEK_API_KEY is not configured."
-            )
+            raise RuntimeError("DEEPSEEK_API_KEY is not configured.")
 
         self._client = OpenAI(
             api_key=api_key,
@@ -65,24 +59,17 @@ class DeepSeekProvider(BaseProvider):
         # Keep simple conversations fast.
         # Thinking can be enabled later for difficult tasks.
         if self.config.get("thinking", False):
-            kwargs["extra_body"] = {
-                "thinking": {
-                    "type": "enabled"
-                }
-            }
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
         if tools:
             kwargs["tools"] = tools
 
-        stream = self._client.chat.completions.create(
-            **kwargs
-        )
+        stream = self._client.chat.completions.create(**kwargs)
 
         full_text = ""
         tool_calls = {}
 
         for chunk in stream:
-
             if not chunk.choices:
                 continue
 
@@ -97,9 +84,7 @@ class DeepSeekProvider(BaseProvider):
                 }
 
             if delta.tool_calls:
-
                 for call in delta.tool_calls:
-
                     index = call.index
 
                     if index not in tool_calls:
@@ -118,25 +103,16 @@ class DeepSeekProvider(BaseProvider):
                         current["id"] = call.id
 
                     if call.function:
-
                         if call.function.name:
-                            current["function"]["name"] = (
-                                call.function.name
-                            )
+                            current["function"]["name"] = call.function.name
 
                         if call.function.arguments:
-                            current["function"]["arguments"] += (
-                                call.function.arguments
-                            )
+                            current["function"]["arguments"] += call.function.arguments
 
         yield {
             "type": "done",
             "content": full_text,
-            "tool_calls": (
-                list(tool_calls.values())
-                if tool_calls
-                else None
-            ),
+            "tool_calls": (list(tool_calls.values()) if tool_calls else None),
         }
 
 

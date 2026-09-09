@@ -80,9 +80,7 @@ class VerifyCodingChangePlugin(ToolPlugin):
             if candidate != root and root in candidate.parents:
                 changed_paths.append(candidate)
 
-        source_changed = any(
-            path.suffix.lower() in _SOURCE_SUFFIXES for path in changed_paths
-        )
+        source_changed = any(path.suffix.lower() in _SOURCE_SUFFIXES for path in changed_paths)
         gates.append(
             {
                 "name": "implementation",
@@ -91,9 +89,7 @@ class VerifyCodingChangePlugin(ToolPlugin):
             }
         )
 
-        python_files = [
-            path for path in changed_paths if path.suffix.lower() == ".py" and path.is_file()
-        ]
+        python_files = [path for path in changed_paths if path.suffix.lower() == ".py" and path.is_file()]
         if python_files:
             python_gate = _run(
                 ["python", "-m", "py_compile", *[str(path) for path in python_files]],
@@ -115,9 +111,7 @@ class VerifyCodingChangePlugin(ToolPlugin):
         else:
             test_python = root / ".venv" / "Scripts" / "python.exe"
             python_cmd = str(test_python) if test_python.is_file() else "python"
-            backend_gate = _run(
-                [python_cmd, "-m", "pytest", "tests", "-q"], root, timeout
-            )
+            backend_gate = _run([python_cmd, "-m", "pytest", "tests", "-q"], root, timeout)
             gates.append({"name": "backend_tests", **backend_gate})
 
         frontend = root / "desktop"

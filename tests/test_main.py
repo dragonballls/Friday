@@ -5,11 +5,13 @@ def test_launch_ui_builds_commands(monkeypatch):
     """--ui should spawn the API server and frontend dev server, then open the browser."""
     spawned: list[list[str]] = []
     opened: list[str] = []
+    sleep_count = 0
 
     class FakeProc:
         def __init__(self, cmd):
             self._cmd = cmd
             self._polls = 0
+            self.returncode = 0
 
         def poll(self):
             self._polls += 1
@@ -23,12 +25,16 @@ def test_launch_ui_builds_commands(monkeypatch):
         return FakeProc(cmd)
 
     def fake_sleep(_secs):
-        pass
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count > 2:
+            raise KeyboardInterrupt
 
     def fake_open(url):
         opened.append(url)
 
     monkeypatch.setattr("main._auto_update_monitor", lambda *_args: None)
+    monkeypatch.setattr("main._wait_for_port", lambda *args, **kwargs: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr("main.time.sleep", fake_sleep)
     monkeypatch.setattr("main.webbrowser.open", fake_open)
@@ -38,18 +44,20 @@ def test_launch_ui_builds_commands(monkeypatch):
     assert len(spawned) == 2
     assert "api_server.py" in " ".join(spawned[0])
     assert any("dev" in str(c) for c in spawned[1])
-    assert opened == ["http://localhost:5173"]
+    assert opened == ["http://127.0.0.1:5173/"]
 
 
 def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
     """A failed update must not permanently disable future update detection."""
     monitor_calls: list[int] = []
     spawned: list[list[str]] = []
+    sleep_count = 0
 
     class FakeProc:
         def __init__(self, cmd):
             self._polls = 0
             self._cmd = cmd
+            self.returncode = 0
 
         def poll(self):
             self._polls += 1
@@ -78,14 +86,21 @@ def test_launch_ui_restarts_monitor_after_failed_update(monkeypatch):
         spawned.append(cmd)
         return FakeProc(cmd)
 
+    def fake_sleep(_secs):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count > 6:
+            raise KeyboardInterrupt
+
     monkeypatch.setattr("main.threading.Thread", FakeThread)
     monkeypatch.setattr("main._auto_update_monitor", fake_monitor)
+    monkeypatch.setattr("main._wait_for_port", lambda *args, **kwargs: None)
     monkeypatch.setattr("main.subprocess.Popen", fake_popen)
     monkeypatch.setattr(
         "main.subprocess.run",
         lambda *_args, **_kwargs: type("Result", (), {"returncode": 4})(),
     )
-    monkeypatch.setattr("main.time.sleep", lambda _secs: None)
+    monkeypatch.setattr("main.time.sleep", fake_sleep)
     monkeypatch.setattr("main.webbrowser.open", lambda _url: None)
 
     _launch_ui()

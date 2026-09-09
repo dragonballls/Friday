@@ -28,11 +28,7 @@ def _get_named_provider(name: str):
 
 
 def _is_retryable_provider_error(event: dict) -> bool:
-    text = str(
-        event.get("error")
-        or event.get("content")
-        or ""
-    ).lower()
+    text = str(event.get("error") or event.get("content") or "").lower()
 
     retryable_markers = (
         "429",
@@ -56,9 +52,7 @@ def _is_retryable_provider_error(event: dict) -> bool:
 
 def _get_fallback_provider(primary_name: str):
     config = get_provider_config(primary_name)
-    fallback_name = str(
-        config.get("fallback_provider", "ollama")
-    ).strip()
+    fallback_name = str(config.get("fallback_provider", "ollama")).strip()
 
     if not fallback_name or fallback_name == primary_name:
         return None, None
@@ -83,10 +77,7 @@ def _primary_failed(events: list[dict]) -> bool:
 
 def _has_partial_output(events: list[dict]) -> bool:
     """Return True once the primary provider has exposed user-visible text."""
-    return any(
-        event.get("type") == "tokens" and bool(str(event.get("content") or ""))
-        for event in events
-    )
+    return any(event.get("type") == "tokens" and bool(str(event.get("content") or "")) for event in events)
 
 
 def _provider_has_credentials(name: str) -> bool:
@@ -166,10 +157,7 @@ def chat(
 
     yield {
         "type": "tokens",
-        "content": (
-            f"[{selected_name} unavailable; "
-            f"switching to {fallback_name}…]\n\n"
-        ),
+        "content": (f"[{selected_name} unavailable; switching to {fallback_name}…]\n\n"),
     }
 
     try:
