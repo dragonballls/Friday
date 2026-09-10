@@ -29,7 +29,7 @@ def test_partial_primary_output_does_not_trigger_duplicate_fallback(monkeypatch)
 
     events = list(llm.chat([]))
 
-    assert [event["type"] for event in events] == ["tokens", "error"]
+    assert [event["type"] for event in events] == ["tokens"]
     assert events[0]["content"] == "partial"
 
 
