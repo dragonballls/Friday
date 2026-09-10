@@ -5,6 +5,11 @@ The updater never resets, force-checks out, or overwrites local changes. When a
 clean checkout is on another branch, it safely switches to the requested branch
 so the desktop launcher cannot remain stuck on an old feature branch. The
 original branch and its commits remain intact.
+
+When ``--build`` is requested, the previous commit is retained as a rollback
+point. If dependency installation or the frontend build fails after the
+fast-forward, Friday automatically returns to the known-good commit instead of
+leaving the running installation on a potentially broken update.
 """
 
 from __future__ import annotations
@@ -46,6 +51,19 @@ def working_tree_is_clean() -> bool:
 def current_branch() -> str | None:
     result = subprocess.run(
         ["git", "branch", "--show-current"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def current_commit() -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
         cwd=ROOT,
         check=False,
         capture_output=True,
@@ -105,6 +123,18 @@ def _clear_frontend_port() -> None:
         )
 
 
+def rollback_to(commit: str) -> bool:
+    """Return to a known-good commit without touching user changes."""
+    if not working_tree_is_clean():
+        print("Rollback refused because the working tree is no longer clean.", file=sys.stderr)
+        return False
+    if run(["git", "reset", "--hard", commit]) != 0:
+        print(f"CRITICAL: unable to roll back Friday to known-good commit {commit}.", file=sys.stderr)
+        return False
+    print(f"Rolled Friday back to known-good commit {commit}.")
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
@@ -139,6 +169,11 @@ def main() -> int:
     if run(["git", "fetch", "--prune", args.remote, args.branch]) != 0:
         return 3
 
+    old_commit = current_commit()
+    if old_commit is None:
+        print("Unable to determine the current commit; refusing to update.", file=sys.stderr)
+        return 4
+
     remote_ref = f"{args.remote}/{args.branch}"
     if run(["git", "merge", "--ff-only", remote_ref]) != 0:
         print("Update is not a fast-forward; no local history was rewritten.", file=sys.stderr)
@@ -147,16 +182,18 @@ def main() -> int:
     if args.build:
         npm = _npm_command()
         if npm is None:
-            print("npm is required for --build", file=sys.stderr)
-            return 5
+            print("npm is required for --build; rolling back the update.", file=sys.stderr)
+            return 7 if rollback_to(old_commit) else 9
         if not DESKTOP.is_dir():
-            print(f"Desktop directory not found: {DESKTOP}", file=sys.stderr)
-            return 6
+            print(f"Desktop directory not found: {DESKTOP}; rolling back the update.", file=sys.stderr)
+            return 6 if rollback_to(old_commit) else 9
         _clear_frontend_port()
         if run([npm, "ci"], cwd=DESKTOP) != 0:
-            return 7
+            print("Frontend dependency installation failed; rolling back the update.", file=sys.stderr)
+            return 7 if rollback_to(old_commit) else 9
         if run([npm, "run", "build"], cwd=DESKTOP) != 0:
-            return 8
+            print("Frontend build failed; rolling back the update.", file=sys.stderr)
+            return 8 if rollback_to(old_commit) else 9
 
     print("Friday is up to date.")
     return 0
