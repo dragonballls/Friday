@@ -336,7 +336,7 @@ def main():
 
     args = sys.argv[1:]
 
-    if "--ui" in args and sys.platform == "win32":
+    if "--ui" in args and sys.platform == "win32" and "--startup" not in args:
         _ensure_windows_startup_task()
 
     if "--ui" in args and _detach_windows_ui():
