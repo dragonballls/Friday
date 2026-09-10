@@ -71,9 +71,23 @@ def load_provider_config() -> dict[str, Any]:
 
 
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
+    """Return the configured cloud-first primary provider.
+
+    Older local configurations may still contain ``default.provider = ollama``
+    even though their routing section already declares a cloud primary. Prefer
+    that routing declaration so upgrades do not silently fall back to a local
+    model. An explicit non-Ollama default remains authoritative.
+    """
     if config is None:
         config = load_provider_config()
-    return config.get("default", {}).get("provider", "openai")
+
+    default = str(config.get("default", {}).get("provider", "")).strip()
+    routing = config.get("routing", {})
+    primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
+
+    if default == "ollama" and primary and primary != "ollama":
+        return primary
+    return default or primary or "openai"
 
 
 def get_provider_config(name: str | None = None) -> dict[str, Any]:
