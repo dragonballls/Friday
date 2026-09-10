@@ -1,7 +1,7 @@
 from collections.abc import Generator
 
 from providers import get_provider
-from config.providers import get_provider_config
+from config.providers import get_provider_config, load_provider_config
 
 
 _provider = None
@@ -50,18 +50,52 @@ def _is_retryable_provider_error(event: dict) -> bool:
     return any(marker in text for marker in retryable_markers)
 
 
+def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
+    """Return cloud-first fallback candidates without forcing local inference."""
+    config = load_provider_config()
+    primary_config = config.get(primary_name, {})
+    configured = str(primary_config.get("fallback_provider", "")).strip()
+
+    candidates: list[str] = []
+    if configured and configured != primary_name:
+        candidates.append(configured)
+
+    routing = config.get("routing", {})
+    if isinstance(routing, dict):
+        fallback_list = routing.get("fallback", [])
+        if isinstance(fallback_list, str):
+            fallback_list = [fallback_list]
+        if isinstance(fallback_list, list):
+            candidates.extend(str(item).strip() for item in fallback_list if str(item).strip())
+
+    # Preserve cloud-first behavior when an older configuration still points
+    # its fallback at Ollama. Prefer an already configured remote provider.
+    if configured == "ollama":
+        candidates.extend(("openai", "openrouter", "zen_coder"))
+
+    seen: set[str] = set()
+    return [
+        name
+        for name in candidates
+        if name and name != primary_name and not (name in seen or seen.add(name))
+    ]
+
+
 def _get_fallback_provider(primary_name: str):
-    config = get_provider_config(primary_name)
-    fallback_name = str(config.get("fallback_provider", "ollama")).strip()
+    for fallback_name in _provider_candidates_for_fallback(primary_name):
+        try:
+            provider = _get_named_provider(fallback_name)
+        except Exception:
+            continue
 
-    if not fallback_name or fallback_name == primary_name:
-        return None, None
-
-    try:
-        provider = _get_named_provider(fallback_name)
+        # Do not select an unconfigured remote provider merely because its
+        # section exists. Ollama is intentionally excluded from automatic
+        # cloud fallbacks; local inference remains an explicit choice.
+        if fallback_name != "ollama" and not _provider_has_credentials(fallback_name):
+            continue
         return provider, fallback_name
-    except Exception:
-        return None, None
+
+    return None, None
 
 
 def _primary_failed(events: list[dict]) -> bool:
@@ -82,6 +116,8 @@ def _has_partial_output(events: list[dict]) -> bool:
 
 def _provider_has_credentials(name: str) -> bool:
     config = get_provider_config(name)
+    if name == "ollama":
+        return True
     return bool(str(config.get("api_key") or "").strip())
 
 
@@ -92,9 +128,10 @@ def chat(
 ) -> Generator[dict, None, None]:
     """Stream from a selected provider with safe per-request fallback.
 
-    Existing callers continue using the configured primary provider. Coding
+    Normal callers use the configured cloud-first primary provider. Coding
     callers can explicitly select Zen Coder without changing normal chat or
-    planning. A missing Zen key is treated as an optional-provider miss.
+    planning. A missing optional provider falls back to another configured
+    remote provider; local Ollama is never an automatic fallback.
     """
     provider = _ensure_provider() if provider_name is None else None
     selected_name = provider_name or _provider_name or "unknown"
