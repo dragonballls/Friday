@@ -1,6 +1,6 @@
 """Elastic worker scheduling primitives for Friday.
 
-The manager deliberately separates worker scaling from tool authority.  A larger
+The manager deliberately separates worker scaling from tool authority. A larger
 worker pool increases parallel task capacity but never grants additional
 capabilities to a worker.
 """
@@ -58,11 +58,7 @@ class WorkerPlan:
 
 
 class ElasticWorkerManager:
-    """Scale a replaceable pool from queue pressure and available capacity.
-
-    ``capacity_provider`` is intentionally injectable so the scheduler can be
-    tested without touching the host machine or a model provider.
-    """
+    """Scale a replaceable pool from queue pressure and available capacity."""
 
     def __init__(
         self,
@@ -91,7 +87,11 @@ class ElasticWorkerManager:
 
     @property
     def active_workers(self) -> list[Worker]:
-        return [worker for worker in self.workers.values() if worker.state != WorkerState.FAILED]
+        return [
+            worker
+            for worker in self.workers.values()
+            if worker.state in {WorkerState.IDLE, WorkerState.RUNNING}
+        ]
 
     @property
     def idle_workers(self) -> list[Worker]:
@@ -105,9 +105,7 @@ class ElasticWorkerManager:
             return self.min_workers
 
         demand = (queued_tasks + self.tasks_per_worker - 1) // self.tasks_per_worker
-        if queued_tasks <= self.normal_workers * self.tasks_per_worker:
-            target = max(self.normal_workers, demand)
-        elif queued_tasks <= self.burst_workers * self.tasks_per_worker:
+        if queued_tasks <= self.burst_workers * self.tasks_per_worker:
             target = max(self.normal_workers, demand)
         else:
             target = max(self.burst_workers, demand)
@@ -115,9 +113,11 @@ class ElasticWorkerManager:
 
     def plan(self, queued_tasks: int) -> WorkerPlan:
         """Calculate scaling without mutating the pool."""
+        capacity = self._capacity_provider()
         active = len(self.active_workers)
-        desired = min(self.desired_count(queued_tasks), self._capacity_provider().cloud_available)
-        desired = max(0 if self._capacity_provider().cloud_available == 0 else self.min_workers, desired)
+        desired = min(self.desired_count(queued_tasks), max(0, capacity.cloud_available))
+        if capacity.cloud_available > 0:
+            desired = max(self.min_workers, desired)
         return WorkerPlan(
             desired=desired,
             active=active,
