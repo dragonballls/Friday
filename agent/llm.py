@@ -83,13 +83,16 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
 def _get_fallback_provider(primary_name: str):
     for fallback_name in _provider_candidates_for_fallback(primary_name):
         try:
+            # A provider already constructed for this request is authoritative.
+            # Otherwise construct the configured remote provider and verify that
+            # it has credentials before selecting it.
+            cached = _provider_cache.get(fallback_name)
+            if cached is not None:
+                return cached, fallback_name
             provider = _get_named_provider(fallback_name)
         except Exception:
             continue
 
-        # Do not select an unconfigured remote provider merely because its
-        # section exists. Ollama is intentionally excluded from automatic
-        # cloud fallbacks; local inference remains an explicit choice.
         if fallback_name != "ollama" and not _provider_has_credentials(fallback_name):
             continue
         return provider, fallback_name
@@ -179,12 +182,13 @@ def chat(
         for event in provider.chat(messages, tools=tools):
             if isinstance(event, dict):
                 primary_events.append(event)
-                if event.get("type") == "error" and _has_partial_output(primary_events[:-1]):
-                    continue
             yield event
     except Exception as exc:
-        primary_events.append({"type": "error", "error": str(exc)})
+        primary_events.append({"type": "error", "error": str(exc), "content": str(exc), "final": True})
+        yield primary_events[-1]
 
+    # Once user-visible output has been emitted, preserve the primary error for
+    # the caller but never start a duplicate fallback stream.
     if _has_partial_output(primary_events) or not _primary_failed(primary_events):
         return
 
