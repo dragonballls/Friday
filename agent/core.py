@@ -295,6 +295,33 @@ class Agent:
         def final_verify(handoff):
             return True
 
+        def repair_coder(handoff, attempt_number, failed_result):
+            # Each repair attempt gets a fresh SafeExecutorAdapter transaction.
+            # Keep the existing cloud-first coding provider; do not fall back to Ollama.
+            failure = ""
+            if isinstance(failed_result, dict):
+                failure = str(failed_result.get("error") or failed_result.get("result") or "")
+            if not failure:
+                failure = "The previous coding attempt failed its completion gates."
+
+            task_description.status = "running"
+            task_description.error = None
+            self._coding_session_state["attempt"] = attempt_number
+            self._coding_session_state["current_stage"] = "repair"
+
+            self.messages.append({
+                "role": "user",
+                "content": (
+                    f"Repair attempt {attempt_number} for the coding task.\\n"
+                    f"The previous attempt failed: {failure}\\n\\n"
+                    "Do not repeat the failed approach. Inspect the current repository state, "
+                    "make the smallest safe correction to the authorized path, and actually "
+                    "execute the coding tools. The change is not complete until repository "
+                    "verification passes. Keep all changes inside the authorized path."
+                ),
+            })
+            return execute_coder(handoff, run_tests, run_review, final_verify)
+
         controller = create_coder_controller(
             workspace=workspace,
             handoff=handoff,
@@ -302,6 +329,7 @@ class Agent:
             run_tests=run_tests,
             run_review=run_review,
             final_verify=final_verify,
+            repair_coder=repair_coder,
         )
         result = controller.run()
 
