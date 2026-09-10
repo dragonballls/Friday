@@ -132,7 +132,7 @@ def chat(
 
     if provider_name is not None:
         if not _provider_has_credentials(provider_name):
-            fallback, fallback_name = _get_fallback_provider(provider_name, allow_uncredentialed=True)
+            fallback, fallback_name = _get_fallback_provider(provider_name)
             if fallback is None:
                 yield {
                     "type": "error",
@@ -154,7 +154,7 @@ def chat(
         try:
             provider = _get_named_provider(provider_name)
         except Exception as exc:
-            fallback, fallback_name = _get_fallback_provider(provider_name, allow_uncredentialed=True)
+            fallback, fallback_name = _get_fallback_provider(provider_name)
             if fallback is None:
                 yield {"type": "error", "content": str(exc), "final": True}
                 return
