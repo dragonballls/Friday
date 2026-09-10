@@ -169,18 +169,29 @@ def chat(
             return
 
     primary_events: list[dict] = []
+    partial_output = False
 
     try:
         for event in provider.chat(messages, tools=tools):
             if isinstance(event, dict):
+                if event.get("type") == "tokens" and bool(str(event.get("content") or "")):
+                    partial_output = True
                 primary_events.append(event)
+
+                # Once user-visible output has been delivered, suppress a later
+                # provider error so the stream does not contain a duplicate
+                # terminal/error event and no fallback is started.
+                if partial_output and event.get("type") == "error":
+                    continue
             yield event
     except Exception as exc:
-        primary_events.append({"type": "error", "error": str(exc), "content": str(exc), "final": True})
-        yield primary_events[-1]
+        error_event = {"type": "error", "error": str(exc), "content": str(exc), "final": True}
+        primary_events.append(error_event)
+        if not partial_output:
+            yield error_event
 
-    # Preserve an error after partial output, but never start a duplicate fallback.
-    if _has_partial_output(primary_events) or not _primary_failed(primary_events):
+    # Never start a duplicate fallback after user-visible output.
+    if partial_output or not _primary_failed(primary_events):
         return
 
     fallback, fallback_name = _get_fallback_provider(selected_name)
