@@ -232,10 +232,13 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
 def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     api_cmd = [sys.executable, os.path.join(desktop, "api_server.py")]
     if sys.platform == "win32":
-        npm_cmd = shutil.which("npm.cmd") or shutil.which("npm")
-        if not npm_cmd:
-            raise RuntimeError("npm was not found on PATH; cannot start the Friday frontend.")
-        front_cmd = [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"]
+        node_cmd = shutil.which("node.exe") or shutil.which("node")
+        vite_js = os.path.join(desktop, "node_modules", "vite", "bin", "vite.js")
+        if not node_cmd:
+            raise RuntimeError("Node.js was not found on PATH; cannot start the Friday frontend.")
+        if not os.path.isfile(vite_js):
+            raise RuntimeError(f"Vite entrypoint was not found: {vite_js}")
+        front_cmd = [node_cmd, vite_js, "--host", "127.0.0.1"]
     else:
         front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
 
