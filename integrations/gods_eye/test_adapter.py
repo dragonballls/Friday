@@ -1,4 +1,4 @@
-from adapter import GodsEyeAdapter
+from integrations.gods_eye.adapter import GodsEyeAdapter
 
 
 def test_adapter_builds_valid_request():
