@@ -147,13 +147,17 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {proc.returncode}).")
+        # Check the endpoint before checking the child process. On Windows, a
+        # second Friday launcher can win the race for the fixed Vite port while
+        # this Vite child exits with EADDRINUSE. If the expected endpoint is
+        # already serving, adopt it instead of treating the race as a failure.
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return
         except OSError as exc:
             last_error = exc
+        if proc.poll() is not None:
+            raise RuntimeError(f"Friday UI service exited before port {port} became ready (exit code {proc.returncode}).")
         time.sleep(0.25)
     raise RuntimeError(f"Friday UI service did not become ready on {host}:{port} within {timeout:.0f}s ({last_error}).")
 
