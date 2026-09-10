@@ -85,9 +85,17 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
     routing = config.get("routing", {})
     primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
 
-    if default == "ollama" and primary and primary != "ollama":
+    if default == "ollama":
+        # Ollama is never an automatic fallback/default. If an explicit cloud
+        # routing primary exists, prefer it; otherwise use OpenRouter so a
+        # stopped local Ollama service cannot break the assistant.
+        if primary and primary != "ollama":
+            return primary
+        return "openrouter"
+
+    if primary and primary != "ollama" and (not default or default == "ollama"):
         return primary
-    return default or primary or "openai"
+    return default or primary or "openrouter"
 
 
 def get_provider_config(name: str | None = None) -> dict[str, Any]:
