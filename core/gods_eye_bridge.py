@@ -22,10 +22,13 @@ DEFAULT_GODS_EYE_URL = "http://127.0.0.1:4173"
 class GodsEyeBridge:
     base_url: str = DEFAULT_GODS_EYE_URL
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "base_url", _validate_local_url(self.base_url))
+
     @classmethod
     def from_environment(cls) -> "GodsEyeBridge":
         raw = os.getenv("FRIDAY_GODS_EYE_URL", DEFAULT_GODS_EYE_URL).strip()
-        return cls(_validate_local_url(raw))
+        return cls(raw)
 
     def location_url(self, latitude: float, longitude: float, *, zoom: float | None = None) -> str:
         _validate_coordinate(latitude, -90.0, 90.0, "latitude")
