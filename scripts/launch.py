@@ -131,23 +131,16 @@ def _terminate_processes(procs: list[subprocess.Popen]):
 
 
 def _clear_frontend_port() -> None:
-    if sys.platform != "win32":
-        return
+    """Compatibility no-op: never kill an existing Friday/Vite server."""
+    return
+
+
+def _frontend_port_is_ready() -> bool:
     try:
-        result = subprocess.run(["netstat", "-ano", "-p", "tcp"], cwd=ROOT, capture_output=True, text=True, timeout=15, check=False)
-    except (OSError, subprocess.SubprocessError):
-        return
-    if result.returncode != 0:
-        return
-    pids: set[str] = set()
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 5 or parts[0].upper() != "TCP" or parts[3].upper() != "LISTENING":
-            continue
-        if parts[1].rsplit(":", 1)[-1] == "5173" and parts[4].isdigit():
-            pids.add(parts[4])
-    for pid in pids:
-        subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], cwd=ROOT, capture_output=True, text=True, timeout=15, check=False)
+        with socket.create_connection(("127.0.0.1", 5173), timeout=0.5):
+            return True
+    except OSError:
+        return False
 
 
 def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float = 30.0) -> None:
@@ -197,7 +190,9 @@ def _start_ui_processes(desktop: str) -> list[subprocess.Popen]:
     procs: list[subprocess.Popen] = []
     try:
         procs.append(_start_api_process(desktop))
-        _clear_frontend_port()
+        if _frontend_port_is_ready():
+            print_colored("Friday UI already running — reusing existing Vite server.", "32")
+            return procs
         front = subprocess.Popen(front_cmd, cwd=desktop)
         procs.append(front)
         _wait_for_port("127.0.0.1", 5173, front)
@@ -226,7 +221,9 @@ def _recover_dead_processes(procs: list[subprocess.Popen], desktop: str) -> None
             front_cmd = [node_cmd, vite_js, "--host", "127.0.0.1"]
         else:
             front_cmd = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
-        _clear_frontend_port()
+        if _frontend_port_is_ready():
+            print_colored("Friday UI already running — keeping existing Vite server.", "32")
+            return
         front = subprocess.Popen(front_cmd, cwd=desktop)
         _wait_for_port("127.0.0.1", 5173, front)
         procs[1:2] = [front]
