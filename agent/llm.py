@@ -80,12 +80,10 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
     ]
 
 
-def _get_fallback_provider(primary_name: str):
+def _get_fallback_provider(primary_name: str, *, allow_uncredentialed: bool = False):
     for fallback_name in _provider_candidates_for_fallback(primary_name):
         try:
             # A provider already constructed for this request is authoritative.
-            # Otherwise construct the configured remote provider and verify that
-            # it has credentials before selecting it.
             cached = _provider_cache.get(fallback_name)
             if cached is not None:
                 return cached, fallback_name
@@ -93,7 +91,7 @@ def _get_fallback_provider(primary_name: str):
         except Exception:
             continue
 
-        if fallback_name != "ollama" and not _provider_has_credentials(fallback_name):
+        if not allow_uncredentialed and not _provider_has_credentials(fallback_name):
             continue
         return provider, fallback_name
 
@@ -128,19 +126,13 @@ def chat(
     tools: list[dict] | None = None,
     provider_name: str | None = None,
 ) -> Generator[dict, None, None]:
-    """Stream from a selected provider with safe per-request fallback.
-
-    Normal callers use the configured cloud-first primary provider. Coding
-    callers can explicitly select Zen Coder without changing normal chat or
-    planning. A missing optional provider falls back to another configured
-    remote provider; local Ollama is never an automatic fallback.
-    """
+    """Stream from a selected provider with safe per-request fallback."""
     provider = _ensure_provider() if provider_name is None else None
     selected_name = provider_name or _provider_name or "unknown"
 
     if provider_name is not None:
         if not _provider_has_credentials(provider_name):
-            fallback, fallback_name = _get_fallback_provider(provider_name)
+            fallback, fallback_name = _get_fallback_provider(provider_name, allow_uncredentialed=True)
             if fallback is None:
                 yield {
                     "type": "error",
@@ -162,7 +154,7 @@ def chat(
         try:
             provider = _get_named_provider(provider_name)
         except Exception as exc:
-            fallback, fallback_name = _get_fallback_provider(provider_name)
+            fallback, fallback_name = _get_fallback_provider(provider_name, allow_uncredentialed=True)
             if fallback is None:
                 yield {"type": "error", "content": str(exc), "final": True}
                 return
@@ -187,8 +179,7 @@ def chat(
         primary_events.append({"type": "error", "error": str(exc), "content": str(exc), "final": True})
         yield primary_events[-1]
 
-    # Once user-visible output has been emitted, preserve the primary error for
-    # the caller but never start a duplicate fallback stream.
+    # Preserve an error after partial output, but never start a duplicate fallback.
     if _has_partial_output(primary_events) or not _primary_failed(primary_events):
         return
 
