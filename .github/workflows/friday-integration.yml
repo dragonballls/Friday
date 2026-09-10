@@ -44,4 +44,5 @@ jobs:
             integrations/gods_eye/test_contract.py \
             tests/test_gods_eye_intent.py \
             tests/test_gods_eye_intent_safety.py \
-            tests/test_gods_eye_plugin_discovery.py
+            tests/test_gods_eye_plugin_discovery.py \
+            tests/test_provider_routing.py
