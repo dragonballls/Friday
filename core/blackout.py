@@ -1,9 +1,13 @@
-"""Blackout mode (P5) â€” one-toggle local-only privacy.
+"""Blackout mode (P5) — one-toggle network/privacy restriction.
 
 When enabled:
-- LLM provider is forced to a local endpoint (Ollama by default)
 - outbound web/network tools are blocked
-- the frontend shows a privacy seal on the orb
+- the frontend can show a privacy seal on the orb
+- AI provider selection is NOT silently changed
+
+Provider selection is intentionally independent from blackout. This keeps a
+cloud-first AI configuration from being unexpectedly replaced by Ollama while
+still allowing blackout to prevent outbound tools.
 
 State persists to ``memory_store/blackout.json`` so it survives restarts.
 """
@@ -86,8 +90,11 @@ def is_tool_blocked(tool: str) -> bool:
     return is_blackout() and tool in _NETWORK_TOOLS
 
 
-def resolve_provider(requested: str | None) -> str:
-    """Force the local provider while blackout is active."""
-    if is_blackout():
-        return _LOCAL_PROVIDER
+def resolve_provider(requested: str | None) -> str | None:
+    """Preserve explicit provider selection regardless of blackout state.
+
+    Blackout controls outbound tools; it must not silently redirect cloud AI
+    requests to a local model. ``None`` remains ``None`` so normal provider
+    selection can resolve the configured cloud-first default.
+    """
     return requested
