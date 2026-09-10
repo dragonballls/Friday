@@ -46,3 +46,5 @@ jobs:
             tests/test_gods_eye_plugin_discovery.py \
             tests/test_provider_routing.py \
             tests/test_provider_fallback.py
+
+# Trigger a fresh push-based integration verification after correcting the test path.
