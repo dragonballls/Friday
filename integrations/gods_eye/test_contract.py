@@ -1,4 +1,4 @@
-from contract import build_request
+from integrations.gods_eye.contract import build_request
 
 
 def test_allowed_capability_is_accepted():
