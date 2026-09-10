@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 from urllib.parse import quote, urlparse
 
 
@@ -40,6 +42,17 @@ class GodsEyeBridge:
         if not place or len(place) > 200:
             raise ValueError("place must contain 1-200 characters")
         return f"{self.base_url}/?q={quote(place, safe='')}"
+
+    def health(self, *, timeout: float = 1.5) -> dict[str, Any]:
+        """Check only the configured local God's Eye root, without sending secrets."""
+        if timeout <= 0 or timeout > 10:
+            raise ValueError("timeout must be between 0 and 10 seconds")
+        request = Request(self.base_url + "/", method="GET", headers={"Accept": "text/html"})
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return {"available": 200 <= response.status < 500, "status": response.status}
+        except (OSError, URLError):
+            return {"available": False, "status": None}
 
     def capability(self, name: str, **arguments: Any) -> dict[str, Any]:
         allowed = {
