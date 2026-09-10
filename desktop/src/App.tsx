@@ -1106,6 +1106,13 @@ if (sessions.sessions.length > 0) {
           </div>
         ) : (
         <>
+        <div className="friday-self-repair-bar" data-testid="self-repair-status" role="status" aria-label="Friday self-repair status">
+          <span className="friday-self-repair-dot" aria-hidden="true" />
+          <span>SELF-REPAIR READY</span>
+          <span className="friday-self-repair-separator">•</span>
+          <span>BOUNDED VERIFICATION</span>
+        </div>
+
         <StatusRibbon
           systemInfo={systemInfo}
           latency={metricsState.latency}
