@@ -291,14 +291,14 @@ def _launch_ui():
                     result = subprocess.run(
                         [sys.executable, os.path.join(root, "scripts", "update.py"), "--build"], cwd=root, check=False
                     )
+                    stop_event.set()
                     if result.returncode == 0:
-                        stop_event.set()
                         os.execv(sys.executable, [sys.executable, *sys.argv])
                     _log("Update could not be fully applied; restarting Friday on the latest source available.")
-                    update_event.clear()
-                    stop_event.clear()
-                    _start_auto_update_monitor(root, update_event, stop_event)
-                    procs = _start_ui_processes(desktop)
+                    _terminate_processes(procs)
+                    procs.clear()
+                    time.sleep(2.0)
+                    continue
                 elif any(p.poll() is not None for p in procs):
                     print_colored(
                         "\nFriday UI process stopped — restarting the UI while keeping update monitoring active.", "33"
