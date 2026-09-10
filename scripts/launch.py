@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "scripts" / "update.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
-AUTO_UPDATE_INTERVAL = 1
+# Polling every second causes needless network traffic and Git process churn.
+# Thirty seconds keeps Friday reasonably fresh while leaving the machine quiet.
+AUTO_UPDATE_INTERVAL = 30
 STARTUP_TASK_NAME = "Friday UI"
 STARTUP_RETRY_DELAY = 5
 MAX_STARTUP_RETRY_DELAY = 30
