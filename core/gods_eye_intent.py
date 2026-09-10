@@ -21,7 +21,9 @@ _PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("inspect_selected_object", ("what am i looking at", "what is that", "identify this")),
     ("track_object", ("track that", "follow that", "keep tracking")),
     ("set_layers", ("show aircraft", "show planes", "show ships", "show satellites", "show earthquakes", "show cameras")),
-    ("navigate_to", ("show me", "take me to", "open this location", "go to")),
+    # Keep location navigation deliberately specific. A generic "show me" or
+    # "go to" is too broad and could steal an unrelated Friday request.
+    ("navigate_to", ("show me this location", "show me the location", "show me where", "take me to", "open this location")),
 )
 
 
