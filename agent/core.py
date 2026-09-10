@@ -273,10 +273,18 @@ class Agent:
             plan=plan,
         )
 
-        def execute_coder(**call_kwargs):
+        def execute_coder(handoff, run_tests, run_review, final_verify):
             from coding.executor_adapter import SafeExecutorAdapter
             adapter = SafeExecutorAdapter(executor=executor, workspace=workspace, expected_paths=expected_paths)
-            return adapter.execute(**call_kwargs)
+            return adapter.execute(
+                task_description,
+                self.messages,
+                self._tool_defs,
+                max_iterations=max_iterations,
+                test_check=lambda: run_tests(handoff),
+                review_check=lambda: run_review(handoff),
+                final_verification_check=lambda: final_verify(handoff),
+            )
 
         def run_tests(handoff):
             return True
