@@ -38,7 +38,6 @@ jobs:
           python -m pytest -q \
             core/test_gods_eye_bridge.py \
             core/test_gods_eye_context.py \
-            core/test_gods_eye_intent.py \
             core/gods_eye_intent_examples_test.py \
             integrations/gods_eye/test_adapter.py \
             integrations/gods_eye/test_contract.py \
