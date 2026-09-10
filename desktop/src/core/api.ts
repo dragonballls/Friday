@@ -25,7 +25,6 @@ export interface ApiError {
   body?: any
 }
 
-/* ── Low-level fetch with auth + base URL ── */
 export async function fetchApi<T = any>(
   path: string,
   options: RequestInit = {},
@@ -56,7 +55,6 @@ export async function fetchApi<T = any>(
   }
 }
 
-/* ── SSE streaming helper ── */
 async function streamEndpoint(
   path: string,
   body: Record<string, unknown>,
@@ -230,25 +228,88 @@ export type ServerEvent = { type: string; data: any }
 export function connectEventSource(onEvent: (event: ServerEvent) => void, onError?: () => void, onStatus?: (connected: boolean) => void): () => void {
   let es: EventSource | null = null
   let closed = false
+  let retryDelay = 1000
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let dropTimer: ReturnType<typeof setTimeout> | null = null
+  let reportedOffline = false
+  const MAX_RETRY = 30000
+  const DROP_GRACE = 4000
 
-  function connect() {
-    if (closed) return
-    const key = getApiKey()
-    const url = key ? `${API_BASE}/events?key=${encodeURIComponent(key)}` : `${API_BASE}/events`
-    es = new EventSource(url)
-    es.onmessage = (msg) => {
-      try { onEvent(JSON.parse(msg.data)) } catch { /* skip malformed messages */ }
-    }
-    es.onopen = () => onStatus?.(true)
-    es.onerror = () => {
-      if (closed) return
-      onStatus?.(false)
-      if (es?.readyState === EventSource.CLOSED) {
-        onError?.()
-      }
+  function clearDropTimer() {
+    if (dropTimer !== null) {
+      clearTimeout(dropTimer)
+      dropTimer = null
     }
   }
 
+  function connect() {
+    if (closed) return
+    retryTimer = null
+    const key = getApiKey()
+    const url = key ? `${API_BASE}/events?key=${encodeURIComponent(key)}` : `${API_BASE}/events`
+    es = new EventSource(url)
+
+    es.onmessage = (msg) => {
+      try {
+        const parsed = JSON.parse(msg.data)
+        onEvent(parsed)
+      } catch {
+        // skip malformed messages
+      }
+    }
+
+    es.onopen = () => {
+      retryDelay = 1000
+      clearDropTimer()
+      reportedOffline = false
+      onStatus?.(true)
+    }
+
+    es.onerror = () => {
+      es?.close()
+      es = null
+      if (closed) return
+      if (!reportedOffline && dropTimer === null) {
+        dropTimer = setTimeout(() => {
+          dropTimer = null
+          reportedOffline = true
+          onStatus?.(false)
+          onError?.()
+        }, DROP_GRACE)
+      }
+      const delay = retryDelay
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY)
+      retryTimer = setTimeout(connect, delay)
+    }
+  }
+
+  function reconnectNow() {
+    if (closed || es !== null) return
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    retryDelay = 1000
+    connect()
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'visible') reconnectNow()
+  }
+
+  window.addEventListener('online', reconnectNow)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+
   connect()
-  return () => { closed = true; es?.close(); es = null }
+
+  return () => {
+    closed = true
+    window.removeEventListener('online', reconnectNow)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    if (retryTimer !== null) clearTimeout(retryTimer)
+    retryTimer = null
+    clearDropTimer()
+    es?.close()
+    es = null
+  }
 }
