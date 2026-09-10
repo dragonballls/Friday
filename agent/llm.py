@@ -72,11 +72,6 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
                 if str(item).strip() and str(item).strip() != "ollama"
             )
 
-    # Preserve cloud-first behavior when an older configuration still points
-    # its fallback at Ollama. Prefer an already configured remote provider.
-    if configured == "ollama":
-        candidates.extend(("openai", "openrouter", "zen_coder"))
-
     seen: set[str] = set()
     return [
         name
@@ -184,6 +179,8 @@ def chat(
         for event in provider.chat(messages, tools=tools):
             if isinstance(event, dict):
                 primary_events.append(event)
+                if event.get("type") == "error" and _has_partial_output(primary_events[:-1]):
+                    continue
             yield event
     except Exception as exc:
         primary_events.append({"type": "error", "error": str(exc)})
