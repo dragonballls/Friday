@@ -3,11 +3,7 @@
 When enabled:
 - outbound web/network tools are blocked
 - the frontend can show a privacy seal on the orb
-- AI provider selection is NOT silently changed
-
-Provider selection is intentionally independent from blackout. This keeps a
-cloud-first AI configuration from being unexpectedly replaced by Ollama while
-still allowing blackout to prevent outbound tools.
+- AI requests are forced to the local Ollama provider
 
 State persists to ``memory_store/blackout.json`` so it survives restarts.
 """
@@ -91,10 +87,12 @@ def is_tool_blocked(tool: str) -> bool:
 
 
 def resolve_provider(requested: str | None) -> str | None:
-    """Preserve explicit provider selection regardless of blackout state.
+    """Force local inference while blackout is enabled.
 
-    Blackout controls outbound tools; it must not silently redirect cloud AI
-    requests to a local model. ``None`` remains ``None`` so normal provider
-    selection can resolve the configured cloud-first default.
+    Blackout is the explicit privacy mode: outbound tools are blocked and AI
+    provider selection is redirected to the local Ollama provider. Outside
+    blackout, the caller's explicit provider selection is preserved.
     """
+    if is_blackout():
+        return _LOCAL_PROVIDER
     return requested
