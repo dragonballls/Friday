@@ -72,3 +72,22 @@ class GodsEyeContextPlugin(ToolPlugin):
     def execute(self, capability: str, arguments: dict | None = None) -> dict:
         bridge = GodsEyeBridge.from_environment()
         return bridge.capability(capability, **(arguments or {}))
+
+
+class GodsEyeHealthPlugin(ToolPlugin):
+    name = "gods_eye_health"
+    description = "Check whether the local God's Eye View service is reachable without exposing credentials."
+    category = "spatial"
+
+    def get_parameters_schema(self):
+        return {
+            "type": "object",
+            "properties": {
+                "timeout": {"type": "number", "description": "Health-check timeout in seconds, from 0 to 10."},
+            },
+            "required": [],
+        }
+
+    def execute(self, timeout: float = 1.5) -> dict:
+        bridge = GodsEyeBridge.from_environment()
+        return bridge.health(timeout=timeout)
