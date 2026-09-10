@@ -57,7 +57,7 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
     configured = str(primary_config.get("fallback_provider", "")).strip()
 
     candidates: list[str] = []
-    if configured and configured != primary_name:
+    if configured and configured != primary_name and configured != "ollama":
         candidates.append(configured)
 
     routing = config.get("routing", {})
@@ -66,7 +66,11 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
         if isinstance(fallback_list, str):
             fallback_list = [fallback_list]
         if isinstance(fallback_list, list):
-            candidates.extend(str(item).strip() for item in fallback_list if str(item).strip())
+            candidates.extend(
+                str(item).strip()
+                for item in fallback_list
+                if str(item).strip() and str(item).strip() != "ollama"
+            )
 
     # Preserve cloud-first behavior when an older configuration still points
     # its fallback at Ollama. Prefer an already configured remote provider.
