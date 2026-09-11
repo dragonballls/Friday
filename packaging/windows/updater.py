@@ -75,15 +75,16 @@ def relaunch(exe: Path) -> subprocess.Popen:
 
 def relaunch_updater_from_temp() -> int:
     """Run a copy of the updater outside the bundle it needs to replace."""
-    work = Path(tempfile.mkdtemp(prefix="friday-updater-host-"))
-    temp_exe = work / "FridayUpdater.exe"
+    host = Path(tempfile.mkdtemp(prefix="friday-updater-host-"))
+    temp_exe = host / "FridayUpdater.exe"
     try:
         shutil.copy2(Path(sys.executable).resolve(), temp_exe)
         env = os.environ.copy()
         env["FRIDAY_UPDATER_CHILD"] = "1"
+        env["FRIDAY_UPDATER_HOST_DIR"] = str(host)
         subprocess.Popen(
             [str(temp_exe), *sys.argv[1:]],
-            cwd=work,
+            cwd=Path(tempfile.gettempdir()),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -94,8 +95,18 @@ def relaunch_updater_from_temp() -> int:
         )
         return 0
     except OSError:
-        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(host, ignore_errors=True)
         return 8
+
+
+def cleanup_host_copy() -> None:
+    host = os.environ.get("FRIDAY_UPDATER_HOST_DIR", "").strip()
+    if not host:
+        return
+    try:
+        shutil.rmtree(host, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def main() -> int:
@@ -108,7 +119,10 @@ def main() -> int:
 
     archive = args.archive.resolve()
     target = args.target.resolve()
-    if not archive.is_file() or not target.is_dir():
+    exe = args.exe.resolve()
+    if not archive.is_file() or not target.is_dir() or not exe.is_file():
+        return 2
+    if exe.parent != target or exe.name.lower() != "friday.exe":
         return 2
 
     if os.name == "nt" and os.environ.get("FRIDAY_UPDATER_CHILD") != "1":
@@ -163,6 +177,7 @@ def main() -> int:
         except OSError:
             pass
         shutil.rmtree(work, ignore_errors=True)
+        cleanup_host_copy()
 
 
 if __name__ == "__main__":
