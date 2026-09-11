@@ -190,9 +190,26 @@ def maybe_update_native_bundle() -> bool:
         return False
 
 
+def _remove_legacy_startup_task() -> None:
+    if os.name != "nt":
+        return
+    try:
+        subprocess.run(
+            ["schtasks", "/Delete", "/TN", "Friday UI", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def install_startup() -> None:
     if os.name != "nt" or "--smoke-test" in sys.argv:
         return
+    _remove_legacy_startup_task()
     try:
         import winreg
 
