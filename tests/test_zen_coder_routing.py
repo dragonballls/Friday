@@ -28,11 +28,11 @@ def test_named_zen_provider_can_stream_without_touching_primary(monkeypatch):
 
 def test_missing_zen_credentials_use_configured_fallback(monkeypatch):
     monkeypatch.setattr(llm, "_provider_cache", {"openrouter": _Fallback()})
-    monkeypatch.setattr(llm, "_provider_has_credentials", lambda name: False)
+    monkeypatch.setattr(llm, "_provider_has_credentials", lambda name: name == "openrouter")
     monkeypatch.setattr(
         llm,
         "get_provider_config",
-        lambda name=None: {"fallback_provider": "openrouter"} if name == "zen_coder" else {},
+        lambda name=None: {"fallback_provider": "openrouter"} if name == "zen_coder" else {"api_key": "test-key"},
     )
 
     events = list(llm.chat([], provider_name="zen_coder"))
