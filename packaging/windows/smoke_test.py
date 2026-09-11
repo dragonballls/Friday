@@ -6,7 +6,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EXE = ROOT / "build" / "windows" / "Friday" / "Friday.exe"
+BUNDLE = ROOT / "build" / "windows" / "Friday"
+EXE = BUNDLE / "Friday.exe"
+UPDATER = BUNDLE / "FridayUpdater.exe"
+VERSION = BUNDLE / "VERSION"
 
 
 def port_open(port: int) -> bool:
@@ -18,8 +21,11 @@ def port_open(port: int) -> bool:
 
 
 def main() -> None:
-    if not EXE.is_file():
-        raise SystemExit(f"Missing executable: {EXE}")
+    for required in (EXE, UPDATER, VERSION):
+        if not required.is_file():
+            raise SystemExit(f"Missing Windows bundle file: {required}")
+    if not VERSION.read_text(encoding="utf-8").strip():
+        raise SystemExit("Windows bundle VERSION file is empty")
 
     proc = subprocess.Popen([str(EXE), "--smoke-test"], cwd=EXE.parent)
     try:
