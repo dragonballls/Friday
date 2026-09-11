@@ -1,0 +1,64 @@
+name: Build Friday Desktop
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Verify frontend
+        working-directory: desktop
+        run: |
+          npm run lint
+          npm run test
+          npm run build
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: npm install --no-save @tauri-apps/cli@latest
+
+      - name: Build Windows installer
+        working-directory: desktop
+        run: npx tauri build --target x86_64-pc-windows-msvc
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Friday-Windows-x64
+          path: |
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 30
