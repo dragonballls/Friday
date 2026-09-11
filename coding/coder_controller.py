@@ -22,6 +22,7 @@ class CoderResult:
     review_ok: bool
     final_verification_ok: bool
     error: str | None = None
+    events: tuple[dict[str, Any], ...] = ()
 
 
 class RealCoderController:
@@ -122,33 +123,28 @@ class RealCoderController:
         return None
 
     @staticmethod
-    def _consume_execution_result(result: Any) -> Any:
+    def _consume_execution_result(result: Any) -> tuple[Any, tuple[dict[str, Any], ...]]:
         """
-        Accept the existing Agent bridge contract.
+        Accept the existing Agent bridge contract while preserving lifecycle events.
 
-        execute_coder may return:
-
-          1. CodingExecutionResult directly
-          2. a generator yielding execution events and returning
-             CodingExecutionResult through StopIteration.value
-          3. a normal iterable of events with no return value
-
-        The real Agent bridge uses case (2).
+        execute_coder may return a direct result or a generator yielding execution
+        events and returning its final CodingExecutionResult through StopIteration.value.
         """
-
         if result is None:
-            return None
+            return None, ()
 
         if hasattr(result, "__next__"):
             iterator = result
-
+            events: list[dict[str, Any]] = []
             try:
                 while True:
-                    next(iterator)
+                    event = next(iterator)
+                    if isinstance(event, dict):
+                        events.append(event)
             except StopIteration as stop:
-                return stop.value
+                return stop.value, tuple(events)
 
-        return result
+        return result, ()
 
     def run(self) -> CoderResult:
         """
@@ -160,10 +156,12 @@ class RealCoderController:
         SafeExecutorAdapter is therefore able to roll back an attempt
         before BoundedRepairLoop starts the next attempt.
         """
+        final_events: tuple[dict[str, Any], ...] = ()
 
         def run_attempt(attempt_number: int) -> Any:
+            nonlocal final_events
             try:
-                result = self._consume_execution_result(
+                result, events = self._consume_execution_result(
                     self.execute_coder(
                         self.handoff,
                         self.run_tests,
@@ -171,6 +169,7 @@ class RealCoderController:
                         self.final_verify,
                     )
                 )
+                final_events = events
 
                 if result is None:
                     return {
@@ -248,6 +247,7 @@ class RealCoderController:
             tests_ok=tests_ok,
             review_ok=review_ok,
             final_verification_ok=final_verification_ok,
+            events=final_events,
         )
 
 
