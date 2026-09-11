@@ -30,9 +30,6 @@
     "shortDescription": "Friday AI desktop assistant",
     "longDescription": "Friday is a desktop AI assistant with cloud-first coding and automation capabilities.",
     "windows": {
-      "webViewInstallMode": {
-        "type": "downloadBootstrapper"
-      },
       "nsis": {
         "installMode": "currentUser"
       }
