@@ -5,12 +5,22 @@ on:
     paths:
       - "desktop/**"
       - ".github/workflows/build-desktop.yml"
+      - "agent/**"
+      - "core/**"
+      - "plugins/**"
+      - "tools/**"
+      - "requirements.txt"
   push:
     branches:
       - main
     paths:
       - "desktop/**"
       - ".github/workflows/build-desktop.yml"
+      - "agent/**"
+      - "core/**"
+      - "plugins/**"
+      - "tools/**"
+      - "requirements.txt"
   workflow_dispatch:
 
 permissions:
@@ -34,6 +44,23 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python runtime dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build Friday API sidecar
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force desktop/src-tauri/binaries -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force desktop/src-tauri/binaries | Out-Null
+          python -m PyInstaller --onefile --name friday-api --distpath desktop/src-tauri/binaries --workpath desktop/.pyinstaller-build --specpath desktop/.pyinstaller-build --collect-submodules agent --collect-submodules core --collect-submodules plugins --collect-submodules tools desktop/api_server.py
+          Move-Item desktop/src-tauri/binaries/friday-api.exe desktop/src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
