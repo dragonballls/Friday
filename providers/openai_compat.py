@@ -36,7 +36,6 @@ def _is_retryable_err(e: Exception) -> bool:
         )
     ):
         return True
-    # curl error 16 = HTTP/2 framing failure
     if "curl: (16)" in msg or "http2" in msg or "http/2" in msg:
         return True
     return False
@@ -44,18 +43,15 @@ def _is_retryable_err(e: Exception) -> bool:
 
 def _parse_text_tool_calls(content: str) -> list[dict]:
     """Parse tool calls emitted as ordinary assistant text."""
-
     if not content:
         return []
 
     parsed_tool_calls = []
 
-    # XML invoke format used by some OpenRouter free models.
     invoke_pattern = re.compile(
         r'<invoke\s+name\s*=\s*["\']([^"\']+)["\']\s*>(.*?)</invoke>',
         flags=re.DOTALL | re.IGNORECASE,
     )
-
     parameter_pattern = re.compile(
         r'<parameter\s+name\s*=\s*["\']([^"\']+)["\']\s*>\s*(.*?)\s*</parameter>',
         flags=re.DOTALL | re.IGNORECASE,
@@ -63,107 +59,73 @@ def _parse_text_tool_calls(content: str) -> list[dict]:
 
     for match in invoke_pattern.finditer(content):
         name = match.group(1).strip()
-        body = match.group(2)
         args = {}
-
-        for parameter in parameter_pattern.finditer(body):
-            key = parameter.group(1).strip()
-            value = parameter.group(2).strip()
-            args[key] = value
-
+        for parameter in parameter_pattern.finditer(match.group(2)):
+            args[parameter.group(1).strip()] = parameter.group(2).strip()
         if "file_path" in args and "path" not in args:
             args["path"] = args.pop("file_path")
-
         parsed_tool_calls.append(
             {
                 "id": f"text-invoke-{len(parsed_tool_calls)}",
                 "type": "function",
-                "function": {
-                    "name": name,
-                    "arguments": json.dumps(args),
-                },
+                "function": {"name": name, "arguments": json.dumps(args)},
             }
         )
 
-    # JSON tool-call format.
     if not parsed_tool_calls:
         json_pattern = re.compile(
             r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
             flags=re.DOTALL | re.IGNORECASE,
         )
-
         for match in json_pattern.finditer(content):
             try:
                 obj = json.loads(match.group(1).strip())
-
                 if not isinstance(obj, dict):
                     continue
-
-                name = obj.get("name") or obj.get("tool") or obj.get("function", {}).get("name")
-
-                arguments = obj.get("arguments") or obj.get("args") or obj.get("function", {}).get("arguments") or {}
-
+                function = obj.get("function") if isinstance(obj.get("function"), dict) else {}
+                name = obj.get("name") or obj.get("tool") or function.get("name")
+                arguments = obj.get("arguments") or obj.get("args") or function.get("arguments") or {}
                 if not name:
                     continue
-
                 if isinstance(arguments, str):
                     try:
                         arguments = json.loads(arguments)
                     except Exception:
                         arguments = {"value": arguments}
-
                 parsed_tool_calls.append(
                     {
                         "id": f"text-json-{len(parsed_tool_calls)}",
                         "type": "function",
-                        "function": {
-                            "name": str(name),
-                            "arguments": json.dumps(arguments),
-                        },
+                        "function": {"name": str(name), "arguments": json.dumps(arguments)},
                     }
                 )
             except Exception:
                 continue
 
-    # Bracket tool-call format.
     if not parsed_tool_calls:
         bracket_pattern = re.compile(
             r"\[TOOL_CALL\]\s*(.*?)\s*\[/TOOL_CALL\]",
             flags=re.DOTALL | re.IGNORECASE,
         )
-
         for match in bracket_pattern.finditer(content):
             block = match.group(1)
-
             tool_match = re.search(
                 r'(?:tool|name)\s*=>\s*["\']([^"\']+)["\']',
                 block,
                 flags=re.IGNORECASE,
             )
-
             if not tool_match:
                 continue
-
-            name = tool_match.group(1).strip()
             args = {}
-
-            for arg_match in re.finditer(
-                r'--([A-Za-z_][A-Za-z0-9_-]*)\s+["\']([^"\']*)["\']',
-                block,
-            ):
+            for arg_match in re.finditer(r'--([A-Za-z_][A-Za-z0-9_-]*)\s+["\']([^"\']*)["\']', block):
                 args[arg_match.group(1)] = arg_match.group(2)
-
             if "file_path" in args and "path" not in args:
                 args["path"] = args.pop("file_path")
-
             parsed_tool_calls.append(
                 {
                     "id": f"text-bracket-{len(parsed_tool_calls)}",
                     "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": json.dumps(args),
-                    },
+                    "function": {"name": tool_match.group(1).strip(), "arguments": json.dumps(args)},
                 }
             )
 
@@ -210,9 +172,7 @@ class OpenAICompatibleProvider(BaseProvider):
         if tools:
             kwargs["tools"] = tools
 
-        client = self._get_client()
-        stream = client.chat.completions.create(**kwargs)
-
+        stream = self._get_client().chat.completions.create(**kwargs)
         buffer: list[str] = []
         last_flush = time.monotonic()
         content_parts: list[str] = []
@@ -221,7 +181,6 @@ class OpenAICompatibleProvider(BaseProvider):
         for chunk in stream:
             if not chunk.choices:
                 continue
-
             delta = chunk.choices[0].delta
             if not delta:
                 continue
@@ -258,24 +217,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
         if not tool_calls and content:
             parsed_tool_calls = _parse_text_tool_calls(content)
-
             if parsed_tool_calls:
                 tool_calls = parsed_tool_calls
-
-                content = re.sub(
-                    r"<tool_call>.*?</tool_call>",
-                    "",
-                    content,
-                    flags=re.DOTALL | re.IGNORECASE,
-                )
-
-                content = re.sub(
-                    r"\[TOOL_CALL\].*?\[/TOOL_CALL\]",
-                    "",
-                    content,
-                    flags=re.DOTALL | re.IGNORECASE,
-                )
-
+                content = re.sub(r"<tool_call>.*?</tool_call>", "", content, flags=re.DOTALL | re.IGNORECASE)
+                content = re.sub(r"\[TOOL_CALL\].*?\[/TOOL_CALL\]", "", content, flags=re.DOTALL | re.IGNORECASE)
                 content = re.sub(
                     r'<invoke\s+name\s*=\s*["\'][^"\']+["\']\s*>.*?</invoke>',
                     "",
@@ -283,17 +228,9 @@ class OpenAICompatibleProvider(BaseProvider):
                     flags=re.DOTALL | re.IGNORECASE,
                 ).strip()
 
-        yield {
-            "type": "done",
-            "content": content,
-            "tool_calls": tool_calls,
-        }
+        yield {"type": "done", "content": content, "tool_calls": tool_calls}
 
-    def chat(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-    ) -> Generator[dict, None, None]:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> Generator[dict, None, None]:
         model = self.config.get("model", "gpt-5.6-luna")
         fallback = self.config.get("fallback_model", "")
         temperature = self.config.get("temperature", 0.7)
@@ -307,13 +244,7 @@ class OpenAICompatibleProvider(BaseProvider):
         for index, attempt_model in enumerate(models):
             emitted = False
             try:
-                for event in self._stream(
-                    attempt_model,
-                    messages,
-                    tools,
-                    temperature,
-                    max_tokens,
-                ):
+                for event in self._stream(attempt_model, messages, tools, temperature, max_tokens):
                     emitted = True
                     yield event
                 return
@@ -324,18 +255,11 @@ class OpenAICompatibleProvider(BaseProvider):
                     break
 
         err_msg = str(last_error or "Provider request failed")
-        yield {
-            "type": "error",
-            "error": err_msg,
-            "content": f"Error: {err_msg}",
-            "final": True,
-        }
+        yield {"type": "error", "error": err_msg, "content": f"Error: {err_msg}", "final": True}
 
 
 register_provider("openai", OpenAICompatibleProvider)
 register_provider("openrouter", OpenAICompatibleProvider)
 register_provider("openai_compatible", OpenAICompatibleProvider)
-# OpenCode Zen exposes an OpenAI-compatible API. Friday uses this provider only
-# for coding tasks when ZEN_CODER_API_KEY is present; the LLM layer handles the
-# provider-level fallback without exposing or persisting the secret.
+register_provider("gemini", OpenAICompatibleProvider)
 register_provider("zen_coder", OpenAICompatibleProvider)
