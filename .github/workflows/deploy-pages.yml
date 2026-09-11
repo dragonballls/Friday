@@ -19,6 +19,8 @@ jobs:
   build:
     name: Build site
     runs-on: ubuntu-latest
+    env:
+      FRIDAY_PAGES: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
