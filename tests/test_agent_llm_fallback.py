@@ -25,7 +25,7 @@ class _Fallback:
 def test_partial_primary_output_does_not_trigger_duplicate_fallback(monkeypatch):
     monkeypatch.setattr(llm, "_provider", _PrimaryPartialThenFails())
     monkeypatch.setattr(llm, "_provider_name", "openrouter")
-    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "ollama"))
+    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "openai"))
 
     events = list(llm.chat([]))
 
@@ -36,18 +36,18 @@ def test_partial_primary_output_does_not_trigger_duplicate_fallback(monkeypatch)
 def test_retryable_primary_failure_uses_fallback_when_nothing_was_emitted(monkeypatch):
     monkeypatch.setattr(llm, "_provider", _PrimaryFails())
     monkeypatch.setattr(llm, "_provider_name", "openrouter")
-    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "ollama"))
+    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "openai"))
 
     events = list(llm.chat([]))
 
-    assert any("switching to ollama" in event.get("content", "") for event in events)
+    assert any("switching to openai" in event.get("content", "") for event in events)
     assert events[-1]["content"] == "fallback"
 
 
 def test_normal_completed_text_does_not_trigger_fallback(monkeypatch):
     monkeypatch.setattr(llm, "_provider", _PrimaryNormalTextMentionsTimeout())
     monkeypatch.setattr(llm, "_provider_name", "openrouter")
-    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "ollama"))
+    monkeypatch.setattr(llm, "_get_fallback_provider", lambda name: (_Fallback(), "openai"))
 
     events = list(llm.chat([]))
 
