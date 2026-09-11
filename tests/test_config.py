@@ -1,13 +1,13 @@
-from config import MAX_ITERATIONS, MODEL, OLLAMA_BASE_URL, get_system_prompt
+from config import MAX_ITERATIONS, MODEL, get_system_prompt
 
 
 class TestConfig:
-    def test_ollama_url_default(self):
-        assert OLLAMA_BASE_URL == "http://localhost:11434"
+    def test_model_is_cloud(self):
+        assert MODEL == "cloud"
 
     def test_model_name(self):
         assert isinstance(MODEL, str)
-        assert len(MODEL) > 0
+        assert MODEL
 
     def test_max_iterations(self):
         assert MAX_ITERATIONS > 0
@@ -28,7 +28,13 @@ class TestConfig:
         from config.providers import get_active_provider, get_provider_config
 
         provider = get_active_provider()
-        assert isinstance(provider, str)
-        assert provider
+        assert provider in {"openrouter", "openai", "gemini", "deepseek", "zen_coder"}
         cfg = get_provider_config(provider)
         assert isinstance(cfg, dict)
+
+    def test_provider_config_has_no_local_ai(self):
+        from config.providers import load_provider_config
+
+        cfg = load_provider_config()
+        assert "ollama" not in cfg
+        assert cfg["embeddings"]["engine"] == "tfidf"
