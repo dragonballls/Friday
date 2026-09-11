@@ -29,22 +29,11 @@
     "shortDescription": "Friday AI desktop assistant",
     "longDescription": "Friday is a desktop AI assistant with cloud-first coding and automation capabilities.",
     "windows": {
-      "webViewInstallMode": {
+      "webviewInstallMode": {
         "type": "downloadBootstrapper"
       },
       "nsis": {
         "installMode": "currentUser"
-      }
-    },
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://github.com/dragonballls/Friday/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
       }
     }
   }
