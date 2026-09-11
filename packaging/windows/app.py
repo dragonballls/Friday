@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -107,7 +108,7 @@ def _current_build_commit() -> str:
         return "dev"
 
 
-def _latest_windows_artifact() -> tuple[str, str] | None:
+def _latest_windows_artifact() -> tuple[str, str, str | None] | None:
     runs_url = f"{GITHUB_API}/actions/workflows/windows-app.yml/runs?branch=main&status=success&per_page=5"
     runs = _http_json(runs_url).get("workflow_runs", [])
     for run in runs:
@@ -121,9 +122,10 @@ def _latest_windows_artifact() -> tuple[str, str] | None:
         for artifact in artifacts:
             if artifact.get("name") == "Friday-Windows" and not artifact.get("expired"):
                 archive_url = str(artifact.get("archive_download_url") or "").strip()
+                digest = str(artifact.get("digest") or "").strip() or None
                 parsed = urlparse(archive_url)
                 if parsed.scheme == "https" and parsed.hostname == "api.github.com":
-                    return head_sha, archive_url
+                    return head_sha, archive_url, digest
     return None
 
 
@@ -154,18 +156,31 @@ def _download_artifact(url: str) -> str:
         raise
 
 
+def _artifact_digest(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def maybe_update_native_bundle() -> bool:
     """Download the newest successful Windows main-branch artifact and hand off replacement."""
     if not getattr(sys, "frozen", False) or "--smoke-test" in sys.argv or not UPDATER.is_file():
         return False
+    archive: str | None = None
     try:
         latest = _latest_windows_artifact()
         if latest is None:
             return False
-        latest_sha, archive_url = latest
+        latest_sha, archive_url, expected_digest = latest
         if latest_sha == _current_build_commit():
             return False
         archive = _download_artifact(archive_url)
+        if expected_digest:
+            expected = expected_digest.removeprefix("sha256:").strip().lower()
+            if expected and _artifact_digest(archive).lower() != expected:
+                return False
         subprocess.Popen(
             [
                 str(UPDATER),
@@ -183,11 +198,19 @@ def maybe_update_native_bundle() -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0x00000008) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200),
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200),
         )
+        archive = None
         return True
     except (OSError, ValueError, TypeError, KeyError, TimeoutError, json.JSONDecodeError):
         return False
+    finally:
+        if archive:
+            try:
+                os.remove(archive)
+            except OSError:
+                pass
 
 
 def _remove_legacy_startup_task() -> None:
