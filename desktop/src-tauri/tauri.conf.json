@@ -25,11 +25,12 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "externalBin": ["binaries/friday-api"],
     "category": "Utility",
     "shortDescription": "Friday AI desktop assistant",
     "longDescription": "Friday is a desktop AI assistant with cloud-first coding and automation capabilities.",
     "windows": {
-      "webviewInstallMode": {
+      "webViewInstallMode": {
         "type": "downloadBootstrapper"
       },
       "nsis": {
