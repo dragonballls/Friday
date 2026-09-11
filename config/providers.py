@@ -118,7 +118,7 @@ def _is_configured(config: dict[str, Any], name: str) -> bool:
 
 
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
-    """Select a cloud provider; never select a local model."""
+    """Select a configured cloud provider; never select a local runtime."""
     if config is None:
         config = load_provider_config()
 
@@ -126,20 +126,16 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
     routing = config.get("routing", {})
     primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
 
-    if primary and primary not in {"ollama", "local"} and _is_configured(config, primary):
+    if primary and primary != "local" and _is_configured(config, primary):
         return primary
 
-    if default and default not in {"ollama", "local"} and _is_configured(config, default):
+    if default and default != "local" and _is_configured(config, default):
         return default
 
-    candidates = ["openrouter", "openai", "gemini", "deepseek", "zen_coder"]
-    for name in candidates:
+    for name in ("openrouter", "openai", "gemini", "deepseek", "zen_coder"):
         if _is_configured(config, name):
             return name
 
-    # Keep a useful cloud default even before the user configures a key.
-    if default and default not in {"ollama", "local"}:
-        return default
     return "openrouter"
 
 
