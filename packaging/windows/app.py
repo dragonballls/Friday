@@ -45,8 +45,8 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def start_static_server() -> ThreadingHTTPServer:
-    if not DIST.is_file() and not DIST.exists():
-        raise RuntimeError(f"Frontend bundle missing: {DIST}")
+    if not DIST.is_dir() or not (DIST / "index.html").is_file():
+        raise RuntimeError(f"Frontend bundle missing: {DIST / 'index.html'}")
     handler = lambda *args, **kwargs: QuietHandler(*args, directory=str(DIST), **kwargs)
     server = ThreadingHTTPServer((UI_HOST, UI_PORT), handler)
     thread = threading.Thread(target=server.serve_forever, name="friday-static", daemon=True)
@@ -73,7 +73,7 @@ def start_api_server() -> threading.Thread:
 
 
 def install_startup() -> None:
-    if os.name != "nt":
+    if os.name != "nt" or "--smoke-test" in sys.argv:
         return
     try:
         import winreg
@@ -100,7 +100,7 @@ def main() -> None:
     wait_for_port(API_HOST, API_PORT)
     wait_for_port(UI_HOST, UI_PORT)
 
-    window = webview.create_window(
+    webview.create_window(
         "Friday",
         f"http://{UI_HOST}:{UI_PORT}/",
         width=1440,
