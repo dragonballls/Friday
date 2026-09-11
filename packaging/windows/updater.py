@@ -4,6 +4,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
@@ -72,6 +73,31 @@ def relaunch(exe: Path) -> subprocess.Popen:
     )
 
 
+def relaunch_updater_from_temp() -> int:
+    """Run a copy of the updater outside the bundle it needs to replace."""
+    work = Path(tempfile.mkdtemp(prefix="friday-updater-host-"))
+    temp_exe = work / "FridayUpdater.exe"
+    try:
+        shutil.copy2(Path(sys.executable).resolve(), temp_exe)
+        env = os.environ.copy()
+        env["FRIDAY_UPDATER_CHILD"] = "1"
+        subprocess.Popen(
+            [str(temp_exe), *sys.argv[1:]],
+            cwd=work,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200),
+            env=env,
+        )
+        return 0
+    except OSError:
+        shutil.rmtree(work, ignore_errors=True)
+        return 8
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Replace a running Friday Windows bundle safely")
     parser.add_argument("--pid", required=True, type=int)
@@ -82,9 +108,11 @@ def main() -> int:
 
     archive = args.archive.resolve()
     target = args.target.resolve()
-    exe = args.exe.resolve()
     if not archive.is_file() or not target.is_dir():
         return 2
+
+    if os.name == "nt" and os.environ.get("FRIDAY_UPDATER_CHILD") != "1":
+        return relaunch_updater_from_temp()
 
     work = Path(tempfile.mkdtemp(prefix="friday-updater-"))
     backup = target.with_name(f"{target.name}.backup")
@@ -96,14 +124,15 @@ def main() -> int:
             remove_tree(backup)
         extracted.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(archive) as bundle:
-            bad = [name for name in bundle.namelist() if Path(name).is_absolute() or ".." in Path(name).parts]
+            bad = [
+                name
+                for name in bundle.namelist()
+                if Path(name).is_absolute() or Path(name).drive or ".." in Path(name).parts
+            ]
             if bad:
                 return 4
             bundle.extractall(extracted)
         downloaded_bundle = find_bundle_root(extracted)
-        new_exe = downloaded_bundle / "Friday.exe"
-        if not new_exe.is_file():
-            return 5
 
         replace_bundle(target, downloaded_bundle, backup)
         new_target_exe = target / "Friday.exe"
