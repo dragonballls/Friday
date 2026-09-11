@@ -40,11 +40,18 @@ def test_blocks_network_tools():
     assert blackout.is_tool_blocked("write_file") is False
 
 
-def test_resolve_provider_forces_local():
+def test_resolve_provider_preserves_explicit_cloud_provider():
     blackout.set_blackout(True)
-    assert blackout.resolve_provider("openrouter") == "ollama"
+    assert blackout.resolve_provider("openrouter") == "openrouter"
     blackout.set_blackout(False)
     assert blackout.resolve_provider("openrouter") == "openrouter"
+
+
+def test_resolve_provider_defaults_to_local_only_when_unspecified():
+    blackout.set_blackout(True)
+    assert blackout.resolve_provider(None) == "ollama"
+    blackout.set_blackout(False)
+    assert blackout.resolve_provider(None) is None
 
 
 def test_status_shape():
