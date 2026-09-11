@@ -72,6 +72,19 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Preflight Tauri and packaging inputs
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json | Out-Null
+          if (-not (Test-Path "src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe")) { throw "Friday API sidecar missing" }
+          cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+          if (-not (Test-Path "src-tauri/icons/icon.ico")) { throw "Tauri Windows icon was not generated" }
+          $ico = [System.IO.File]::ReadAllBytes((Resolve-Path "src-tauri/icons/icon.ico"))
+          if ($ico.Length -lt 22 -or $ico[0] -ne 0 -or $ico[1] -ne 0 -or $ico[2] -ne 1 -or $ico[3] -ne 0) { throw "Generated icon.ico has an invalid ICO header" }
+          Write-Host "Preflight passed: Tauri config, sidecar, Rust build script, and ICO header are valid."
+
       - name: Verify frontend
         working-directory: desktop
         run: |
