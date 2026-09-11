@@ -6,9 +6,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "providers.toml")
 
 
 _DEFAULT_CONFIG: dict[str, Any] = {
-    "default": {
-        "provider": "openrouter",
-    },
+    "default": {"provider": "openrouter"},
     "routing": {
         "primary": "",
         "fallback": ["openai", "gemini", "deepseek", "zen_coder"],
@@ -58,13 +56,10 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "max_tokens": 8192,
         "provider_name": "zen_coder",
     },
-    "embeddings": {
-        "engine": "tfidf",
-    },
+    "embeddings": {"engine": "tfidf"},
 }
 
 
-# ─── Env var helpers ─────────────────────────────────────────────
 def _load_dotenv():
     """Load .env file from project root if present."""
     root = os.path.dirname(os.path.dirname(__file__))
@@ -85,11 +80,6 @@ def _load_dotenv():
 _load_dotenv()
 
 
-def _resolve_api_key(toml_key: str, env_var: str) -> str:
-    """Resolve an API key: env var takes precedence, then TOML value."""
-    return os.environ.get(env_var, "") or os.environ.get(toml_key, "")
-
-
 def load_provider_config() -> dict[str, Any]:
     cfg: dict[str, Any] = {
         key: (value.copy() if isinstance(value, dict) else value)
@@ -105,7 +95,6 @@ def load_provider_config() -> dict[str, Any]:
             else:
                 cfg[section] = values
 
-    # Resolve secrets only from the process environment or a local ignored .env.
     env_map = {
         "openai": ("OPENAI_API_KEY",),
         "openrouter": ("OPENROUTER_API_KEY",),
@@ -129,7 +118,7 @@ def _is_configured(config: dict[str, Any], name: str) -> bool:
 
 
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
-    """Return the configured cloud provider with no local-model fallback."""
+    """Select a cloud provider; never select a local model."""
     if config is None:
         config = load_provider_config()
 
@@ -137,19 +126,20 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
     routing = config.get("routing", {})
     primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
 
-    if primary and primary in config and primary not in {"ollama", "local"} and _is_configured(config, primary):
+    if primary and primary not in {"ollama", "local"} and _is_configured(config, primary):
         return primary
 
-    if default and default not in {"ollama", "local"}:
+    if default and default not in {"ollama", "local"} and _is_configured(config, default):
         return default
 
-    # Prefer the first configured cloud provider. This makes old/local configs
-    # migrate automatically without ever trying local inference.
     candidates = ["openrouter", "openai", "gemini", "deepseek", "zen_coder"]
     for name in candidates:
         if _is_configured(config, name):
             return name
 
+    # Keep a useful cloud default even before the user configures a key.
+    if default and default not in {"ollama", "local"}:
+        return default
     return "openrouter"
 
 
