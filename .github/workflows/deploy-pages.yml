@@ -42,7 +42,7 @@ jobs:
         run: |
           test -s dist/index.html
           grep -q '<title>Friday</title>' dist/index.html
-          grep -q 'Friday/assets/' dist/index.html
+          grep -q '/Friday/assets/' dist/index.html
           test -f dist/404.html
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -59,10 +59,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy Friday site to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify published page
+      - name: Verify published Friday site
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
