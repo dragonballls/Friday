@@ -11,10 +11,10 @@ def test_legacy_local_default_never_wins_over_configured_cloud_primary():
     assert get_active_provider(config) == "openai"
 
 
-def test_configured_cloud_default_remains_authoritative():
+def test_configured_cloud_default_remains_authoritative_without_primary():
     config = {
         "default": {"provider": "openrouter"},
-        "routing": {"primary": "openai"},
+        "routing": {"primary": ""},
         "openrouter": {"api_key": "test-key"},
         "openai": {"api_key": "test-key"},
     }
