@@ -1,27 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import os
 import socket
-import subprocess
 import sys
-import tempfile
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
 import webview
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
-
-
-GITHUB_REPO = "dragonballls/Friday"
-GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 
 
 def resource_root() -> Path:
@@ -31,10 +21,7 @@ def resource_root() -> Path:
 
 
 ROOT = resource_root()
-EXE_DIR = Path(sys.executable).resolve().parent
 DIST = ROOT / "desktop" / "dist"
-UPDATER = EXE_DIR / "FridayUpdater.exe"
-VERSION_FILE = EXE_DIR / "VERSION"
 API_HOST = "127.0.0.1"
 API_PORT = 8080
 UI_HOST = "127.0.0.1"
@@ -88,17 +75,45 @@ def start_api_server() -> threading.Thread:
     return thread
 
 
-def _http_json(url: str) -> dict:
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in {"api.github.com", "github.com"}:
-        raise ValueError("unexpected GitHub URL")
-    request = Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "Friday-Windows-Updater",
-        },
-        method="GET",
+def install_startup() -> None:
+    if os.name != "nt" or "--smoke-test" in sys.argv:
+        return
+    try:
+        import winreg
+
+        exe = Path(sys.executable).resolve()
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            winreg.SetValueEx(key, "Friday", 0, winreg.REG_SZ, f'"{exe}" --startup')
+    except OSError:
+        pass
+
+
+def main() -> None:
+    if not DIST.exists():
+        raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
+
+    install_startup()
+    start_static_server()
+    start_api_server()
+    wait_for_port(API_HOST, API_PORT)
+    wait_for_port(UI_HOST, UI_PORT)
+
+    webview.create_window(
+        "Friday",
+        f"http://{UI_HOST}:{UI_PORT}/",
+        width=1440,
+        height=900,
+        min_size=(1050, 700),
+        resizable=True,
+        text_select=True,
     )
-    with urlopen(request, timeout=10) as response:
-        return json.load(response)
+    webview.start(debug=False)
+
+
+if __name__ == "__main__":
+    main()
