@@ -23,17 +23,7 @@ def main() -> None:
         shutil.rmtree(BUILD)
     BUILD.mkdir(parents=True, exist_ok=True)
 
-    add_data = [
-        f"{DIST}{Path(';')}{ROOT / 'desktop' / 'dist'}",
-    ]
-    for source, target in [
-        ("desktop/dist", "desktop/dist"),
-        ("prompts", "prompts"),
-    ]:
-        src = ROOT / source
-        if src.exists():
-            add_data.append(f"{src}{Path(';')}{target}")
-
+    separator = ";"
     cmd = [
         "pyinstaller",
         "--noconfirm",
@@ -46,10 +36,10 @@ def main() -> None:
         str(BUILD),
         "--workpath",
         str(ROOT / "build" / "pyinstaller-work"),
-    ]
-    for item in add_data[1:]:
-        cmd.extend(["--add-data", item])
-    cmd.extend([
+        "--add-data",
+        f"{DIST}{separator}desktop/dist",
+        "--collect-all",
+        "webview",
         "--collect-submodules",
         "core",
         "--collect-submodules",
@@ -61,7 +51,12 @@ def main() -> None:
         "--collect-submodules",
         "providers",
         str(ENTRY),
-    ])
+    ]
+
+    prompts = ROOT / "prompts"
+    if prompts.exists():
+        cmd[cmd.index(str(ENTRY)):cmd.index(str(ENTRY))] = ["--add-data", f"{prompts}{separator}prompts"]
+
     run(*cmd)
 
     exe = BUILD / "Friday" / "Friday.exe"
