@@ -1,5 +1,5 @@
-import providers.ollama  # noqa: F401 — registers itself via registry
-import providers.openai_compat  # noqa: F401 — registers openai/openrouter via registry
+import providers.deepseek  # noqa: F401 — registers DeepSeek via registry
+import providers.openai_compat  # noqa: F401 — registers cloud OpenAI-compatible providers
 from config.providers import get_active_provider, get_provider_config
 from providers.registry import get_provider_class, list_providers
 
