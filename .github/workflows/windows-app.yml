@@ -1,0 +1,84 @@
+name: Windows App
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "core/**"
+      - "agent/**"
+      - "providers/**"
+      - "integrations/**"
+      - "plugins/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - ".github/workflows/windows-app.yml"
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Python runtime dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pywebview pyinstaller
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        shell: pwsh
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: desktop
+        shell: pwsh
+        run: npm run build
+
+      - name: Verify frontend bundle exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path desktop/dist/index.html)) { throw "desktop/dist/index.html was not produced" }
+
+      - name: Build Windows bundle
+        shell: pwsh
+        run: python packaging/windows/build.py
+
+      - name: Smoke-test packaged executable
+        shell: pwsh
+        run: python packaging/windows/smoke_test.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Friday-Windows
+          path: build/windows/Friday
+          if-no-files-found: error
+          retention-days: 30
