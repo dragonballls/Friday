@@ -43,6 +43,27 @@ def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkey
     assert name == "zen_coder"
 
 
+def test_cached_fallback_provider_still_requires_credentials(monkeypatch):
+    cached = object()
+    llm._provider_cache.clear()
+    llm._provider_cache["gemini"] = cached
+
+    monkeypatch.setattr(
+        llm,
+        "load_provider_config",
+        lambda: {
+            "openai": {"fallback_provider": "gemini"},
+            "routing": {},
+        },
+    )
+    monkeypatch.setattr(llm, "_provider_has_credentials", lambda name: False)
+
+    provider, name = llm._get_fallback_provider("openai")
+
+    assert provider is None
+    assert name is None
+
+
 def test_retryable_provider_errors_are_limited_to_transient_failures():
     assert llm._is_retryable_provider_error({"type": "error", "error": "HTTP 503"})
     assert llm._is_retryable_provider_error({"type": "error", "error": "rate limit 429"})
