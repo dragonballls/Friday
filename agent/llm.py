@@ -82,6 +82,8 @@ def _get_fallback_provider(primary_name: str, *, allow_uncredentialed: bool = Fa
         try:
             cached = _provider_cache.get(fallback_name)
             if cached is not None:
+                if not allow_uncredentialed and not _provider_has_credentials(fallback_name):
+                    continue
                 return cached, fallback_name
             provider = _get_named_provider(fallback_name)
         except Exception:
