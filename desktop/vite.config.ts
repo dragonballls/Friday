@@ -1,10 +1,9 @@
 /// <reference types="vitest" />
-import { defineConfig, type IndexHtmlTransformResult } from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const LOOPBACK_NETWORK_BOOTSTRAP = `
-<script>
 (() => {
   const nativeFetch = window.fetch.bind(window)
   window.fetch = (input, init = {}) => {
@@ -15,7 +14,7 @@ const LOOPBACK_NETWORK_BOOTSTRAP = `
     return nativeFetch(input, init)
   }
 })()
-</script>`
+`
 
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/Friday/' : '/',
@@ -24,8 +23,10 @@ export default defineConfig({
     tailwindcss(),
     {
       name: 'friday-loopback-network-bootstrap',
-      transformIndexHtml(): IndexHtmlTransformResult {
-        return { html: '', tags: [{ tag: 'script', children: LOOPBACK_NETWORK_BOOTSTRAP.slice(9, -10), injectTo: 'head-prepend' }] }
+      transformIndexHtml() {
+        return {
+          tags: [{ tag: 'script', children: LOOPBACK_NETWORK_BOOTSTRAP, injectTo: 'head-prepend' }],
+        }
       },
     },
   ],
