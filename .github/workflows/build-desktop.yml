@@ -57,9 +57,11 @@ jobs:
       - name: Build Friday API sidecar
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           Remove-Item -Recurse -Force desktop/src-tauri/binaries -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force desktop/src-tauri/binaries | Out-Null
           python -m PyInstaller --onefile --name friday-api --distpath desktop/src-tauri/binaries --workpath desktop/.pyinstaller-build --specpath desktop/.pyinstaller-build --collect-submodules agent --collect-submodules core --collect-submodules plugins --collect-submodules tools desktop/api_server.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
           Move-Item desktop/src-tauri/binaries/friday-api.exe desktop/src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe
 
       - name: Set up Rust
@@ -72,25 +74,33 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Verify frontend
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed with exit code $LASTEXITCODE" }
+          npm run test
+          if ($LASTEXITCODE -ne 0) { throw "Frontend tests failed with exit code $LASTEXITCODE" }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "Frontend build failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "dist/index.html")) { throw "Frontend build did not produce dist/index.html" }
+
       - name: Preflight Tauri and packaging inputs
         working-directory: desktop
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json | Out-Null
+          if (-not (Test-Path "dist/index.html")) { throw "Tauri frontendDist is missing: dist/index.html was not produced" }
           if (-not (Test-Path "src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe")) { throw "Friday API sidecar missing" }
           cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Tauri cargo check failed with exit code $LASTEXITCODE" }
           if (-not (Test-Path "src-tauri/icons/icon.ico")) { throw "Tauri Windows icon was not generated" }
           $ico = [System.IO.File]::ReadAllBytes((Resolve-Path "src-tauri/icons/icon.ico"))
           if ($ico.Length -lt 22 -or $ico[0] -ne 0 -or $ico[1] -ne 0 -or $ico[2] -ne 1 -or $ico[3] -ne 0) { throw "Generated icon.ico has an invalid ICO header" }
-          Write-Host "Preflight passed: Tauri config, sidecar, Rust build script, and ICO header are valid."
-
-      - name: Verify frontend
-        working-directory: desktop
-        run: |
-          npm run lint
-          npm run test
-          npm run build
+          Write-Host "Preflight passed: frontend output, Tauri config, sidecar, Rust build script, and ICO header are valid."
 
       - name: Install Tauri CLI
         working-directory: desktop
@@ -98,7 +108,11 @@ jobs:
 
       - name: Build Windows installer
         working-directory: desktop
-        run: npx tauri build --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          npx tauri build --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Tauri Windows installer build failed with exit code $LASTEXITCODE" }
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
