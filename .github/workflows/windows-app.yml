@@ -14,6 +14,7 @@ on:
       - "plugins/**"
       - "scripts/**"
       - "requirements.txt"
+      - "packaging/windows/**"
       - ".github/workflows/windows-app.yml"
 
 permissions:
@@ -76,7 +77,7 @@ jobs:
         run: python packaging/windows/smoke_test.py
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: Friday-Windows
           path: build/windows/Friday
