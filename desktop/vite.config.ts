@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/Friday/' : '/',
+  base: process.env.GITHUB_ACTIONS && process.env.ELECTRON_BUILD !== '1' ? '/Friday/' : './',
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: {
