@@ -123,6 +123,37 @@ def _clear_frontend_port() -> None:
         )
 
 
+def _frontend_dependencies_ready() -> bool:
+    """Confirm npm installed the build tools required by the frontend scripts."""
+    node_modules = DESKTOP / "node_modules"
+    vite_package = node_modules / "vite" / "package.json"
+    typescript_package = node_modules / "typescript" / "package.json"
+    if sys.platform == "win32":
+        vite_bin = node_modules / ".bin" / "vite.cmd"
+        tsc_bin = node_modules / ".bin" / "tsc.cmd"
+    else:
+        vite_bin = node_modules / ".bin" / "vite"
+        tsc_bin = node_modules / ".bin" / "tsc"
+    return all(path.is_file() for path in (vite_package, typescript_package, vite_bin, tsc_bin))
+
+
+def _install_frontend_dependencies(npm: str) -> int:
+    """Install dependencies and recover once from a partial npm tree."""
+    _clear_frontend_port()
+    result = run([npm, "ci"], cwd=DESKTOP)
+    if result != 0:
+        return result
+    if _frontend_dependencies_ready():
+        return 0
+
+    print("npm ci completed but the frontend dependency tree is incomplete; retrying from a clean node_modules.", file=sys.stderr)
+    _clear_frontend_port()
+    node_modules = DESKTOP / "node_modules"
+    if node_modules.exists():
+        shutil.rmtree(node_modules, ignore_errors=False)
+    return run([npm, "ci"], cwd=DESKTOP)
+
+
 def rollback_to(commit: str) -> bool:
     """Return to a known-good commit without touching user changes."""
     if not working_tree_is_clean():
@@ -187,9 +218,8 @@ def main() -> int:
         if not DESKTOP.is_dir():
             print(f"Desktop directory not found: {DESKTOP}; rolling back the update.", file=sys.stderr)
             return 6 if rollback_to(old_commit) else 9
-        _clear_frontend_port()
-        if run([npm, "ci"], cwd=DESKTOP) != 0:
-            print("Frontend dependency installation failed; rolling back the update.", file=sys.stderr)
+        if _install_frontend_dependencies(npm) != 0 or not _frontend_dependencies_ready():
+            print("Frontend dependency installation failed or remained incomplete; rolling back the update.", file=sys.stderr)
             return 7 if rollback_to(old_commit) else 9
         if run([npm, "run", "build"], cwd=DESKTOP) != 0:
             print("Frontend build failed; rolling back the update.", file=sys.stderr)
