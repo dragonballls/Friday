@@ -25,6 +25,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "icon": [],
     "externalBin": ["binaries/friday-api"],
     "category": "Utility",
     "shortDescription": "Friday AI desktop assistant",
