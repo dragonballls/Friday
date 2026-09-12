@@ -1,11 +1,4 @@
-"""Persistent, cloud-first autonomous coding service for the Friday desktop app.
-
-The service maintains a small durable state file and rolling context summary so a
-restart does not require replaying an unbounded conversation. Coding is confined
-to a dedicated Git workspace and a small allowlist of coding/verification tools.
-Verification prompts raised by that allowlist are approved automatically by this
-service; it never auto-approves arbitrary desktop-control or destructive tools.
-"""
+"""Persistent, cloud-first autonomous coding service for the Friday desktop app."""
 
 from __future__ import annotations
 
@@ -41,11 +34,7 @@ def workspace() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     home = Path.home()
-    candidates = [
-        home / "Friday",
-        home / "Documents" / "Friday",
-        home / "Desktop" / "Friday",
-    ]
+    candidates = [home / "Friday", home / "Documents" / "Friday", home / "Desktop" / "Friday"]
     for candidate in candidates:
         if (candidate / ".git").exists():
             return candidate.resolve()
@@ -100,7 +89,7 @@ def ensure_workspace(root: Path) -> bool:
     root.parent.mkdir(parents=True, exist_ok=True)
     if (root / ".git").exists():
         return True
-    if any(root.iterdir()):
+    if root.exists() and any(root.iterdir()):
         log(root, "workspace_blocked", reason="non-empty directory is not a Git repository")
         return False
     args = ["git", "clone", "--depth", "1"]
@@ -157,16 +146,11 @@ def context_for(state: dict) -> list[dict]:
     text = json.dumps(compact, ensure_ascii=False)
     if len(text) > 6000:
         text = text[-6000:]
-    return [
-        {
-            "role": "system",
-            "content": (
-                "PERSISTED AUTONOMOUS CODING CONTEXT. Continue from this durable state; "
-                "do not assume previous context is available. Keep new work small and build on "
-                "verified changes already present in the workspace.\n" + text
-            ),
-        }
-    ]
+    return [{"role": "system", "content": "PERSISTED AUTONOMOUS CODING CONTEXT. Continue from durable state.\n" + text}]
+
+
+def _coder_provider(messages, tools=None):
+    return llm_chat(messages, tools=tools, provider_name="zen_coder")
 
 
 def commit_verified_changes(root: Path, cycle: int) -> str:
@@ -174,11 +158,7 @@ def commit_verified_changes(root: Path, cycle: int) -> str:
         subprocess.run(["git", "add", "-A", "--", "."], cwd=root, check=True, timeout=30, shell=False)
         result = subprocess.run(
             ["git", "commit", "-m", f"chore: autonomous Friday improvement cycle {cycle}"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            shell=False,
+            cwd=root, capture_output=True, text=True, timeout=60, shell=False,
         )
         if result.returncode == 0:
             return "committed"
@@ -201,10 +181,9 @@ def run_cycle(root: Path, state: dict) -> bool:
         return False
 
     planner = Planner(llm_chat, tool_definitions=tool_defs)
-    coder_provider = lambda messages, tools=None: llm_chat(messages, tools=tools, provider_name="zen_coder")
     auto = Autopilot(
         planner=planner,
-        llm_provider=coder_provider,
+        llm_provider=_coder_provider,
         tool_map=tool_map,
         tool_definitions=tool_defs,
         workspace=str(root),
@@ -215,11 +194,11 @@ def run_cycle(root: Path, state: dict) -> bool:
     )
 
     goal = (
-        "Continue improving the Friday repository itself. Inspect the persisted context and current "
-        "workspace first. Make exactly one small, useful coding improvement. Create a checkpoint before "
-        "editing. Use only the available safe coding tools. Run the most relevant existing tests after "
-        "editing. Preserve previous verified work, avoid package installation, secrets, generated installers, "
-        "and unrelated files. Do not push to a remote. The change is complete only when verification passes."
+        "Continue improving the Friday repository itself. Inspect the persisted context and current workspace first. "
+        "Make exactly one small, useful coding improvement. Create a checkpoint before editing. Use only the "
+        "available safe coding tools. Run the most relevant existing tests after editing. Preserve previous verified "
+        "work, avoid package installation, secrets, generated installers, and unrelated files. Do not push to a "
+        "remote. The change is complete only when verification passes."
     )
 
     registry = get_approval_registry()
@@ -229,8 +208,6 @@ def run_cycle(root: Path, state: dict) -> bool:
     for event in auto.run(goal, context=context_for(state)):
         log(root, "event", payload=event)
         if event.get("type") == "requires_confirmation":
-            # The worker only exposes SAFE_TOOLS, so these approvals are limited to
-            # filesystem/checkpoint/test operations in the confined coding workspace.
             registry.resolve(str(event.get("request_id", "")), True)
         elif event.get("type") == "autopilot" and event.get("event") == "step_done":
             task = event.get("task", {})
@@ -241,8 +218,6 @@ def run_cycle(root: Path, state: dict) -> bool:
         elif event.get("type") == "autopilot" and event.get("event") == "done":
             stats = event.get("stats", {})
             completed = int(stats.get("completed", 0)) > 0 and int(stats.get("failed", 0)) == 0
-        elif event.get("type") == "done" and event.get("final") and "stopped" in str(event.get("content", "")).lower():
-            last_error = str(event.get("content", ""))
 
     if completed:
         commit_result = commit_verified_changes(root, state["cycle"])
@@ -284,7 +259,7 @@ def run_forever() -> None:
             started = time.monotonic()
             try:
                 run_cycle(root, state)
-            except Exception as exc:  # defensive boundary: never take down Friday
+            except Exception as exc:
                 state["status"] = "error"
                 state["last_error"] = str(exc)
                 save_state(root, state)
