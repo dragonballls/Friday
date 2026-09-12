@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -12,9 +14,14 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-import webview
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+
+API_HOST = "127.0.0.1"
+API_PORT = 8080
+UI_HOST = "127.0.0.1"
+UI_PORT = 5173
+SMOKE_WATCHDOG_SECONDS = 35.0
 
 
 def resource_root() -> Path:
@@ -25,13 +32,33 @@ def resource_root() -> Path:
 
 ROOT = resource_root()
 DIST = ROOT / "desktop" / "dist"
-API_HOST = "127.0.0.1"
-API_PORT = 8080
-UI_HOST = "127.0.0.1"
-UI_PORT = 5173
 
 
-def wait_for_port(host: str, port: int, timeout: float = 30.0) -> None:
+def log_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "friday.log"
+    return Path.cwd() / "friday.log"
+
+
+def log(message: str) -> None:
+    line = message.rstrip() + "\n"
+    try:
+        with log_path().open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        pass
+    try:
+        if sys.stdout is not None:
+            print(message, flush=True)
+    except OSError:
+        pass
+
+
+def hard_exit(code: int) -> None:
+    os._exit(code)
+
+
+def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -60,22 +87,41 @@ def start_static_server() -> ThreadingHTTPServer:
     return server
 
 
-def start_api_server() -> threading.Thread:
+async def _api_server() -> None:
     sys.path.insert(0, str(ROOT))
+    log("API process importing desktop.api_server")
     from desktop.api_server import app
-
     config = Config()
     config.bind = [f"{API_HOST}:{API_PORT}"]
     config.accesslog = None
     config.errorlog = None
     config.loglevel = "warning"
+    await serve(app, config)
 
-    def runner() -> None:
-        asyncio.run(serve(app, config))
 
-    thread = threading.Thread(target=runner, name="friday-api", daemon=True)
-    thread.start()
-    return thread
+def run_api_process() -> None:
+    try:
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(_api_server())
+    except Exception:
+        log("API process crashed:\n" + traceback.format_exc())
+        raise
+
+
+def start_api_server_process() -> subprocess.Popen:
+    exe = Path(sys.executable).resolve()
+    command = [str(exe), "--api-server"] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve()), "--api-server"]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    log("starting dedicated API process")
+    return subprocess.Popen(
+        command,
+        cwd=str(ROOT),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+    )
 
 
 def http_text(url: str) -> tuple[int, str] | None:
@@ -86,43 +132,55 @@ def http_text(url: str) -> tuple[int, str] | None:
         return None
 
 
+async def quart_health_check() -> tuple[int, str]:
+    sys.path.insert(0, str(ROOT))
+    from desktop.api_server import app
+    client = app.test_client()
+    response = await client.get("/api/v1/health")
+    body = await response.get_data(as_text=True)
+    return response.status_code, body
+
+
+def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
+    def expire() -> None:
+        log(f"smoke-test watchdog expired after {seconds:.0f} seconds")
+        hard_exit(2)
+
+    timer = threading.Timer(seconds, expire)
+    timer.daemon = True
+    timer.start()
+
+
 def smoke_test() -> None:
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
-
-    start_static_server()
-    start_api_server()
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
-
-    ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
-    if ui is None or ui[0] != 200:
-        raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
-    html = ui[1]
-    if "<title>Friday</title>" not in html:
-        raise RuntimeError("Friday UI root page did not contain the expected title")
-    if "/Friday/assets/" in html:
-        raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
-    if "/assets/" not in html:
-        raise RuntimeError("Friday UI root page did not contain a production asset reference")
-
-    health = http_text(f"http://{API_HOST}:{API_PORT}/api/v1/health")
-    if health is None or health[0] != 200:
-        raise RuntimeError("Friday API health endpoint did not return HTTP 200")
-
-    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.", flush=True)
-    # The packaged smoke test launches this executable only as a verifier. Some
-    # imported runtime libraries can keep background threads alive after the
-    # checks have passed, so terminate the verifier explicitly and deterministically.
-    os._exit(0)
+    os.environ["FRIDAY_SMOKE_TEST"] = "1"
+    ui_server = start_static_server()
+    try:
+        wait_for_port(UI_HOST, UI_PORT)
+        ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
+        if ui is None or ui[0] != 200:
+            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+        html = ui[1]
+        if "<title>Friday</title>" not in html:
+            raise RuntimeError("Friday UI root page did not contain the expected title")
+        if "/Friday/assets/" in html:
+            raise RuntimeError("Windows UI bundle incorrectly references /Friday/ assets")
+        if "/assets/" not in html:
+            raise RuntimeError("Friday UI root page did not contain a production asset reference")
+        status, body = asyncio.run(quart_health_check())
+        if status != 200:
+            raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
+    finally:
+        ui_server.shutdown()
+        ui_server.server_close()
 
 
 def install_startup() -> None:
-    if os.name != "nt" or "--smoke-test" in sys.argv:
+    if os.name != "nt" or "--smoke-test" in sys.argv or "--api-server" in sys.argv:
         return
     try:
         import winreg
-
         exe = Path(sys.executable).resolve()
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -137,37 +195,51 @@ def install_startup() -> None:
 
 def main() -> None:
     if "--smoke-test" in sys.argv:
+        arm_smoke_watchdog()
+        log("smoke-test starting")
         smoke_test()
+        log("smoke-test completed")
+        hard_exit(0)
+
+    if "--api-server" in sys.argv:
+        run_api_process()
         return
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
 
+    import webview
     install_startup()
     start_static_server()
-    start_api_server()
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
-
-    webview.create_window(
-        "Friday",
-        f"http://{UI_HOST}:{UI_PORT}/",
-        width=1440,
-        height=900,
-        min_size=(1050, 700),
-        resizable=True,
-        text_select=True,
-    )
-    webview.start(debug=False)
+    api_process = start_api_server_process()
+    try:
+        wait_for_port(API_HOST, API_PORT, timeout=30.0)
+        wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
+        webview.create_window(
+            "Friday",
+            f"http://{UI_HOST}:{UI_PORT}/",
+            width=1440,
+            height=900,
+            min_size=(1050, 700),
+            resizable=True,
+            text_select=True,
+        )
+        webview.start(debug=False)
+    finally:
+        if api_process.poll() is None:
+            api_process.terminate()
+            try:
+                api_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                api_process.kill()
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     try:
         main()
     except Exception:
-        log_path = Path(sys.executable).resolve().parent / "smoke_test.log"
-        try:
-            log_path.write_text(traceback.format_exc(), encoding="utf-8")
-        except OSError:
-            pass
+        log(traceback.format_exc())
+        if "--smoke-test" in sys.argv:
+            hard_exit(1)
         raise
