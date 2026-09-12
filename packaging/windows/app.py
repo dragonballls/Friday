@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import multiprocessing
 import os
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
+import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
@@ -22,6 +26,8 @@ API_PORT = 8080
 UI_HOST = "127.0.0.1"
 UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
+REPO_ZIP_URL = "https://github.com/dragonballls/Friday/archive/refs/heads/main.zip"
+WORKSPACE_NAME = "Friday-SelfCoding-Workspace"
 
 
 def resource_root() -> Path:
@@ -56,6 +62,49 @@ def log(message: str) -> None:
 
 def hard_exit(code: int) -> None:
     os._exit(code)
+
+
+def self_coding_workspace() -> Path:
+    return Path.home() / WORKSPACE_NAME
+
+
+def prepare_self_coding_workspace() -> Path:
+    workspace = self_coding_workspace()
+    if (workspace / ".git").is_dir() and (workspace / "agent").is_dir():
+        return workspace
+
+    workspace.parent.mkdir(parents=True, exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(prefix="friday-bootstrap-"))
+    archive_path = temp_dir / "friday-main.zip"
+    extracted = temp_dir / "extracted"
+    try:
+        log(f"Preparing self-coding workspace: {workspace}")
+        request = Request(REPO_ZIP_URL, headers={"User-Agent": "Friday/1.0"})
+        with urlopen(request, timeout=60) as response:
+            archive_path.write_bytes(response.read())
+        with zipfile.ZipFile(archive_path) as archive:
+            bad = [
+                name for name in archive.namelist()
+                if Path(name).is_absolute() or Path(name).drive or ".." in Path(name).parts
+            ]
+            if bad:
+                raise RuntimeError("GitHub source archive contained an unsafe path")
+            archive.extractall(extracted)
+        roots = [p for p in extracted.iterdir() if p.is_dir()]
+        if len(roots) != 1:
+            raise RuntimeError("Unexpected GitHub source archive layout")
+        source = roots[0]
+        if workspace.exists():
+            shutil.rmtree(workspace, ignore_errors=True)
+        shutil.copytree(source, workspace)
+        log("Self-coding workspace ready")
+        return workspace
+    except Exception:
+        shutil.rmtree(workspace, ignore_errors=True)
+        log("Self-coding workspace preparation failed:\n" + traceback.format_exc())
+        raise
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
@@ -211,6 +260,9 @@ def main() -> None:
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
+
+    workspace = prepare_self_coding_workspace()
+    os.environ["FRIDAY_WORKSPACE"] = str(workspace)
 
     import webview
     install_startup()
