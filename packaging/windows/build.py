@@ -41,6 +41,8 @@ def jarvis_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: 
         "--collect-submodules", "integrations",
         "--collect-submodules", "plugins",
         "--collect-submodules", "providers",
+        "--hidden-import", "desktop.api_server",
+        "--hidden-import", "desktop",
     ]
     prompts = ROOT / "prompts"
     if prompts.exists():
