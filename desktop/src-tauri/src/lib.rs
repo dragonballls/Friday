@@ -5,14 +5,38 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             {
-                use tauri_plugin_shell::ShellExt;
+                use tauri::async_runtime;
+                use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+
                 let sidecar = app
                     .shell()
                     .sidecar("friday-api")
                     .expect("Friday API sidecar is not bundled");
-                sidecar
-                    .spawn()
-                    .expect("failed to start Friday API sidecar");
+
+                async_runtime::spawn(async move {
+                    match sidecar.spawn() {
+                        Ok((mut events, _child)) => {
+                            while let Some(event) = events.recv().await {
+                                match event {
+                                    CommandEvent::Error(message) => {
+                                        eprintln!("Friday API sidecar error: {message}");
+                                    }
+                                    CommandEvent::Terminated(payload) => {
+                                        eprintln!(
+                                            "Friday API sidecar terminated: code={:?} signal={:?}",
+                                            payload.code, payload.signal
+                                        );
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("Failed to start Friday API sidecar: {error}");
+                        }
+                    }
+                });
             }
             Ok(())
         })
