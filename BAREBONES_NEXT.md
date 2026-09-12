@@ -1,0 +1,1 @@
+Next implementation checkpoint: replace the current feature-rich frontend entry point with the minimal voice/text + live coding activity shell, while preserving the underlying coding-agent APIs and execution runtime.
