@@ -52,14 +52,14 @@ def _is_retryable_provider_error(event: dict) -> bool:
 
 def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
     """Return cloud-first fallback candidates without forcing local inference."""
-    config = load_provider_config()
-    primary_config = config.get(primary_name, {})
+    primary_config = get_provider_config(primary_name)
     configured = str(primary_config.get("fallback_provider", "")).strip()
 
     candidates: list[str] = []
     if configured and configured != primary_name and configured != "ollama":
         candidates.append(configured)
 
+    config = load_provider_config()
     routing = config.get("routing", {})
     if isinstance(routing, dict):
         fallback_list = routing.get("fallback", [])
