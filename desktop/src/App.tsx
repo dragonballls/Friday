@@ -1,1338 +1,216 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
-import { theme } from './core/ThemeEngine'
-import { state, useStore } from './core/StateManager'
-import { LeftSidebar } from './components/sidebar/LeftSidebar'
-import { StatusRibbon } from './components/topbar/TopBar'
-import { WorkspaceBrowser } from './components/workspace/WorkspaceBrowser'
-import { AiCore } from './components/center/AiCore'
-import { PERSONA_VISUALS } from './components/center/personaVisuals'
-import { MessageBubble } from './components/chat/MessageBubble'
-import { InputBar } from './components/chat/InputBar'
-import { CameraIndicator } from './components/common/CameraIndicator'
-import { useCamera } from './hooks/useCamera'
-import { useHandGesture } from './hooks/useHandGesture'
-import { useVoiceInput } from './hooks/useVoiceInput'
-import { useVoiceOutput } from './hooks/useVoiceOutput'
-import { useWakeWord } from './hooks/useWakeWord'
-import { captureFrame } from './hooks/useCameraCapture'
-import type { SystemInfo, NewsItem, WeatherData, Earthquake, CryptoData, SpaceData, CveItem, WorldClock, MemoryData, ScreenData, CalendarEvent, EmailMessage, ProactiveAlert, Automation, ApprovalRequest } from './types'
-import { AlertToast } from './components/chat/AlertToast'
-import { ApprovalDialog } from './components/chat/ApprovalDialog'
-import { ToastContainer } from './components/common/Toast'
-import { toast } from './core/ToastStore'
-const IntelligencePanel = lazy(() => import('./components/sidebar/IntelligencePanel').then(m => ({ default: m.IntelligencePanel })))
-const CommandPalette = lazy(() => import('./components/command/CommandPalette').then(m => ({ default: m.CommandPalette })))
-const SettingsPanel = lazy(() => import('./components/settings/SettingsPanel').then(m => ({ default: m.SettingsPanel })))
-import { streamChat, checkHealth, getSessions, createSession, deleteSession, getOutputDir, setOutputDir, getGoogleAuth, getNews, getWeather, getStocks, getGithubTrending, getEarthquakes, getCrypto, getSpace, getCve, getScreen, getMemory, deleteMemory, getCalendarEvents, getEmailInbox, getEmailUnread, connectEventSource, getAutomations, toggleAutomation, deleteAutomation, triggerAutomation, analyzeVisionImage, getVisionScreen, resolveApproval, streamAutopilot, getKnowledgeContinuity, getComputerStatus, getPrivacyStatus } from './core/api'
-import type { ServerEvent } from './core/api'
-import { BrainView } from './components/autopilot/BrainView'
-import { ZenStage } from './components/zen/ZenStage'
-import { Onboarding } from './components/zen/Onboarding'
-import type { AutopilotRun, AutopilotStepStatus } from './types'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { streamAutopilot, streamChat, checkHealth } from './core/api'
 
-let msgId = 0
-const nextId = () => `m${++msgId}`
-const LANG_CYCLE = ['en-US', 'hi-IN', 'ur-PK']
-const PERSONA_TTS: Record<string, { rate: number; pitch: number }> = {
-  jarvis: { rate: 0.9, pitch: 1.0 },
-  friday: { rate: 1.0, pitch: 1.1 },
-  cortana: { rate: 0.95, pitch: 1.05 },
-  adonis: { rate: 0.95, pitch: 0.95 },
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
-function showNativeNotification(title: string, body: string) {
-  if ('Notification' in window) {
-    if (Notification.permission === 'granted') {
-      new Notification(title, { body })
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(p => {
-        if (p === 'granted') new Notification(title, { body })
-      })
-    }
+interface SpeechRecognitionResultEventLike {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start: () => void
+  stop: () => void
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null
+  onend: (() => void) | null
+  onerror: (() => void) | null
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionLike
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike
   }
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-    const [workspaceOpen, setWorkspaceOpen] = useState(false)
-  const [commandOpen, setCommandOpen] = useState(false)
-  const [camActive, setCamActive] = useState(false)
-  const [backendOnline, setBackendOnline] = useState(true)
-  const backendOnlineDebug = (value: boolean, source: string) => {
-    console.log('[BACKEND ONLINE]', value, source)
-    setBackendOnline(value)
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: 'Good evening. I’m Friday. Talk to me, or give me something to build.' },
+  ])
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [codingBusy, setCodingBusy] = useState(false)
+  const [codingGoal, setCodingGoal] = useState('')
+  const [codingLog, setCodingLog] = useState<string[]>([])
+  const [online, setOnline] = useState(false)
+  const [listening, setListening] = useState(false)
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+
+  const SpeechRecognitionCtor = useMemo(
+    () => window.SpeechRecognition || window.webkitSpeechRecognition,
+    [],
+  )
+
+  useEffect(() => {
+    checkHealth().then(() => setOnline(true)).catch(() => setOnline(false))
+  }, [])
+
+  useEffect(() => {
+    return () => recognitionRef.current?.stop()
+  }, [])
+
+  const speak = (text: string) => {
+    if (!('speechSynthesis' in window) || !text.trim()) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 0.94
+    utterance.pitch = 0.95
+    window.speechSynthesis.speak(utterance)
   }
-  const [outputDir, setOutputDirState] = useState(() => localStorage.getItem('friday_output_dir') || '')
-  const [dataLoaded, setDataLoaded] = useState(false)
-  const [sseConnected, setSseConnected] = useState(false)
-  const [alerts, setAlerts] = useState<ProactiveAlert[]>([])
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [intelligenceOpen, setIntelligenceOpen] = useState(() => {
-    try { return localStorage.getItem('friday_intelligence_open') !== '0' } catch { return true }
-  })
-  const [personaPrompts, setPersonaPrompts] = useState<Record<string, string>>(() => {
-    try {
-      const raw = localStorage.getItem('friday_persona_prompts')
-      return raw ? JSON.parse(raw) : {}
-    } catch { return {} }
-  })
-const [briefing, setBriefing] = useState<{ summary: string; sections: string[]; greeting: string; yesterday?: string } | null>(null)
-const [automations, setAutomations] = useState<Automation[]>([])
-const [visionScreenResult, setVisionScreenResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
-const [visionCameraResult, setVisionCameraResult] = useState<{ description: string; text: string | null; timestamp: number } | null>(null)
-const [visionAnalyzing, setVisionAnalyzing] = useState(false)
-const [holodeckExpanded, setHolodeckExpanded] = useState(true)
-const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null)
-  const [autopilotRun, setAutopilotRun] = useState<AutopilotRun | null>(null)
-  const [now, setNow] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }))
-  const [continuity, setContinuity] = useState('')
-  const [computerReady, setComputerReady] = useState(false)
-  const [computerStatus, setComputerStatus] = useState<{ platform: string; mouse_keyboard: boolean; window_management: boolean } | null>(null)
-  const [blackout, setBlackout] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    try { return localStorage.getItem('friday_onboarded') !== '1' } catch { return true }
-  })
 
-  // â”€â”€â”€ Fine-grained Zustand selectors (before any hooks that use them) â”€â”€â”€
-  const sessions = useStore(s => s.sessions)
-  const activeSessionId = useStore(s => s.activeSessionId)
-  const loading = useStore(s => s.loading)
-  const orb = useStore(s => s.orb)
-  const voiceLanguage = useStore(s => s.voiceLanguage)
-  const persona = useStore(s => s.persona)
-  const personaName = (PERSONA_VISUALS[persona] || PERSONA_VISUALS.friday).name
-  const metricsState = useStore(s => s.metrics)
-  const zen = useStore(s => s.zen)
-  const handsFree = useStore(s => s.handsFree)
-  const active = useStore(s => {
-    const found = s.sessions.find(ses => ses.id === s.activeSessionId)
-    return found || s.sessions[0]
-  })
+  const sendMessage = (event?: FormEvent) => {
+    event?.preventDefault()
+    const message = input.trim()
+    if (!message || busy) return
 
-  const [systemInfo, setSystemInfo] = useState<SystemInfo>({
-    hostname: '-', os: '-', cpu_cores: 0, python_version: '-',
-    uptime_seconds: 0, llm_calls: 0, tokens_used: 0, failures: 0, retries: 0,
-    model: '-', provider: '-',
-  })
-  const [news, setNews] = useState<NewsItem[]>([])
-  const [weather, setWeather] = useState<WeatherData | null>(null)
-  const [stocks, setStocks] = useState<any[]>([])
-  const [repos, setRepos] = useState<any[]>([])
-  const [earthquakes, setEarthquakes] = useState<Earthquake[]>([])
-  const [crypto, setCrypto] = useState<CryptoData[]>([])
-  const [space, setSpace] = useState<SpaceData | null>(null)
-  const [cve, setCve] = useState<CveItem[]>([])
-  const [clocks, setClocks] = useState<WorldClock[]>([])
+    setInput('')
+    setMessages(prev => [...prev, { role: 'user', content: message }, { role: 'assistant', content: '' }])
+    setBusy(true)
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const handleGoogleConnect = useCallback(() => {
-    getGoogleAuth().then(d => {
-      if (d.url) {
-        const popup = window.open(d.url, '_blank')
-        if (!popup || popup.closed) {
-          alert('Please allow popups for this site to connect Google Calendar and Email.')
-        }
-      }
-    }).catch(() => {})
-  }, [])
-
-  const { stream, status: camStatus, requestAccess, stop: stopCam } = useCamera()
-  const { openness, position: handPosition } = useHandGesture(stream, camActive)
-
-  const {
-    isSupported: voiceInputSupported,
-    status: voiceInputStatus,
-    interimTranscript,
-    finalTranscript,
-    startListening: startVoiceInput,
-    stopListening: stopVoiceInput,
-    cancelAutoRestart,
-    resetTranscript,
-  } = useVoiceInput()
-
-  const {
-    enabled: voiceOutputEnabled,
-    setEnabled: setVoiceOutputEnabled,
-    status: voiceOutputStatus,
-    speak: speakResponse,
-    stop: stopVoiceOutput,
-  } = useVoiceOutput()
-
-  const {
-    active: wakeWordActive,
-    start: startWakeWord,
-    stop: stopWakeWord,
-  } = useWakeWord(() => {
-    cancelAutoRestart()
-    resetTranscript()
-    if (!ambientActive) {
-      setAmbientActive(true)
-    }
-    startVoiceInput(voiceLanguage, true)
-  })
-
-  // â”€â”€â”€ Ambient Voice Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [ambientActive, setAmbientActive] = useState(false)
-  const ambientTranscriptRef = useRef('')
-  const ambientSilenceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const ambientActiveRef = useRef(false)
-
-  const clearAmbientSilence = useCallback(() => {
-    if (ambientSilenceRef.current) {
-      clearTimeout(ambientSilenceRef.current)
-      ambientSilenceRef.current = null
-    }
-  }, [])
-
-  const exitAmbient = useCallback(() => {
-    clearAmbientSilence()
-    cancelAutoRestart()
-    stopVoiceInput()
-    ambientActiveRef.current = false
-    setAmbientActive(false)
-  }, [clearAmbientSilence, cancelAutoRestart, stopVoiceInput])
-
-  const enterAmbient = useCallback(() => {
-    cancelAutoRestart()
-    resetTranscript()
-    ambientTranscriptRef.current = ''
-    ambientActiveRef.current = true
-    setAmbientActive(true)
-    startVoiceInput(voiceLanguage, true)
-  }, [cancelAutoRestart, resetTranscript, startVoiceInput, voiceLanguage])
-
-  // Auto-enter ambient listening when hands-free mode is enabled
-  useEffect(() => {
-    if (handsFree && voiceInputSupported && !ambientActive) {
-      enterAmbient()
-    }
-  }, [handsFree, voiceInputSupported, ambientActive, enterAmbient])
-
-  const handleToggleHandsFree = useCallback(() => {
-    const next = !handsFree
-    state.setHandsFree(next)
-    if (next) {
-      enterAmbient()
-    } else {
-      exitAmbient()
-    }
-  }, [handsFree, enterAmbient, exitAmbient])
-
-  // Auto-send transcript in ambient mode when recognition goes idle
-  useEffect(() => {
-    if (!ambientActiveRef.current) return
-    if (voiceInputStatus === 'idle' && finalTranscript && finalTranscript !== ambientTranscriptRef.current) {
-      ambientTranscriptRef.current = finalTranscript
-      clearAmbientSilence()
-      const text = finalTranscript.trim()
-      if (text) {
-        resetTranscript()
-        handleSendRef.current(text)
-      }
-    }
-  }, [ambientActive, voiceInputStatus, finalTranscript, clearAmbientSilence, resetTranscript])
-
-  // Silence timeout â€” exit ambient after 5s of voice inactivity
-  useEffect(() => {
-    if (!ambientActiveRef.current) return
-    clearAmbientSilence()
-    if (voiceInputStatus === 'idle' && voiceOutputStatus === 'idle') {
-      ambientSilenceRef.current = setTimeout(() => {
-        if (ambientActiveRef.current) {
-          exitAmbient()
-        }
-      }, 5000)
-    }
-    return clearAmbientSilence
-  }, [ambientActive, voiceInputStatus, voiceOutputStatus, clearAmbientSilence, exitAmbient])
-
-  useEffect(() => {
-    theme.init()
-  }, [])
-
-  useEffect(() => {
-    const end = messagesEndRef.current
-    const container = end?.parentElement
-    if (!end || !container) return
-
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
-    if (distanceFromBottom < 160) {
-      end.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    }
-  }, [active.messages])
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setCommandOpen(o => !o)
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [])
-
-  // â”€â”€â”€ Single SSE connection replaces all polling â”€â”€â”€
-  useEffect(() => {
-    let cancelled = false
-
-    const handleEvent = (ev: ServerEvent) => {
-      if (cancelled) return
-      switch (ev.type) {
-        case 'metrics':
-          state.setMetrics({
-            latency: ev.data.latency || 0,
-            tokenUsage: ev.data.tokenUsage || 0,
-          })
-          break
-        case 'system_info':
-          setSystemInfo(prev => ({ ...prev, ...ev.data }))
-          break
-        case 'memory':
-          setMemoryData(prev => prev ? { ...prev, ...ev.data } : null)
-          if (ev.data.vector_count != null) {
-            state.setMetrics({ memory: ev.data.vector_count })
-          }
-          break
-        case 'alert':
-          setAlerts(prev => {
-            const exists = prev.some(a => a.timestamp === ev.data.timestamp && a.title === ev.data.title)
-            if (exists) return prev
-            const next = [ev.data, ...prev].slice(0, 5)
-            if (ev.data.severity === 'warning') {
-              showNativeNotification(ev.data.title, ev.data.description)
-            }
-            return next
-          })
-          break
-        case 'screen':
-          setScreenData(ev.data)
-          break
-        case 'clocks':
-          setClocks(ev.data.clocks || [])
-          break
-        case 'briefing':
-          setBriefing(ev.data)
-          break
-        case 'diary':
-          setDiaryRefreshToken(t => t + 1)
-          break
-        case 'automation_run':
-          setAutomations(prev => prev.map(a =>
-            a.id === ev.data.id ? { ...a, last_run: ev.data.timestamp, last_status: ev.data.status, run_count: a.run_count + 1 } : a
-          ))
-          break
-        case 'vision':
-          setVisionScreenResult(ev.data)
-          break
-      }
-    }
-
-    const unsub = connectEventSource(handleEvent, () => {
-      if (!cancelled) {
-        // SSE reconnects automatically after transient connection errors.
-        // A temporary SSE error does not mean the API backend is offline.
-        setSseConnected(false)
-      }
-    }, (connected) => {
-      if (!cancelled) {
-        setSseConnected(connected)
-        if (connected) {
-          backendOnlineDebug(true, 'SSE connected')
-        }
-      }
-    })
-
-    return () => { cancelled = true; unsub() }
-  }, [])
-
-  // â”€â”€â”€ Initial data fetch (one-shot, no polling) â”€â”€â”€
-  useEffect(() => {
-    let cancelled = false
-    const init = async () => {
-      try {
-        // Health is the authoritative backend status.
-        const health = await checkHealth()
-        if (cancelled) return
-        backendOnlineDebug(health.status === 'ok', 'health')
-
-        // Session loading is secondary. It must not make a healthy
-        // backend appear offline.
-        let sessions: { sessions: { id: string; language: string }[] } = { sessions: [] }
-        try {
-          sessions = await getSessions()
-        } catch {
-          // Keep the backend online; session loading can recover separately.
-        }
-        if (cancelled) return
-if (sessions.sessions.length > 0) {
-          const synced = sessions.sessions.map((s: any) => ({
-            id: s.id,
-            title: s.language === 'hinglish' ? 'Hinglish session' : 'Session',
-            messages: [],
-            createdAt: Date.now(),
-          }))
-          state.set({ sessions: synced, activeSessionId: sessions.sessions[0].id })
-        } else {
-          const created = await createSession()
-          if (!cancelled) {
-            state.set({
-              sessions: [{ id: created.session_id, title: 'Session', messages: [], createdAt: Date.now() }],
-              activeSessionId: created.session_id,
-            })
-          }
-        }
-
-        // Batch-fetch remaining data once (fills panels until SSE updates arrive)
-        const fetchRemaining = async () => {
-          const [authResp] = await Promise.all([
-            getGoogleAuth(),
-            getNews().then(d => setNews(d.articles || [])).catch(() => {}),
-            getWeather().then(d => setWeather(d)).catch(() => {}),
-            getStocks().then(d => setStocks(d.stocks || [])).catch(() => {}),
-            getGithubTrending().then(d => setRepos(d.repos || [])).catch(() => {}),
-            getEarthquakes().then(d => setEarthquakes(d.earthquakes || [])).catch(() => {}),
-            getCrypto().then(d => setCrypto(d.crypto || [])).catch(() => {}),
-            getSpace().then(d => setSpace(d)).catch(() => {}),
-            getCve().then(d => setCve(d.cve || [])).catch(() => {}),
-            getMemory().then(d => setMemoryData(d)).catch(() => {}),
-            getScreen().then(d => setScreenData(d)).catch(() => {}),
-            getAutomations().then(d => setAutomations(d.automations || [])).catch(() => {}),
-          ])
-          const authStatus = authResp?.status || ''
-          setCalendarAuth(authStatus)
-          setEmailAuth(authStatus)
-          if (authStatus === 'authenticated') {
-            Promise.all([
-              getCalendarEvents().then(d => setCalendarEvents(d.events || [])).catch(() => {}),
-              getEmailInbox().then(d => setEmailMessages(d.messages || [])).catch(() => {}),
-              getEmailUnread().then(d => setEmailUnread(d.unread || 0)).catch(() => {}),
-            ])
-          }
-        }
-        await fetchRemaining()
-        getKnowledgeContinuity().then(d => { if (!cancelled) setContinuity(d.continuity || '') }).catch(() => {})
-        getComputerStatus().then(d => {
-          if (cancelled) return
-          setComputerReady(Boolean(d.mouse_keyboard && d.window_management))
-          setComputerStatus(d)
-        }).catch(() => {})
-        getPrivacyStatus().then(d => { if (!cancelled) setBlackout(d.enabled) }).catch(() => {})
-        if (!cancelled) setDataLoaded(true)      } catch {
-        if (!cancelled) {
-          toast('warning', 'Some Friday startup data could not be loaded.')
-        }
-      }
-    }
-    init()
-    return () => { cancelled = true }
-  }, [])
-
-  const dismissAlert = useCallback((idx: number) => {
-    setAlerts(prev => prev.filter((_, i) => i !== idx))
-  }, [])
-
-  const [memoryData, setMemoryData] = useState<MemoryData | null>(null)
-  const [screenData, setScreenData] = useState<ScreenData | null>(null)
-  const [diaryRefreshToken, setDiaryRefreshToken] = useState(0)
-  const [calendarAuth, setCalendarAuth] = useState('')
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
-  const [emailAuth, setEmailAuth] = useState('')
-  const [emailMessages, setEmailMessages] = useState<EmailMessage[]>([])
-  const [emailUnread, setEmailUnread] = useState(0)
-
-  // Fetch output dir on session change
-  useEffect(() => {
-    getOutputDir(activeSessionId).then((d: any) => { if (d) setOutputDirState(d.output_dir) }).catch(() => {})
-  }, [activeSessionId])
-
-  // Auto-speak assistant responses when voice output is enabled
-  const lastMsgRef = useRef('')
-  useEffect(() => {
-    if (!voiceOutputEnabled) return
-    const msgs = active.messages
-    if (msgs.length === 0) return
-    const lastMsg = msgs[msgs.length - 1]
-    if (lastMsg.role === 'assistant' && !lastMsg.streaming && lastMsg.content) {
-      const content = lastMsg.content
-      if (content !== lastMsgRef.current && content.length > 10) {
-        lastMsgRef.current = content
-        const tts = PERSONA_TTS[persona]
-        speakResponse(content, tts)
-      }
-    }
-  }, [active.messages, voiceOutputEnabled, speakResponse, persona])
-
-  const toggleCamera = useCallback(() => {
-    setCamActive(prev => {
-      if (prev) { stopCam(); return false }
-      return true
-    })
-  }, [stopCam])
-
-  const handleNewSession = useCallback(async () => {
-    const curSessions = state.get().sessions
-    try {
-      const data = await createSession()
-      state.set({
-        sessions: [...curSessions, { id: data.session_id, title: 'Session', messages: [], createdAt: Date.now() }],
-        activeSessionId: data.session_id,
-      })
-    } catch {
-      const id = `local_${Date.now()}`
-      state.set({
-        sessions: [...curSessions, { id, title: 'Session (offline)', messages: [], createdAt: Date.now() }],
-        activeSessionId: id,
-      })
-    }
-  }, [])
-
-  const handleSetOutputDir = useCallback(async (path: string) => {
-    setOutputDirState(path)
-    localStorage.setItem('friday_output_dir', path)
-    try {
-      await setOutputDir(path, state.get().activeSessionId)
-    } catch {}
-  }, [])
-
-  const handleDeleteSession = useCallback((id: string) => {
-    deleteSession(id).catch(() => {})
-    const cur = state.get()
-    const next = cur.sessions.filter(x => x.id !== id)
-    state.set({ sessions: next, activeSessionId: cur.activeSessionId === id ? (next[0]?.id || 'default') : cur.activeSessionId })
-  }, [])
-
-  const handleDeleteMemory = useCallback((id: string) => {
-    deleteMemory(id).catch(() => {})
-    setMemoryData(prev => {
-      if (!prev) return prev
-      const filter = (list?: any[]) => (list || []).filter(m => m.id !== id)
-      return {
-        ...prev,
-        vector_memories: filter(prev.vector_memories),
-        embedding_memories: filter(prev.embedding_memories),
-        vector_count: Math.max(0, (prev.vector_count ?? 0) - 1),
-        embedding_count: Math.max(0, (prev.embedding_count ?? 0) - 1),
-      }
-    })
-  }, [])
-
-  const handleApproval = useCallback((requestId: string, allowed: boolean) => {
-    setPendingApproval(null)
-    resolveApproval(requestId, allowed).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })), 1000)
-    return () => clearInterval(id)
-  }, [])
-
-  // â”€â”€â”€ Power-user keyboard shortcuts â”€â”€â”€
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey
-      if (!mod) return
-      if (e.key === 'n' && !e.shiftKey) {
-        e.preventDefault()
-        handleNewSession()
-      } else if (e.key === ',') {
-        e.preventDefault()
-        setSettingsOpen(true)
-      } else if (e.key === 'b' && !e.shiftKey) {
-        e.preventDefault()
-        state.toggleZen()
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [handleNewSession])
-
-  const abortRef = useRef<AbortController | null>(null)
-
-  const handleStop = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setAutopilotRun(null)
-    state.setLoading(false)
-    state.updateMessages(msgs => msgs.map(m => m.streaming ? { ...m, streaming: false } : m))
-    state.setOrb('idle')
-  }, [])
-
-  const [searchQuery, setSearchQuery] = useState('')
-
-  const filteredMessages = searchQuery
-    ? active.messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-    : active.messages
-
-  const [lastUserMsg, setLastUserMsg] = useState('')
-  const lastUserMsgRef = useRef('')
-  useEffect(() => { lastUserMsgRef.current = lastUserMsg })
-  const handleSend = useCallback(async (text: string) => {
-    if (loading) return
-    setLastUserMsg(text)
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    state.setLoading(true)
-    state.setOrb('thinking')
-
-    const trimmed = text.trim()
-    const isAuto =
-      /^\/autopilot\b/i.test(trimmed) ||
-      (/^autopilot\s*[-:ØŒ]?\s/i.test(trimmed) && trimmed.replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim().length > 0)
-    const goal = isAuto ? trimmed.replace(/^\/autopilot\b/i, '').replace(/^autopilot\s*[-:ØŒ]?\s?/i, '').trim() : ''
-
-    if (isAuto && goal.length === 0) {
-      state.setLoading(false)
-      abortRef.current = null
-      setAutopilotRun(null)
-      state.setOrb('idle')
-      return
-    }
-
-    state.updateMessages(msgs => [...msgs, { id: nextId(), role: 'user', content: text }])
-
-    const aid = nextId()
-    state.updateMessages(msgs => [...msgs, { id: aid, role: 'assistant', content: '', streaming: true, toolCalls: [] }])
-
-    if (isAuto) {
-      setAutopilotRun({ goal, phase: 'planning', steps: [] })
-    }
-
-    const applyAutoEvent = (ev: any) => {
-      setAutopilotRun(prev => {
-        const base = prev ?? { goal: ev.goal ?? '', phase: 'planning' as const, steps: [] as AutopilotRun['steps'] }
-        switch (ev.event) {
-          case 'plan':
-            return {
-              ...base,
-              goal: ev.goal ?? base.goal,
-              phase: 'running' as const,
-              steps: (ev.tasks || []).map((t: any) => ({
-                id: t.id,
-                description: t.description,
-                tool: t.tool,
-                status: 'pending' as AutopilotStepStatus,
-                error: null,
-              })),
-            }
-          case 'step_start':
-            return {
-              ...base,
-              phase: 'running' as const,
-              steps: base.steps.map(s => (s.id === ev.task.id ? { ...s, status: 'running' as AutopilotStepStatus } : s)),
-            }
-          case 'step_done':
-            return {
-              ...base,
-              steps: base.steps.map(s =>
-                s.id === ev.task.id
-                  ? {
-                    ...s,
-                    status: (ev.task.status === 'failed' ? 'failed' : 'completed') as AutopilotStepStatus,
-                    result: ev.task.result,
-                    error: ev.task.error,
-                  }
-                  : s,
-              ),
-            }
-          case 'step_skipped':
-            return {
-              ...base,
-              steps: base.steps.map(s =>
-                s.id === ev.task.id ? { ...s, status: 'skipped' as AutopilotStepStatus } : s,
-              ),
-            }
-          case 'aborted':
-            return { ...base, phase: 'aborted' as const, abortedReason: ev.reason }
-          case 'done':
-            return { ...base, phase: 'done' as const, stats: ev.stats }
-          default:
-            return base
-        }
-      })
-    }
-
-    let acc = ''
-    let lastFlush = 0
-    const TOKEN_THROTTLE = 40
-    const flushTokens = () => {
-      lastFlush = performance.now()
-      state.updateMessages(msgs => msgs.map(m => m.id === aid ? { ...m, content: acc } : m))
-    }
-
-    const stream = isAuto
-      ? streamAutopilot(
-        { goal, session_id: activeSessionId },
-        (ev) => {
-          if (ev.type === 'autopilot') {
-            applyAutoEvent(ev)
-            return
-          }
-          switch (ev.type) {
-            case 'tokens':
-              acc += ev.content
-              if (performance.now() - lastFlush >= TOKEN_THROTTLE) flushTokens()
-              break
-            case 'tool_result':
-              flushTokens()
-              state.updateMessages(msgs => msgs.map(m =>
-                m.id === aid ? { ...m, toolCalls: [...(m.toolCalls || []), ...(ev.tools || [])] } : m
-              ))
-              state.setOrb('executing')
-              break
-            case 'requires_confirmation':
-              setPendingApproval({ id: ev.request_id, tool: ev.tool, args: ev.args })
-              state.setOrb('idle')
-              break
-            case 'done':
-              flushTokens()
-              if (ev.final) {
-                state.updateMessages(msgs => msgs.map(m =>
-                  m.id === aid ? { ...m, content: ev.content || acc, streaming: false } : m
-                ))
-                state.setOrb('idle')
-              }
-              break
-          }
-        },
-        (err) => {
-          const isNetwork = err?.message?.includes('network') || err?.status === 0
-          setAutopilotRun(prev => prev ? { ...prev, phase: 'aborted', abortedReason: err?.message || 'error' } : prev)
-          state.updateMessages(msgs => msgs.map(m =>
-            m.id === aid ? { ...m, content: isNetwork
-              ? 'Backend offline — start `python api_server.py` on port 8080'
-              : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
-          ))
-          state.setOrb('error')
-          setTimeout(() => state.setOrb('idle'), 2000)
-        },
-        () => {
-          state.setLoading(false)
-          abortRef.current = null
-        },
-      )
-      : streamChat({ message: text, session_id: activeSessionId, persona, persona_prompt: personaPrompts[persona] || undefined },
-      (ev) => {
-        switch (ev.type) {
-          case 'plan':
-            state.updateMessages(msgs => msgs.map(m =>
-              m.id === aid ? { ...m, plan: ev.tasks.map((t: any, i: number) => `${i + 1}. ${t.description}`).join('\n') } : m
-            ))
-            state.setOrb('thinking')
-            break
-          case 'task_start': {
-            const desc = (ev.task?.description || '').toLowerCase()
-            if (desc.includes('search') || desc.includes('browse')) state.setOrb('searching')
-            else if (desc.includes('code') || desc.includes('parse') || desc.includes('lint') || desc.includes('format')) state.setOrb('coding')
-            else state.setOrb('reasoning')
-            break
-          }
-          case 'tokens':
-            acc += ev.content
-            if (performance.now() - lastFlush >= TOKEN_THROTTLE) flushTokens()
-            break
-          case 'tool_result':
-            flushTokens()
-            state.updateMessages(msgs => msgs.map(m =>
-              m.id === aid ? { ...m, toolCalls: [...(m.toolCalls || []), ...(ev.tools || [])] } : m
-            ))
-            state.setOrb('executing')
-            break
-          case 'requires_confirmation':
-            setPendingApproval({ id: ev.request_id, tool: ev.tool, args: ev.args })
-            state.setOrb('idle')
-            break
-          case 'task_done':
-            flushTokens()
-            state.setOrb('reasoning')
-            break
-          case 'fast':
-            state.updateMessages(msgs => msgs.map(m =>
-              m.id === aid ? { ...m, content: ev.content, streaming: false, reflex: ev.reflex } : m
-            ))
-            state.setOrb('idle')
-            break
-          case 'done':
-            flushTokens()
-            if (ev.final) {
-              state.updateMessages(msgs => msgs.map(m =>
-                m.id === aid ? { ...m, content: ev.content || acc, streaming: false } : m
-              ))
-              state.setOrb('idle')
-            }
-            break
-        }
+    streamChat(
+      { message, session_id: 'default', persona: 'jarvis' },
+      (chunk) => {
+        const content = String(chunk?.content ?? '')
+        if (!content) return
+        setMessages(prev => {
+          const next = [...prev]
+          const last = next[next.length - 1]
+          next[next.length - 1] = { ...last, content: last.content + content }
+          return next
+        })
       },
       (err) => {
-        const isNetwork = err?.message?.includes('network') || err?.status === 0
-        state.updateMessages(msgs => msgs.map(m =>
-          m.id === aid ? { ...m, content: isNetwork
-            ? 'Backend offline — start `python api_server.py` on port 8080'
-            : `Error: ${err.message || JSON.stringify(err)}`, streaming: false } : m
-        ))
-        state.setOrb('error')
-        setTimeout(() => state.setOrb('idle'), 2000)
+        const text = `I encountered an error: ${String(err?.message ?? err ?? 'unknown error')}`
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: text }
+          return next
+        })
+        setOnline(false)
       },
       () => {
-        state.setLoading(false)
-        abortRef.current = null
+        setBusy(false)
+        setOnline(true)
+        setMessages(prev => {
+          const text = prev[prev.length - 1]?.content || ''
+          if (text.trim()) speak(text)
+          return prev
+        })
       },
     )
-    abortRef.current = stream
-  }, [loading, activeSessionId, persona, personaPrompts])
+  }
 
-  // Stable ref for handleSend so effects always have the latest version
-  const handleSendRef = useRef<(text: string) => void>(null as any)
-  useEffect(() => { handleSendRef.current = handleSend })
+  const toggleListening = () => {
+    if (!SpeechRecognitionCtor) return
 
-  // Gesture-to-voice: open palm = start listening, fist = send
-  const prevOpennessRef = useRef<number | null>(null)
-  const gestureVoiceActive = useRef(false)
-
-  useEffect(() => {
-    if (!camActive || openness == null) return
-
-    const prev = prevOpennessRef.current
-    prevOpennessRef.current = openness
-
-    if (openness > 0.7 && (prev == null || prev <= 0.5) && !gestureVoiceActive.current) {
-      gestureVoiceActive.current = true
-      resetTranscript()
-      startVoiceInput()
+    if (listening) {
+      recognitionRef.current?.stop()
+      setListening(false)
       return
     }
 
-    if (openness < 0.3 && (prev != null && prev >= 0.5) && gestureVoiceActive.current) {
-      gestureVoiceActive.current = false
-      const transcript = stopVoiceInput()
-      if (transcript.trim()) {
-        handleSendRef.current(transcript.trim())
+    const recognition = new SpeechRecognitionCtor()
+    recognition.continuous = false
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results as any)
+        .map((result: any) => result[0]?.transcript ?? '')
+        .join(' ')
+        .trim()
+      if (transcript) {
+        setInput(transcript)
+        window.setTimeout(() => sendMessage(), 0)
       }
     }
-  }, [camActive, openness, startVoiceInput, stopVoiceInput, resetTranscript])
-
-  const sendMessage = useCallback((text: string) => {
-    if (!text.trim() || loading) return
-    handleSend(text)
-  }, [loading, handleSend])
-
-  const [, setCommandDraft] = useState<string | undefined>()
-
-  const handleCommandTemplate = useCallback((prompt: string) => {
-    setCommandDraft(`${prompt} `)
-  }, [])
-
-  const handleRegenerate = useCallback(() => {
-    const msg = lastUserMsgRef.current
-    if (!msg || state.get().loading) return
-    state.updateMessages(msgs => {
-      const idx = msgs.findLastIndex(m => m.role === 'assistant')
-      if (idx === -1) return msgs
-      return msgs.slice(0, idx)
-    })
-    handleSendRef.current(msg)
-  }, [])
-
-  /* Collect recent tool calls for Agent Activity panel */
-  const recentTools = active.messages.flatMap(m => (m.toolCalls || [])).slice(-8)
-
-  const handleToggleVoiceOutput = useCallback(() => {
-    const next = !voiceOutputEnabled
-    setVoiceOutputEnabled(next)
-    state.set({ voiceOutputEnabled: next })
-    if (!next) stopVoiceOutput()
-  }, [voiceOutputEnabled, setVoiceOutputEnabled, stopVoiceOutput])
-
-  const handleCycleLanguage = useCallback(() => {
-    const current = state.get().voiceLanguage
-    const idx = LANG_CYCLE.indexOf(current)
-    const next = LANG_CYCLE[(idx + 1) % LANG_CYCLE.length]
-    state.setVoiceLanguage(next)
-  }, [])
-
-  const handleSetPersona = useCallback((key: string) => {
-    state.setPersona(key)
-  }, [])
-
-  const handleSetPersonaPrompt = useCallback((prompt: string) => {
-    setPersonaPrompts(prev => {
-      const next = { ...prev, [persona]: prompt }
-      try { localStorage.setItem('friday_persona_prompts', JSON.stringify(next)) } catch {}
-      return next
-    })
-  }, [persona])
-
-  const handleAutomationToggle = useCallback(async (id: string) => {
-    try {
-      const updated = await toggleAutomation(id)
-      setAutomations(prev => prev.map(a => a.id === id ? { ...a, enabled: updated.enabled } : a))
-    } catch {}
-  }, [])
-
-  const handleAutomationDelete = useCallback(async (id: string) => {
-    try {
-      await deleteAutomation(id)
-      setAutomations(prev => prev.filter(a => a.id !== id))
-    } catch {}
-  }, [])
-
-  const handleAutomationTrigger = useCallback(async (id: string) => {
-    try {
-      await triggerAutomation(id)
-    } catch {}
-  }, [])
-
-  const handleVisionCaptureCamera = useCallback(async () => {
-    if (visionAnalyzing || !stream) return
-    setVisionAnalyzing(true)
-    try {
-      const frame = captureFrame(stream)
-      if (frame) {
-        const result = await analyzeVisionImage(frame)
-        setVisionCameraResult(result)
-      }
-    } catch {}
-    setVisionAnalyzing(false)
-  }, [visionAnalyzing, stream])
-
-  const handleVisionCaptureScreen = useCallback(async () => {
-    if (visionAnalyzing) return
-    setVisionAnalyzing(true)
-    try {
-      const result = await getVisionScreen()
-      setVisionScreenResult(result)
-    } catch {}
-    setVisionAnalyzing(false)
-  }, [visionAnalyzing])
-
-  const playBriefing = useCallback(() => {
-    if (briefing && voiceOutputEnabled) {
-      const tts = PERSONA_TTS[persona]
-      speakResponse(briefing.summary, tts)
-    }
-  }, [briefing, voiceOutputEnabled, speakResponse, persona])
-
-  // â”€â”€â”€ Persist voice settings â”€â”€â”€
-  useEffect(() => {
-    localStorage.setItem('friday_voice_output_enabled', String(voiceOutputEnabled))
-  }, [voiceOutputEnabled])
-
-  useEffect(() => {
-    localStorage.setItem('friday_voice_language', voiceLanguage)
-  }, [voiceLanguage])
-
-  useEffect(() => {
-    localStorage.setItem('friday_wake_word_enabled', String(wakeWordActive))
-  }, [wakeWordActive])
-
-  const commandActions = [
-    { id: 'new-session', label: 'New session', action: handleNewSession },
-    { id: 'toggle-zen', label: zen ? 'Exit zen mode (dashboard)' : 'Enter zen mode', action: () => state.toggleZen() },
-    { id: 'toggle-handsfree', label: handsFree ? 'Disable hands-free listening' : 'Enable hands-free listening', action: handleToggleHandsFree },
-    { id: 'toggle-sidebar', label: 'Toggle sessions sidebar', action: () => setSidebarOpen(o => !o) },
-    { id: 'toggle-workspace', label: workspaceOpen ? 'Close workspace preview' : 'Open workspace preview', action: () => setWorkspaceOpen(o => !o) },
-
-    { id: 'toggle-camera', label: 'Gesture control', action: toggleCamera },
-    { id: 'toggle-voice-output', label: 'Toggle voice output', action: handleToggleVoiceOutput },
-    { id: 'cycle-language', label: `Voice language: ${voiceLanguage}`, action: handleCycleLanguage },
-
-    { id: 'persona-friday', label: 'Persona: FRIDAY', action: () => handleSetPersona('friday') },
-    { id: 'persona-jarvis', label: 'Persona: J.A.R.V.I.S.', action: () => handleSetPersona('jarvis') },
-    { id: 'persona-cortana', label: 'Persona: Cortana', action: () => handleSetPersona('cortana') },
-    { id: 'persona-adonis', label: 'Persona: ADONIS', action: () => handleSetPersona('adonis') },
-
-    { id: 'vision-screen', label: 'Analyze screen', action: handleVisionCaptureScreen },
-    { id: 'vision-camera', label: 'Capture camera', action: handleVisionCaptureCamera },
-    { id: 'toggle-holodeck', label: holodeckExpanded ? 'Hide Holodeck' : 'Show Holodeck', action: () => setHolodeckExpanded(e => !e) },
-  ]
-
-  if (ambientActive) {
-    commandActions.push(
-      { id: 'exit-ambient', label: 'Exit ambient conversation', action: exitAmbient },
-    )
+    recognition.onend = () => setListening(false)
+    recognition.onerror = () => setListening(false)
+    recognitionRef.current = recognition
+    setListening(true)
+    recognition.start()
   }
 
-  if (voiceInputSupported && !ambientActive) {
-    commandActions.push(
-      { id: 'ambient-voice', label: 'Start ambient conversation', action: enterAmbient },
-    )
-  }
+  const startSelfCoding = (event?: FormEvent) => {
+    event?.preventDefault()
+    const goal = codingGoal.trim()
+    if (!goal || codingBusy) return
 
-  if (voiceInputSupported) {
-    commandActions.push(
-      { id: 'voice-input', label: 'Voice input (hold mic)', action: () => startVoiceInput() },
-    )
-  }
+    setCodingLog([`Starting self-coding task: ${goal}`])
+    setCodingBusy(true)
 
-  if (wakeWordActive) {
-    commandActions.push(
-      { id: 'stop-wake-word', label: 'Disable wake word', action: stopWakeWord },
-    )
-  } else if (voiceInputSupported) {
-    commandActions.push(
-      { id: 'start-wake-word', label: 'Enable wake word ("Hey Friday")', action: startWakeWord },
+    streamAutopilot(
+      { goal, session_id: 'default' },
+      (chunk) => {
+        const content = String(chunk?.content ?? '')
+        if (content) setCodingLog(prev => [...prev, content])
+      },
+      (err) => {
+        setCodingLog(prev => [...prev, `Error: ${String(err?.message ?? err ?? 'unknown error')}`])
+      },
+      () => setCodingBusy(false),
     )
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ background: 'var(--bg)' }}>
-      {!backendOnline && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
-          style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
-        >
-          Backend offline — start <code style={{ color: '#fbbf24' }}>python api_server.py</code> on port 8080
+    <main className="friday-shell">
+      <header className="friday-header">
+        <div>
+          <div className="eyebrow">FRIDAY</div>
+          <h1>Your AI assistant.</h1>
         </div>
-      )}
-      {backendOnline && !sseConnected && (
-        <div
-          data-friday-reconnect-notice="true"
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs"
-          style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fde68a' }}
-        >
-          Reconnecting…
+        <div className={`status ${online ? 'online' : ''}`}>
+          <span /> {online ? 'ONLINE' : 'CONNECTING'}
         </div>
-      )}
+      </header>
 
-      {/* Proactive alerts */}
-      {alerts.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-          {alerts.map((a, i) => (
-            <AlertToast key={a.timestamp + '-' + i} alert={a} onDismiss={() => dismissAlert(i)} />
+      <section className="conversation card">
+        <div className="section-title">Conversation</div>
+        <div className="messages">
+          {messages.map((message, index) => (
+            <div key={`${index}-${message.role}`} className={`message ${message.role}`}>
+              <span className="message-label">{message.role === 'assistant' ? 'FRIDAY' : 'YOU'}</span>
+              <div>{message.content || '…'}</div>
+            </div>
           ))}
         </div>
-      )}
+        <form className="composer" onSubmit={sendMessage}>
+          <input
+            value={input}
+            onChange={event => setInput(event.target.value)}
+            placeholder="Talk to Friday…"
+            disabled={busy}
+            autoFocus
+          />
+          <button type="button" className={listening ? 'active' : ''} onClick={toggleListening} disabled={!SpeechRecognitionCtor}>
+            {listening ? 'Stop' : 'Voice'}
+          </button>
+          <button type="submit" disabled={busy || !input.trim()}>{busy ? 'Thinking…' : 'Send'}</button>
+        </form>
+      </section>
 
-      {/* Tool call approval */}
-      {pendingApproval && (
-        <ApprovalDialog request={pendingApproval} onResolve={handleApproval} />
-      )}
-
-      <ToastContainer />
-
-      <CameraIndicator
-        stream={camActive ? stream : null}
-        active={camActive}
-        openness={openness}
-        onToggle={toggleCamera}
-        voiceInputStatus={voiceInputStatus}
-        voiceOutputStatus={voiceOutputStatus}
-      />
-
-      {camActive && camStatus === 'idle' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="rounded-2xl p-8 text-center max-w-sm w-full glass blue-glow">
-            <p className="text-sm mb-2" style={{ color: '#e5e5e5' }}>Gesture Control</p>
-            <p className="text-xs mb-3" style={{ color: '#a0a0a8' }}>Friday needs camera access to detect hand gestures.</p>
-            <button
-              onClick={requestAccess}
-              className="px-6 py-2 rounded-xl text-sm transition-all hover:scale-105 active:scale-95"
-              style={{
-                background: 'linear-gradient(135deg, var(--gold), var(--gold-bright))',
-                color: '#000',
-                fontWeight: 500,
-              }}
-            >
-              Grant Access
-            </button>
-          </div>
+      <section className="self-code card">
+        <div className="section-title">Self-coding</div>
+        <p className="muted">Give Friday a coding goal. It can plan, edit, test, and iterate through the existing agent system.</p>
+        <form className="composer" onSubmit={startSelfCoding}>
+          <input
+            value={codingGoal}
+            onChange={event => setCodingGoal(event.target.value)}
+            placeholder="What should Friday build or improve?"
+            disabled={codingBusy}
+          />
+          <button type="submit" disabled={codingBusy || !codingGoal.trim()}>{codingBusy ? 'Working…' : 'Start'}</button>
+        </form>
+        <div className="coding-log" aria-live="polite">
+          {codingLog.length === 0 ? <span className="muted">No coding task running.</span> : codingLog.map((line, index) => <div key={index}>{line}</div>)}
         </div>
-      )}
-
-      {camActive && camStatus === 'denied' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="rounded-2xl p-8 text-center max-w-sm w-full glass">
-            <p className="text-sm mb-2" style={{ color: '#e5e5e5' }}>Camera Access Denied</p>
-            <p className="text-xs mb-6" style={{ color: '#a0a0a8' }}>Allow camera access in browser settings and try again.</p>
-            <button
-              onClick={toggleCamera}
-              className="px-6 py-2 rounded-xl text-sm transition-all hover:scale-105 active:scale-95 glass glass-hover"
-              style={{ color: '#a0a0a8' }}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="relative flex flex-col h-full" style={{ zIndex: 10 }}>
-        {zen ? (
-          <div className="relative h-full">
-            <ZenStage
-              orbState={orb}
-              metrics={{
-                latency: metricsState.latency,
-                model: metricsState.model,
-                provider: metricsState.provider,
-                memory: metricsState.memory,
-                tokenUsage: metricsState.tokenUsage,
-              }}
-              messages={active.messages}
-              autopilotRun={autopilotRun}
-              onSend={sendMessage}
-              onStop={handleStop}
-              onRegenerate={handleRegenerate}
-              loading={loading}
-              voiceInputSupported={voiceInputSupported}
-              voiceStatus={voiceInputStatus}
-              voiceInterim={interimTranscript}
-              voiceLanguage={voiceLanguage}
-              onVoiceStart={() => { exitAmbient(); cancelAutoRestart(); resetTranscript(); startVoiceInput(voiceLanguage) }}
-              onVoiceStop={() => { cancelAutoRestart(); return stopVoiceInput() }}
-              onCycleLanguage={handleCycleLanguage}
-              personaName={personaName}
-              onToggleDashboard={() => state.toggleZen()}
-              handsFree={handsFree}
-              ambientActive={ambientActive}
-              onToggleHandsFree={handleToggleHandsFree}
-              persona={persona}
-              continuity={continuity}
-              greeting={personaName}
-            computerReady={computerReady}
-            blackout={blackout}
-            temperature={weather?.temperature ?? null}
-            location={weather?.location ?? ''}
-            time={now}
-            handPosition={handPosition}
-            voiceActivity={voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking'}
-            />
-            {showOnboarding && (
-              <Onboarding
-                onDismiss={() => setShowOnboarding(false)}
-                onSuggest={text => sendMessage(text)}
-              />
-            )}
-          </div>
-        ) : (
-        <>
-        <div className="friday-self-repair-bar" data-testid="self-repair-status" role="status" aria-label="Friday self-repair status">
-          <span className="friday-self-repair-dot" aria-hidden="true" />
-          <span>SELF-REPAIR READY</span>
-          <span className="friday-self-repair-separator">•</span>
-          <span>BOUNDED VERIFICATION</span>
-        </div>
-
-        <StatusRibbon
-          systemInfo={systemInfo}
-          latency={metricsState.latency}
-          orbState={orb}
-          memory={metricsState.memory}
-          backendOnline={backendOnline}
-          onCommandPalette={() => setCommandOpen(o => !o)}
-          voiceOutputEnabled={voiceOutputEnabled}
-          onToggleVoiceOutput={handleToggleVoiceOutput}
-          voiceInputStatus={voiceInputStatus}
-          voiceOutputStatus={voiceOutputStatus}
-          ambientActive={ambientActive}
-          onExitAmbient={exitAmbient}
-          persona={persona}
-        />
-
-        <div className="flex-1 flex min-h-0">
-          {sidebarOpen && (
-            <LeftSidebar
-              sessions={sessions}
-              activeId={activeSessionId}
-              onSelect={id => state.set({ activeSessionId: id })}
-              onNew={handleNewSession}
-              onDelete={handleDeleteSession}
-              onSettings={() => setSettingsOpen(true)}
-              outputDir={outputDir}
-              onSetOutputDir={handleSetOutputDir}
-            />
-          )}
-
-          <main className="flex-1 flex flex-col min-w-0">
-            <div className="flex-1 flex flex-col items-center relative min-h-0">
-              <div className="w-full max-w-[720px] flex-1 min-h-0 flex flex-col">
-                <div className={`relative flex flex-col min-h-0 ${autopilotRun ? 'flex-1' : ''}`}>
-                  <AiCore
-                    orbState={orb}
-                    metrics={{
-                      latency: metricsState.latency,
-                      model: metricsState.model,
-                      provider: metricsState.provider,
-                      memory: metricsState.memory,
-                      tokenUsage: metricsState.tokenUsage,
-                    }}
-                    onCommand={handleCommandTemplate}
-                    hasMessages={!autopilotRun && active.messages.length > 0}
-                    handPosition={handPosition}
-                    persona={persona}
-                    voiceActivity={voiceInputStatus === 'listening' || voiceOutputStatus === 'speaking'}
-                  />
-                  {autopilotRun && <BrainView run={autopilotRun} size={320} />}
-                </div>
-
-                {active.messages.length > 0 && (
-                  <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-6 px-8 pb-4">
-                    {active.messages.length > 1 && (
-                      <div className="sticky top-0 z-10 pb-2" style={{ background: 'var(--bg)' }}>
-                        <input
-                          value={searchQuery}
-                          onChange={e => setSearchQuery(e.target.value)}
-                          placeholder="Search messages..."
-                          className="w-full rounded-xl px-3 py-2 text-xs outline-none transition-all"
-                          style={{
-                            background: 'rgba(255,255,255,0.04)',
-                            border: searchQuery ? '1px solid rgba(212,160,64,0.2)' : '1px solid rgba(255,255,255,0.06)',
-                            color: '#999',
-                          }}
-                        />
-                      </div>
-                    )}
-                    {filteredMessages.length === 0 && searchQuery && (
-                      <div className="text-center py-8 text-xs" style={{ color: '#666' }}>No messages match "{searchQuery}"</div>
-                    )}
-                    {filteredMessages.map((m, idx) => (
-                      <MessageBubble
-                        key={m.id}
-                        message={m}
-                        index={idx}
-                        onRegenerate={m.role === 'assistant' && !m.streaming ? handleRegenerate : undefined}
-                        onStop={m.role === 'assistant' && m.streaming ? handleStop : undefined}
-                      />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <InputBar
-              onSend={sendMessage}
-              loading={loading}
-              onVoiceStart={() => { exitAmbient(); cancelAutoRestart(); resetTranscript(); startVoiceInput(voiceLanguage) }}
-              onVoiceStop={() => { cancelAutoRestart(); return stopVoiceInput() }}
-              voiceStatus={voiceInputStatus}
-              voiceInterim={interimTranscript}
-              isVoiceSupported={voiceInputSupported}
-              voiceLanguage={voiceLanguage}
-              onCycleLanguage={handleCycleLanguage}
-              personaName={personaName}
-            />
-          </main>
-
-          <Suspense fallback={<div className="w-10 shrink-0" />}>
-            <button type="button" aria-label={intelligenceOpen ? 'Hide intelligence panel' : 'Show intelligence panel'} onClick={() => { setIntelligenceOpen(open => { const next = !open; try { localStorage.setItem('friday_intelligence_open', next ? '1' : '0') } catch {}; return next }) }} className="w-8 shrink-0 self-stretch border-l border-white/[.06] text-[10px] text-[#666] transition-colors hover:text-[#00a8ff]">
-              {intelligenceOpen ? 'ï¿½' : 'ï¿½'}
-            </button>
-            {intelligenceOpen && (
-            <IntelligencePanel
-              news={news}
-              weather={weather}
-              stocks={stocks}
-              repos={repos}
-              systemInfo={systemInfo}
-              recentTools={recentTools}
-              loading={!dataLoaded}
-              earthquakes={earthquakes}
-              crypto={crypto}
-              space={space}
-              cve={cve}
-              clocks={clocks}
-              memoryData={memoryData}
-              onMemoryDelete={handleDeleteMemory}
-              screenData={screenData}
-              computerStatus={computerStatus}
-              onRefreshComputer={() => {
-                getComputerStatus().then(d => { setComputerReady(Boolean(d.mouse_keyboard && d.window_management)); setComputerStatus(d) }).catch(() => {})
-              }}
-              calendarEvents={calendarEvents}
-              calendarAuth={calendarAuth}
-              emailMessages={emailMessages}
-              emailUnread={emailUnread}
-              emailAuth={emailAuth}
-              onCalendarConnect={handleGoogleConnect}
-              onEmailConnect={handleGoogleConnect}
-              briefing={briefing}
-              onPlayBriefing={playBriefing}
-              voiceOutputEnabled={voiceOutputEnabled}
-              automations={automations}
-              onAutomationToggle={handleAutomationToggle}
-              onAutomationDelete={handleAutomationDelete}
-              onAutomationTrigger={handleAutomationTrigger}
-              visionScreenResult={visionScreenResult}
-              visionCameraResult={visionCameraResult}
-              onVisionCaptureCamera={handleVisionCaptureCamera}
-              onVisionCaptureScreen={handleVisionCaptureScreen}
-              visionAnalyzing={visionAnalyzing}
-              holodeckMetrics={{
-                latency: metricsState.latency,
-                memory: metricsState.memory,
-                tokenUsage: metricsState.tokenUsage,
-              }}
-              holodeckGesturePosition={handPosition ?? undefined}
-              holodeckGestureOpenness={openness ?? undefined}
-              holodeckExpanded={holodeckExpanded}
-              onHolodeckToggle={() => setHolodeckExpanded(e => !e)}
-              diaryRefreshToken={diaryRefreshToken}
-            />
-            )}
-          </Suspense>
-        </div>
-        </>
-        )}
-      </div>
-
-      <Suspense fallback={null}>
-        <CommandPalette
-          open={commandOpen}
-          onClose={() => setCommandOpen(false)}
-          commands={commandActions}
-        />
-      </Suspense>
-
-      {workspaceOpen && (
-        <WorkspaceBrowser onClose={() => setWorkspaceOpen(false)} />
-      )}
-
-      {settingsOpen && (
-        <Suspense fallback={null}>
-        <SettingsPanel
-          onClose={() => setSettingsOpen(false)}
-          voiceOutputEnabled={voiceOutputEnabled}
-          onToggleVoiceOutput={handleToggleVoiceOutput}
-          voiceLanguage={voiceLanguage}
-          onCycleLanguage={handleCycleLanguage}
-          wakeWordActive={wakeWordActive}
-          onToggleWakeWord={wakeWordActive ? stopWakeWord : startWakeWord}
-          camActive={camActive}
-          onToggleCamera={toggleCamera}
-          backendOnline={backendOnline}
-          calendarAuth={calendarAuth}
-          emailAuth={emailAuth}
-          onGoogleConnect={handleGoogleConnect}
-          persona={persona}
-          onSetPersona={handleSetPersona}
-          personaPrompt={personaPrompts[persona] || ''}
-          onSetPersonaPrompt={handleSetPersonaPrompt}
-        />
-        </Suspense>
-      )}
-    </div>
+      </section>
+    </main>
   )
 }
 
 export default App
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
