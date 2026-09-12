@@ -3,10 +3,10 @@ import { checkHealth, streamAutopilot } from './core/barebonesApi'
 import { useVoiceInput } from './hooks/useVoiceInput'
 
 type Activity = { time: string; type: string; text: string }
-const DEFAULT_GOAL = 'Improve Friday toward a JARVIS-class autonomous software engineer. Inspect the current workspace first. Use the GitHub repository tools when useful: inspect repositories, access public repositories, fork repositories into the authenticated GitHub account when needed, and clone work into isolated workspaces. Implement the highest-value safe improvement, verify it, and leave the workspace working. Do not modify unrelated repositories or destructive resources.'
+const DEFAULT_GOAL = 'Improve JARVIS toward a JARVIS-class autonomous software engineer. Inspect the current workspace first. Use the GitHub repository tools when useful: inspect repositories, access public repositories, fork repositories into the authenticated GitHub account when needed, and clone work into isolated workspaces. Implement the highest-value safe improvement, verify it, and leave the workspace working. Do not modify unrelated repositories or destructive resources.'
 
 type SavedTask = { goal: string; status: 'running' | 'stopped'; savedAt: number; activity: Activity[] }
-const TASK_KEY = 'friday:active-task:v1'
+const TASK_KEY = 'jarvis:active-task:v1'
 
 function textFromEvent(event: any): string {
   if (typeof event?.content === 'string') return event.content
@@ -169,8 +169,8 @@ export default function App() {
     <div className="barebones">
       <header className="top">
         <div>
-          <strong>FRIDAY</strong>
-          <span className="sub">self-coding workspace</span>
+          <strong>JARVIS</strong>
+          <span className="sub">autonomous self-coding assistant</span>
         </div>
         <div className={apiOnline ? 'online' : 'offline'}>
           {apiOnline ? '● AGENT ONLINE' : '● AGENT OFFLINE'}
@@ -184,7 +184,7 @@ export default function App() {
             value={goal}
             onChange={event => setGoal(event.target.value)}
             disabled={running}
-            placeholder="Tell Friday what to change, build, fix, test, or investigate…"
+            placeholder="Tell JARVIS what to change, build, fix, test, or investigate…"
             autoFocus
           />
           <div className="controls">
@@ -213,7 +213,7 @@ export default function App() {
           </div>
           <div className="feed">
             {activity.length === 0 ? (
-              <div className="empty">Waiting for the coding agent…</div>
+              <div className="empty">Waiting for the JARVIS coding agent…</div>
             ) : (
               activity.map((item, index) => (
                 <div className="event" key={`${item.time}-${index}`}>
@@ -229,7 +229,7 @@ export default function App() {
       </main>
 
       <footer>
-        <span>Friday automatically starts its coding agent when the backend is ready.</span>
+        <span>JARVIS automatically starts its coding agent when the backend is ready.</span>
         <button className="copy" onClick={() => navigator.clipboard?.writeText(activityText)} disabled={!activity.length}>
           Copy activity
         </button>
