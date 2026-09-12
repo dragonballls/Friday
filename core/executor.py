@@ -3,6 +3,7 @@ import os
 from collections.abc import Generator
 from typing import Any
 
+from core.context_manager import compact_messages, save_checkpoint
 from core.logger import Timer, error, warn
 from core.planner import Task
 from core.security import get_approval_registry, get_permission_manager
@@ -77,6 +78,23 @@ class Executor:
         verification_passed = False
 
         for iteration in range(max_iterations):
+            # Keep every provider request below a conservative context budget.
+            # Compaction happens before the request and is persisted so a long
+            # coding run does not eventually die from an oversized transcript.
+            compacted = compact_messages(messages)
+            if compacted:
+                yield {
+                    "type": "context_compacted",
+                    "message_count": len(messages),
+                    "content": "Context compacted; preserving recent work and a durable summary.",
+                }
+            save_checkpoint(
+                self.output_dir,
+                goal=str(getattr(task, "description", task)),
+                stage=f"iteration-{iteration + 1}",
+                messages=messages,
+            )
+
             collected = ""
             tool_calls = None
 
@@ -268,11 +286,23 @@ class Executor:
                 messages.append({"role": "assistant", "content": collected})
                 task.status = "completed"
                 task.result = collected
+                save_checkpoint(
+                    self.output_dir,
+                    goal=str(getattr(task, "description", task)),
+                    stage="task-complete",
+                    messages=messages,
+                )
                 yield {"type": "done", "content": collected}
                 return
 
         task.status = "failed"
         task.error = "Max iterations reached"
+        save_checkpoint(
+            self.output_dir,
+            goal=str(getattr(task, "description", task)),
+            stage="max-iterations",
+            messages=messages,
+        )
         yield {"type": "done", "content": "Max iterations reached."}
 
     def _execute_with_confirmation(self, func_name: str, args: dict, handler) -> "Generator[dict, None, dict]":
