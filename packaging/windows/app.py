@@ -15,12 +15,6 @@ from urllib.request import urlopen
 
 # The packaged smoke test does not need the GUI runtime. Keep the import lazy so
 # missing GUI dependencies cannot prevent the health-check path from running.
-try:
-    pass
-except Exception:  # pragma: no cover
-    pass
-
-
 API_SHUTDOWN: threading.Event | None = None
 
 
