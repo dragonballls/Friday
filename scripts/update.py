@@ -155,7 +155,7 @@ def _validate_candidate(commit: str) -> bool:
             print("Candidate rejected: frontend build failed in the isolated worktree.", file=sys.stderr)
             return False
 
-        if run([npm, "run", "test", "--", "--runInBand"], cwd=staged_desktop) != 0:
+        if run([npm, "run", "test"], cwd=staged_desktop) != 0:
             print("Candidate rejected: frontend tests failed in the isolated worktree.", file=sys.stderr)
             return False
 
