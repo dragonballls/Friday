@@ -14,6 +14,7 @@ from quart import Quart, jsonify, make_response, request
 from quart_cors import cors
 
 from agent.core import Agent
+from agent.self_coding_runtime import is_self_coding_goal, run_self_coding
 
 API_PREFIX = "/api/v1"
 MINIMAL_MODE = True
@@ -153,7 +154,11 @@ async def autopilot():
 
         def run_agent():
             try:
-                for event in agent.run_autopilot(goal, workspace):
+                if is_self_coding_goal(goal):
+                    events = run_self_coding(agent, goal, workspace)
+                else:
+                    events = agent.run_autopilot(goal, workspace)
+                for event in events:
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except Exception as exc:
                 loop.call_soon_threadsafe(
