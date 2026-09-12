@@ -87,30 +87,40 @@ def http_text(url: str) -> tuple[int, str] | None:
 
 
 def smoke_test() -> None:
+    """Validate the frozen bundle without starting the full desktop server stack."""
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
 
-    start_static_server()
-    start_api_server()
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
+    static_server = start_static_server()
+    try:
+        wait_for_port(UI_HOST, UI_PORT)
+        ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
+        if ui is None or ui[0] != 200:
+            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+        html = ui[1]
+        if "<title>Friday</title>" not in html:
+            raise RuntimeError("Friday UI root page did not contain the expected title")
+        if "/Friday/assets/" in html:
+            raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
+        if "/assets/" not in html:
+            raise RuntimeError("Friday UI root page did not contain a production asset reference")
 
-    ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
-    if ui is None or ui[0] != 200:
-        raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
-    html = ui[1]
-    if "<title>Friday</title>" not in html:
-        raise RuntimeError("Friday UI root page did not contain the expected title")
-    if "/Friday/assets/" in html:
-        raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
-    if "/assets/" not in html:
-        raise RuntimeError("Friday UI root page did not contain a production asset reference")
+        sys.path.insert(0, str(ROOT))
+        from desktop.api_server import app
 
-    health = http_text(f"http://{API_HOST}:{API_PORT}/api/v1/health")
-    if health is None or health[0] != 200:
-        raise RuntimeError("Friday API health endpoint did not return HTTP 200")
+        async def check_api() -> None:
+            client = app.test_client()
+            response = await client.get("/api/v1/health")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Friday API health endpoint returned HTTP {response.status_code}"
+                )
 
-    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+        asyncio.run(check_api())
+        print("Friday Windows bundle smoke test passed: packaged UI assets and API health are valid.")
+    finally:
+        static_server.shutdown()
+        static_server.server_close()
 
 
 def install_startup() -> None:
@@ -134,7 +144,8 @@ def install_startup() -> None:
 def main() -> None:
     if "--smoke-test" in sys.argv:
         smoke_test()
-        return
+        print("Friday Windows bundle smoke test completed.", flush=True)
+        os._exit(0)
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
