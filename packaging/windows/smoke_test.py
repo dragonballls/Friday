@@ -28,7 +28,7 @@ def main() -> None:
             if returncode is not None:
                 if returncode != 0:
                     raise SystemExit(f"Friday.exe smoke test exited with code {returncode}")
-                print(f"Friday Windows bundle smoke test passed for version {version}.")
+                print(f"Friday Windows bundle smoke test passed for version {version}.", flush=True)
                 return
             time.sleep(0.25)
         raise SystemExit("Friday.exe smoke test did not complete within 60 seconds")
