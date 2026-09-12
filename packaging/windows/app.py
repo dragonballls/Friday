@@ -22,10 +22,8 @@ API_PORT = 8080
 UI_HOST = "127.0.0.1"
 UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
-# Keep the legacy repository URL until the GitHub repository itself is renamed to
-# dragonballls/jarvis; changing it before the rename would break bootstrap.
-REPO_URL = "https://github.com/dragonballls/Friday.git"
-REPO_ZIP_URL = "https://github.com/dragonballls/Friday/archive/refs/heads/main.zip"
+REPO_URL = "https://github.com/dragonballls/Jarvis.git"
+REPO_ZIP_URL = "https://github.com/dragonballls/Jarvis/archive/refs/heads/main.zip"
 WORKSPACE_NAME = "Jarvis-SelfCoding-Workspace"
 
 
@@ -89,11 +87,6 @@ def _git_clone_workspace(workspace: Path) -> bool:
 
 
 def _initialize_archive_workspace(workspace: Path) -> None:
-    """Fallback for machines without a usable git clone command.
-
-    The archive is converted into a local Git repository with an internal
-    baseline commit, so the safe verifier still has real Git state to inspect.
-    """
     git = shutil.which("git.exe") or shutil.which("git")
     if not git:
         raise RuntimeError("Git is required for Jarvis self-coding verification.")
