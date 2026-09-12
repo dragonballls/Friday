@@ -2,6 +2,20 @@ name: Windows App
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "core/**"
+      - "agent/**"
+      - "providers/**"
+      - "integrations/**"
+      - "plugins/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - "packaging/windows/**"
+      - ".github/workflows/windows-app.yml"
   push:
     branches:
       - main
@@ -70,11 +84,24 @@ jobs:
 
       - name: Build Windows bundle
         shell: pwsh
+        env:
+          FRIDAY_WINDOWS_CONSOLE: "1"
         run: python packaging/windows/build.py
 
       - name: Smoke-test packaged executable
         shell: pwsh
         run: python packaging/windows/smoke_test.py
+
+      - name: Show packaged smoke-test log
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "build/windows/Friday/smoke_test.log"
+          if (Test-Path $log) {
+            Get-Content -Raw $log
+          } else {
+            Write-Host "No smoke_test.log was written"
+          }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

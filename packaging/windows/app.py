@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import os
 import socket
 import sys
@@ -12,9 +13,14 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-import webview
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+
+API_HOST = "127.0.0.1"
+API_PORT = 8080
+UI_HOST = "127.0.0.1"
+UI_PORT = 5173
+SMOKE_WATCHDOG_SECONDS = 35.0
 
 
 def resource_root() -> Path:
@@ -25,13 +31,35 @@ def resource_root() -> Path:
 
 ROOT = resource_root()
 DIST = ROOT / "desktop" / "dist"
-API_HOST = "127.0.0.1"
-API_PORT = 8080
-UI_HOST = "127.0.0.1"
-UI_PORT = 5173
 
 
-def wait_for_port(host: str, port: int, timeout: float = 30.0) -> None:
+def log_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "smoke_test.log"
+    return Path.cwd() / "smoke_test.log"
+
+
+def log(message: str) -> None:
+    line = message.rstrip() + "\n"
+    try:
+        with log_path().open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        pass
+    try:
+        if sys.stdout is not None:
+            print(message, flush=True)
+    except OSError:
+        pass
+
+
+def hard_exit(code: int) -> None:
+    # Windowed PyInstaller bootloaders show a blocking error dialog on uncaught
+    # exceptions. Force-exit so CI never waits on a click that will never come.
+    os._exit(code)
+
+
+def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -62,6 +90,7 @@ def start_static_server() -> ThreadingHTTPServer:
 
 def start_api_server() -> threading.Thread:
     sys.path.insert(0, str(ROOT))
+    log("importing desktop.api_server")
     from desktop.api_server import app
 
     config = Config()
@@ -71,7 +100,12 @@ def start_api_server() -> threading.Thread:
     config.loglevel = "warning"
 
     def runner() -> None:
-        asyncio.run(serve(app, config))
+        try:
+            if sys.platform == "win32":
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            asyncio.run(serve(app, config))
+        except Exception:
+            log("API server thread crashed:\n" + traceback.format_exc())
 
     thread = threading.Thread(target=runner, name="friday-api", daemon=True)
     thread.start()
@@ -86,12 +120,25 @@ def http_text(url: str) -> tuple[int, str] | None:
         return None
 
 
+def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
+    def expire() -> None:
+        log(f"smoke-test watchdog expired after {seconds:.0f} seconds")
+        hard_exit(2)
+
+    timer = threading.Timer(seconds, expire)
+    timer.daemon = True
+    timer.start()
+
+
 def smoke_test() -> None:
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
 
+    os.environ["FRIDAY_SMOKE_TEST"] = "1"
+    log(f"serving UI from {DIST}")
     start_static_server()
     start_api_server()
+    log("waiting for API and UI ports")
     wait_for_port(API_HOST, API_PORT)
     wait_for_port(UI_HOST, UI_PORT)
 
@@ -110,7 +157,7 @@ def smoke_test() -> None:
     if health is None or health[0] != 200:
         raise RuntimeError("Friday API health endpoint did not return HTTP 200")
 
-    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+    log("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
 
 
 def install_startup() -> None:
@@ -133,11 +180,16 @@ def install_startup() -> None:
 
 def main() -> None:
     if "--smoke-test" in sys.argv:
+        arm_smoke_watchdog()
+        log("smoke-test starting")
         smoke_test()
-        return
+        log("smoke-test completed")
+        hard_exit(0)
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
+
+    import webview
 
     install_startup()
     start_static_server()
@@ -158,12 +210,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     try:
         main()
     except Exception:
-        log_path = Path(sys.executable).resolve().parent / "smoke_test.log"
-        try:
-            log_path.write_text(traceback.format_exc(), encoding="utf-8")
-        except OSError:
-            pass
+        log(traceback.format_exc())
+        if "--smoke-test" in sys.argv:
+            hard_exit(1)
         raise

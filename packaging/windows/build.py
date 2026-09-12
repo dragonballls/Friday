@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,9 +10,17 @@ BUILD = ROOT / "build" / "windows"
 DIST = ROOT / "desktop" / "dist"
 ENTRY = ROOT / "packaging" / "windows" / "app.py"
 UPDATER_ENTRY = ROOT / "packaging" / "windows" / "updater.py"
+PROJECT_PACKAGES = ("desktop", "core", "agent", "integrations", "plugins", "providers", "browser", "config", "tools")
+HIDDEN_IMPORTS = (
+    "desktop.api_server",
+    "quart",
+    "quart_cors",
+    "hypercorn",
+    "hypercorn.asyncio",
+)
 
 
-def run(*args: str, workpath: Path | None = None) -> None:
+def run(*args: str) -> None:
     print("+", " ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)
 
@@ -27,6 +36,49 @@ def current_commit() -> str:
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "dev"
 
 
+def console_requested() -> bool:
+    return os.environ.get("FRIDAY_WINDOWS_CONSOLE", "").strip().lower() in {"1", "true", "yes"}
+
+
+def app_pyinstaller_cmd(*, console: bool | None = None) -> list[str]:
+    if console is None:
+        console = console_requested()
+    separator = ";" if os.name == "nt" else os.pathsep
+    cmd = [
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
+        "--console" if console else "--windowed",
+        "--name",
+        "Friday",
+        "--onedir",
+        "--paths",
+        str(ROOT),
+        "--distpath",
+        str(BUILD),
+        "--workpath",
+        str(ROOT / "build" / "pyinstaller-work"),
+        "--add-data",
+        f"{DIST}{separator}desktop/dist",
+        "--collect-all",
+        "webview",
+        "--collect-all",
+        "quart",
+        "--collect-all",
+        "hypercorn",
+    ]
+    for package in PROJECT_PACKAGES:
+        cmd.extend(["--collect-submodules", package])
+    for hidden in HIDDEN_IMPORTS:
+        cmd.extend(["--hidden-import", hidden])
+
+    prompts = ROOT / "prompts"
+    if prompts.exists():
+        cmd.extend(["--add-data", f"{prompts}{separator}prompts"])
+    cmd.append(str(ENTRY))
+    return cmd
+
+
 def main() -> None:
     if not DIST.joinpath("index.html").is_file():
         raise SystemExit("desktop/dist/index.html is missing; run npm run build first")
@@ -37,41 +89,7 @@ def main() -> None:
         shutil.rmtree(BUILD)
     BUILD.mkdir(parents=True, exist_ok=True)
 
-    separator = ";"
-    cmd = [
-        "pyinstaller",
-        "--noconfirm",
-        "--clean",
-        "--windowed",
-        "--name",
-        "Friday",
-        "--onedir",
-        "--distpath",
-        str(BUILD),
-        "--workpath",
-        str(ROOT / "build" / "pyinstaller-work"),
-        "--add-data",
-        f"{DIST}{separator}desktop/dist",
-        "--collect-all",
-        "webview",
-        "--collect-submodules",
-        "core",
-        "--collect-submodules",
-        "agent",
-        "--collect-submodules",
-        "integrations",
-        "--collect-submodules",
-        "plugins",
-        "--collect-submodules",
-        "providers",
-        str(ENTRY),
-    ]
-
-    prompts = ROOT / "prompts"
-    if prompts.exists():
-        cmd[cmd.index(str(ENTRY)):cmd.index(str(ENTRY))] = ["--add-data", f"{prompts}{separator}prompts"]
-
-    run(*cmd)
+    run(*app_pyinstaller_cmd())
 
     updater_cmd = [
         "pyinstaller",

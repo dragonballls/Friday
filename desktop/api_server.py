@@ -1,4 +1,4 @@
-﻿"""Local API server for Friday desktop - streams Agent events via SSE"""
+"""Local API server for Friday desktop - streams Agent events via SSE"""
 
 import argparse
 import asyncio
@@ -175,7 +175,11 @@ app = cors(
     allow_credentials=True,
 )
 
-discover_plugins()
+if os.environ.get("FRIDAY_SMOKE_TEST") == "1":
+    # Packaged Windows smoke tests only need the HTTP app and /health.
+    pass
+else:
+    discover_plugins()
 
 _agents: dict[str, Agent] = {}
 _proactive: ProactiveMonitor | None = None
