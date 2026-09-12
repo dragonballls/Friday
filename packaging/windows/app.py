@@ -6,6 +6,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
@@ -157,4 +158,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        log_path = Path(sys.executable).resolve().parent / "smoke_test.log"
+        try:
+            log_path.write_text(traceback.format_exc(), encoding="utf-8")
+        except OSError:
+            pass
+        raise
