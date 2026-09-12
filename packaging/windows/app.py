@@ -223,7 +223,7 @@ async def _api_server() -> None:
     if workspace is not None:
         sys.path.insert(0, str(workspace))
     sys.path.insert(1, str(ROOT))
-    log(f"API process importing desktop.api_server from {workspace or ROOT}")
+    log(f"API server importing desktop.api_server from {workspace or ROOT}")
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
     from desktop.api_server import app
@@ -236,30 +236,29 @@ async def _api_server() -> None:
     await serve(app, config)
 
 
+def run_api_server_thread() -> threading.Thread:
+    def runner() -> None:
+        try:
+            if sys.platform == "win32":
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            asyncio.run(_api_server())
+        except Exception:
+            log("API server crashed:\n" + traceback.format_exc())
+
+    thread = threading.Thread(target=runner, name="jarvis-api", daemon=True)
+    thread.start()
+    return thread
+
+
 def run_api_process() -> None:
+    """Legacy compatibility entry point; packaged Jarvis uses the in-process thread."""
     try:
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(_api_server())
     except Exception:
-        log("API process crashed:\n" + traceback.format_exc())
+        log("API server crashed:\n" + traceback.format_exc())
         raise
-
-
-def start_api_server_process() -> subprocess.Popen:
-    exe = Path(sys.executable).resolve()
-    command = [str(exe), "--api-server"] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve()), "--api-server"]
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-    log("starting dedicated API process")
-    return subprocess.Popen(
-        command,
-        cwd=str(active_workspace() or ROOT),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creationflags,
-        env=os.environ.copy(),
-    )
 
 
 def http_text(url: str) -> tuple[int, str] | None:
@@ -426,7 +425,7 @@ def _auto_update_loop(workspace: Path) -> None:
                 log("Jarvis source and frontend update completed; restarting onto the updated workspace.")
                 _restart_after_update()
             else:
-                detail = (result.stderr or result.stdout or "").strip().splitlines()[-1:] 
+                detail = (result.stderr or result.stdout or "").strip().splitlines()[-1:]
                 log(f"Auto-update build failed; keeping current version: {detail[0] if detail else 'unknown error'}")
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             log(f"Auto-update loop error; keeping current version: {exc}")
@@ -454,10 +453,11 @@ def main() -> None:
     install_startup()
     start_static_server()
     threading.Thread(target=_auto_update_loop, args=(workspace,), name="jarvis-auto-update", daemon=True).start()
-    api_process = start_api_server_process()
+    run_api_server_thread()
     try:
         wait_for_port(API_HOST, API_PORT, timeout=30.0)
         wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
+        log("Jarvis services ready; opening desktop window")
         webview.create_window(
             "Jarvis",
             f"http://{UI_HOST}:{UI_PORT}/",
@@ -469,12 +469,7 @@ def main() -> None:
         )
         webview.start(debug=False)
     finally:
-        if api_process.poll() is None:
-            api_process.terminate()
-            try:
-                api_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                api_process.kill()
+        log("Jarvis desktop window closed")
 
 
 if __name__ == "__main__":
