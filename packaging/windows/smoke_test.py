@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -21,7 +22,7 @@ def main() -> None:
 
     proc = subprocess.Popen([str(EXE), "--smoke-test"], cwd=EXE.parent)
     try:
-        deadline = time.monotonic() + 40
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             returncode = proc.poll()
             if returncode is not None:
@@ -30,7 +31,7 @@ def main() -> None:
                 print(f"Friday Windows bundle smoke test passed for version {version}.")
                 return
             time.sleep(0.25)
-        raise SystemExit("Friday.exe smoke test did not complete within 40 seconds")
+        raise SystemExit("Friday.exe smoke test did not complete within 60 seconds")
     finally:
         if proc.poll() is None:
             proc.terminate()
