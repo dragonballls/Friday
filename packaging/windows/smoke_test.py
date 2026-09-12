@@ -6,32 +6,32 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build" / "windows"
-EXE = BUILD / "Friday-JARVIS-SelfCoding.exe"
-SMOKE_BUNDLE = BUILD / "_smoke"
-SMOKE_EXE = SMOKE_BUNDLE / "FridaySmoke.exe"
+EXE = BUILD / "Jarvis.exe"
+SMOKE_BUNDLE = BUILD / "_smoke" / "JarvisSmoke"
+SMOKE_EXE = SMOKE_BUNDLE / "JarvisSmoke.exe"
 VERSION = BUILD / "VERSION"
-LOG = BUILD / "friday.log"
+LOG = BUILD / "jarvis.log"
 
 
 def dump_log() -> None:
     if not LOG.is_file():
-        print("No packaged Friday log was produced.")
+        print("No packaged Jarvis log was produced.")
         return
     try:
-        print("----- packaged friday.log -----")
+        print("----- packaged jarvis.log -----")
         print(LOG.read_text(encoding="utf-8", errors="replace"))
-        print("----- end packaged friday.log -----")
+        print("----- end packaged jarvis.log -----")
     except OSError as exc:
-        print(f"Could not read packaged Friday log: {exc}")
+        print(f"Could not read packaged Jarvis log: {exc}")
 
 
 def main() -> None:
     for required in (EXE, SMOKE_EXE, VERSION):
         if not required.is_file():
-            raise SystemExit(f"Missing Windows app file: {required}")
+            raise SystemExit(f"Missing Windows Jarvis file: {required}")
     version = VERSION.read_text(encoding="utf-8").strip()
     if not version:
-        raise SystemExit("Windows app VERSION file is empty")
+        raise SystemExit("Windows Jarvis VERSION file is empty")
 
     # The smoke binary uses a console bootloader so native boot/import failures
     # are visible in CI while the real user app remains GUI-only.
@@ -43,13 +43,13 @@ def main() -> None:
             if returncode is not None:
                 if returncode != 0:
                     dump_log()
-                    raise SystemExit(f"FridaySmoke.exe smoke test exited with code {returncode}")
-                print(f"Friday single-file Windows app smoke test passed for version {version}.")
+                    raise SystemExit(f"JarvisSmoke.exe smoke test exited with code {returncode}")
+                print(f"Jarvis single-file Windows app smoke test passed for version {version}.")
                 dump_log()
                 return
             time.sleep(0.25)
         dump_log()
-        raise SystemExit("FridaySmoke.exe smoke test did not complete within 40 seconds")
+        raise SystemExit("JarvisSmoke.exe smoke test did not complete within 40 seconds")
     finally:
         if proc.poll() is None:
             proc.terminate()
