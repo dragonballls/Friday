@@ -3,6 +3,8 @@ import { checkHealth, streamAutopilot } from './core/barebonesApi'
 import { useVoiceInput } from './hooks/useVoiceInput'
 
 type Activity = { time: string; type: string; text: string }
+type SavedTask = { goal: string; status: 'running' | 'stopped'; savedAt: number; activity: Activity[] }
+const TASK_KEY = 'friday:active-task:v1'
 
 function textFromEvent(event: any): string {
   if (typeof event?.content === 'string') return event.content
@@ -18,6 +20,18 @@ function stamp() {
   return new Date().toLocaleTimeString([], { hour12: false })
 }
 
+function loadSavedTask(): SavedTask | null {
+  try {
+    const raw = window.localStorage.getItem(TASK_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as SavedTask
+    if (!parsed?.goal || !['running', 'stopped'].includes(parsed.status)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export default function App() {
   const [goal, setGoal] = useState('')
   const [activity, setActivity] = useState<Activity[]>([])
@@ -26,6 +40,7 @@ export default function App() {
   const [error, setError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const resumeAttemptedRef = useRef(false)
   const {
     isSupported,
     status,
@@ -68,8 +83,67 @@ export default function App() {
   }, [activity])
 
   useEffect(() => {
+    const saved = loadSavedTask()
+    if (saved) {
+      setGoal(saved.goal)
+      setActivity(saved.activity || [])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!goal.trim()) return
+    const saved = loadSavedTask()
+    if (!saved) return
+    try {
+      window.localStorage.setItem(TASK_KEY, JSON.stringify({ ...saved, goal, activity }))
+    } catch {
+      // Local persistence is best-effort; the running agent remains authoritative.
+    }
+  }, [goal, activity])
+
+  useEffect(() => {
+    if (!apiOnline || running || resumeAttemptedRef.current) return
+    const saved = loadSavedTask()
+    if (!saved || saved.status !== 'running') return
+    resumeAttemptedRef.current = true
+    const text = saved.goal.trim()
+    if (!text) return
+
+    setRunning(true)
+    setError('')
+    setActivity(previous => [...previous, { time: stamp(), type: 'RESUME', text: 'Resuming unfinished coding work after startup…' }].slice(-500))
+    abortRef.current = streamAutopilot(
+      text,
+      event => {
+        const item = { time: stamp(), type: String(event?.type || 'EVENT').toUpperCase(), text: textFromEvent(event) }
+        setActivity(previous => [...previous, item].slice(-500))
+      },
+      (requestError: any) => {
+        const message = requestError?.message || 'Coding run failed.'
+        setError(message)
+        setRunning(false)
+        setActivity(previous => [...previous, { time: stamp(), type: 'ERROR', text: message }].slice(-500))
+      },
+      () => {
+        setRunning(false)
+        setActivity(previous => [...previous, { time: stamp(), type: 'STATUS', text: 'Coding run ended.' }].slice(-500))
+        abortRef.current = null
+        try { window.localStorage.removeItem(TASK_KEY) } catch { /* best effort */ }
+      },
+    )
+  }, [apiOnline, running])
+
+  useEffect(() => {
     return () => abortRef.current?.abort()
   }, [])
+
+  const persist = (nextStatus: 'running' | 'stopped', nextActivity: Activity[] = activity) => {
+    try {
+      window.localStorage.setItem(TASK_KEY, JSON.stringify({ goal: goal.trim(), status: nextStatus, savedAt: Date.now(), activity: nextActivity.slice(-500) }))
+    } catch {
+      // Keep the application usable when browser storage is unavailable.
+    }
+  }
 
   const add = (type: string, text: string) => {
     setActivity(previous => [...previous, { time: stamp(), type, text }].slice(-500))
@@ -80,6 +154,7 @@ export default function App() {
     if (!text || running || !apiOnline) return
 
     setError('')
+    persist('running')
     setRunning(true)
     add('REQUEST', text)
     add('AGENT', 'Starting a real coding run…')
@@ -91,11 +166,14 @@ export default function App() {
         const message = requestError?.message || 'Coding run failed.'
         setError(message)
         add('ERROR', message)
+        setRunning(false)
+        persist('running')
       },
       () => {
         setRunning(false)
         add('STATUS', 'Coding run ended. The activity feed is the runtime record.')
         abortRef.current = null
+        try { window.localStorage.removeItem(TASK_KEY) } catch { /* best effort */ }
       },
     )
   }
@@ -104,7 +182,8 @@ export default function App() {
     abortRef.current?.abort()
     abortRef.current = null
     setRunning(false)
-    add('STOP', 'Stopped by user.')
+    add('STOP', 'Stopped by user. The task remains saved for manual resume.')
+    persist('stopped')
   }
 
   const toggleVoice = () => {
@@ -146,7 +225,7 @@ export default function App() {
               <button className="danger" onClick={stop}>Stop</button>
             ) : (
               <button className="primary" onClick={start} disabled={!goal.trim() || !apiOnline}>
-                Start coding
+                {loadSavedTask()?.status === 'stopped' ? 'Resume coding' : 'Start coding'}
               </button>
             )}
           </div>
