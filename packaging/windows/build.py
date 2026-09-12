@@ -26,7 +26,7 @@ def current_commit() -> str:
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "dev"
 
 
-def friday_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: Path, workpath: Path) -> list[str]:
+def jarvis_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: Path, workpath: Path) -> list[str]:
     separator = ";"
     args = [
         "pyinstaller", "--noconfirm", "--clean",
@@ -58,28 +58,28 @@ def main() -> None:
     BUILD.mkdir(parents=True, exist_ok=True)
 
     # User-facing build: a single self-contained GUI executable.
-    run(*friday_pyinstaller_args(
-        "Friday-JARVIS-SelfCoding", True, True, BUILD,
+    run(*jarvis_pyinstaller_args(
+        "Jarvis", True, True, BUILD,
         ROOT / "build" / "pyinstaller-work"
     ))
 
-    # CI diagnostic build: same entrypoint, console bootloader, used only for smoke testing.
+    # CI diagnostic build: console bootloader, used only for smoke testing.
     smoke_dist = BUILD / "_smoke"
-    run(*friday_pyinstaller_args(
-        "FridaySmoke", False, False, smoke_dist,
+    run(*jarvis_pyinstaller_args(
+        "JarvisSmoke", False, False, smoke_dist,
         ROOT / "build" / "pyinstaller-work-smoke"
     ))
 
-    exe = BUILD / "Friday-JARVIS-SelfCoding.exe"
-    smoke_exe = smoke_dist / "FridaySmoke.exe"
+    exe = BUILD / "Jarvis.exe"
+    smoke_exe = smoke_dist / "JarvisSmoke" / "JarvisSmoke.exe"
     if not exe.is_file():
         raise SystemExit(f"PyInstaller did not create {exe}")
     if not smoke_exe.is_file():
         raise SystemExit(f"PyInstaller did not create {smoke_exe}")
 
     (BUILD / "VERSION").write_text(current_commit() + "\n", encoding="utf-8")
-    print(f"Windows single-file app ready: {exe}")
-    print(f"Windows smoke diagnostic ready: {smoke_exe}")
+    print(f"Windows Jarvis app ready: {exe}")
+    print(f"Windows Jarvis smoke diagnostic ready: {smoke_exe}")
 
 
 if __name__ == "__main__":
