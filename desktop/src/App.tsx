@@ -3,7 +3,7 @@ import { checkHealth, streamAutopilot } from './core/barebonesApi'
 import { useVoiceInput } from './hooks/useVoiceInput'
 
 type Activity = { time: string; type: string; text: string }
-const DEFAULT_GOAL = 'Improve Friday toward a JARVIS-class AI assistant. Inspect the workspace, identify the highest-value safe improvement, implement it, verify it, and leave the workspace working.'
+const DEFAULT_GOAL = 'Improve Friday toward a JARVIS-class autonomous software engineer. Inspect the current workspace first. Use the GitHub repository tools when useful: inspect repositories, access public repositories, fork repositories into the authenticated GitHub account when needed, and clone work into isolated workspaces. Implement the highest-value safe improvement, verify it, and leave the workspace working. Do not modify unrelated repositories or destructive resources.'
 
 type SavedTask = { goal: string; status: 'running' | 'stopped'; savedAt: number; activity: Activity[] }
 const TASK_KEY = 'friday:active-task:v1'
@@ -43,7 +43,6 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const autoStartedRef = useRef(false)
-  const resumeAttemptedRef = useRef(false)
   const {
     isSupported,
     status,
@@ -132,13 +131,11 @@ export default function App() {
   useEffect(() => {
     if (!apiOnline || running || autoStartedRef.current) return
     const saved = loadSavedTask()
+    autoStartedRef.current = true
     if (saved && saved.status === 'running' && saved.goal.trim()) {
-      resumeAttemptedRef.current = true
-      autoStartedRef.current = true
       startRun(saved.goal.trim(), 'RESUME')
       return
     }
-    autoStartedRef.current = true
     startRun(DEFAULT_GOAL, 'AUTO')
   }, [apiOnline, running])
 
@@ -210,7 +207,7 @@ export default function App() {
           <div className="activity-head">
             <div>
               <div className="label">LIVE SELF-CODING ACTIVITY</div>
-              <div className="hint">Real events from the agent runtime. No simulated progress.</div>
+              <div className="hint">Real events from the agent runtime. GitHub repository actions are shown here when used.</div>
             </div>
             <span className={running ? 'running' : 'idle'}>{running ? 'RUNNING' : 'IDLE'}</span>
           </div>
