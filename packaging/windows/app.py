@@ -74,14 +74,14 @@ class QuietHandler(SimpleHTTPRequestHandler):
         return
 
 
-def start_static_server() -> ThreadingHTTPServer:
+def start_static_server(port: int = UI_PORT) -> ThreadingHTTPServer:
     if not DIST.is_dir() or not (DIST / "index.html").is_file():
         raise RuntimeError(f"Frontend bundle missing: {DIST / 'index.html'}")
 
     def handler(*args, **kwargs):
         return QuietHandler(*args, directory=str(DIST), **kwargs)
 
-    server = ThreadingHTTPServer((UI_HOST, UI_PORT), handler)
+    server = ThreadingHTTPServer((UI_HOST, port), handler)
     thread = threading.Thread(target=server.serve_forever, name="friday-static", daemon=True)
     thread.start()
     return server
@@ -155,10 +155,12 @@ def smoke_test() -> None:
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
     os.environ["FRIDAY_SMOKE_TEST"] = "1"
-    ui_server = start_static_server()
+    ui_server = start_static_server(port=0)
+    smoke_port = int(ui_server.server_address[1])
+    log(f"smoke-test UI listening on {UI_HOST}:{smoke_port}")
     try:
-        wait_for_port(UI_HOST, UI_PORT)
-        ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
+        wait_for_port(UI_HOST, smoke_port)
+        ui = http_text(f"http://{UI_HOST}:{smoke_port}/")
         if ui is None or ui[0] != 200:
             raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
         html = ui[1]
@@ -168,9 +170,11 @@ def smoke_test() -> None:
             raise RuntimeError("Windows UI bundle incorrectly references /Friday/ assets")
         if "/assets/" not in html:
             raise RuntimeError("Friday UI root page did not contain a production asset reference")
+        log("smoke-test UI checks passed")
         status, body = asyncio.run(quart_health_check())
         if status != 200:
             raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
+        log("smoke-test API health passed")
     finally:
         ui_server.shutdown()
         ui_server.server_close()
