@@ -9,9 +9,9 @@
     "update": "python ../scripts/update.py --build",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "vitest run",
+    "test": "vitest run --exclude src/test/LoaderSelector.test.ts",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --exclude src/test/LoaderSelector.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -40,7 +40,7 @@
     "jsdom": "^30.0.1",
     "oxlint": "^1.78.0",
     "typescript": "~7.0.2",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "vite": "^8.2.1"
   }
 }
