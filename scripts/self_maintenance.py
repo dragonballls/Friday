@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from typing import Any
 
 from core.github_self_maintenance import GitHubSelfMaintenance, GitHubSelfMaintenanceError
