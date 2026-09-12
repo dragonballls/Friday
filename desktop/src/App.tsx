@@ -29,18 +29,22 @@ declare global {
   }
 }
 
+const DEFAULT_SELF_CODING_GOAL =
+  'Continue improving Friday toward a JARVIS-class AI assistant. Inspect the current workspace, identify the highest-value safe improvement, implement it, verify it, and leave the workspace in a working state.'
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: 'Good evening. I’m Friday. Talk to me, or give me something to build.' },
+    { role: 'assistant', content: 'Good evening. I’m Friday. I’m ready to talk and improve myself.' },
   ])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [codingBusy, setCodingBusy] = useState(false)
-  const [codingGoal, setCodingGoal] = useState('')
+  const [codingGoal, setCodingGoal] = useState(DEFAULT_SELF_CODING_GOAL)
   const [codingLog, setCodingLog] = useState<string[]>([])
   const [online, setOnline] = useState(false)
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const autoCodingStarted = useRef(false)
 
   const SpeechRecognitionCtor = useMemo(
     () => window.SpeechRecognition || window.webkitSpeechRecognition,
@@ -136,11 +140,8 @@ function App() {
     recognition.start()
   }
 
-  const startSelfCoding = (event?: FormEvent) => {
-    event?.preventDefault()
-    const goal = codingGoal.trim()
+  const runSelfCoding = (goal: string) => {
     if (!goal || codingBusy) return
-
     setCodingLog([`Starting self-coding task: ${goal}`])
     setCodingBusy(true)
 
@@ -155,6 +156,17 @@ function App() {
       },
       () => setCodingBusy(false),
     )
+  }
+
+  useEffect(() => {
+    if (!online || autoCodingStarted.current) return
+    autoCodingStarted.current = true
+    runSelfCoding(DEFAULT_SELF_CODING_GOAL)
+  }, [online])
+
+  const startSelfCoding = (event?: FormEvent) => {
+    event?.preventDefault()
+    runSelfCoding(codingGoal.trim())
   }
 
   return (
@@ -196,7 +208,7 @@ function App() {
 
       <section className="self-code card">
         <div className="section-title">Self-coding</div>
-        <p className="muted">Give Friday a coding goal. It can plan, edit, test, and iterate through the existing agent system.</p>
+        <p className="muted">Friday starts a safe improvement run automatically and stays available for conversation.</p>
         <form className="composer" onSubmit={startSelfCoding}>
           <input
             value={codingGoal}
@@ -204,7 +216,7 @@ function App() {
             placeholder="What should Friday build or improve?"
             disabled={codingBusy}
           />
-          <button type="submit" disabled={codingBusy || !codingGoal.trim()}>{codingBusy ? 'Working…' : 'Start'}</button>
+          <button type="submit" disabled={codingBusy || !codingGoal.trim()}>{codingBusy ? 'Working…' : 'Run again'}</button>
         </form>
         <div className="coding-log" aria-live="polite">
           {codingLog.length === 0 ? <span className="muted">No coding task running.</span> : codingLog.map((line, index) => <div key={index}>{line}</div>)}
