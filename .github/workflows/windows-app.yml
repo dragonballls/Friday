@@ -68,7 +68,7 @@ jobs:
         run: |
           if (-not (Test-Path desktop/dist/index.html)) { throw "desktop/dist/index.html was not produced" }
 
-      - name: Build Windows bundle
+      - name: Build Windows single-file app
         shell: pwsh
         run: python packaging/windows/build.py
 
@@ -76,10 +76,10 @@ jobs:
         shell: pwsh
         run: python packaging/windows/smoke_test.py
 
-      - name: Upload Windows artifact
+      - name: Upload single-file Windows app
         uses: actions/upload-artifact@v4
         with:
-          name: Friday-Windows
-          path: build/windows/Friday
+          name: Friday-JARVIS-SelfCoding-Windows
+          path: build/windows/Friday-JARVIS-SelfCoding.exe
           if-no-files-found: error
           retention-days: 30
