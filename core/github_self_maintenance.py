@@ -1,13 +1,8 @@
 """Guarded GitHub-native self-maintenance for Friday.
 
-This module gives Friday a small, explicit control plane over its own public
-repository. It can inspect GitHub Actions failures, create an isolated branch,
-read repository files, write approved files on that branch, and open a PR.
-
-The controller never writes to ``main`` and never merges a PR. Autonomous
-repair is opt-in through ``FRIDAY_GITHUB_AUTOFIX=1``; interactive tool calls
-may still perform a requested repair when the caller explicitly asks Friday
-to do so.
+Friday can inspect its own GitHub Actions, create an isolated repair branch,
+read and update approved source files, and open a PR. It never writes to or
+merges ``main``. Automated repair is opt-in through ``FRIDAY_GITHUB_AUTOFIX=1``.
 """
 
 from __future__ import annotations
@@ -25,14 +20,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_BLOCKED_PATH_PARTS = {
-    ".git",
-    ".github/workflows",
-    ".env",
-    ".venv",
-    "node_modules",
-    "__pycache__",
-}
+_BLOCKED_PATH_PARTS = {".git", ".env", ".venv", "node_modules", "__pycache__"}
 _SECRET_MARKERS = (
     "-----BEGIN PRIVATE KEY-----",
     "-----BEGIN RSA PRIVATE KEY-----",
@@ -42,15 +30,8 @@ _SECRET_MARKERS = (
     "OPENAI_API_KEY=",
 )
 _ALLOWED_PREFIXES = (
-    "agent/",
-    "coding/",
-    "config/",
-    "core/",
-    "desktop/src/",
-    "packaging/",
-    "plugins/",
-    "scripts/",
-    "tests/",
+    "agent/", "coding/", "config/", "core/", "desktop/src/",
+    "packaging/", "plugins/", "scripts/", "tests/",
 )
 
 
@@ -77,14 +58,15 @@ class GitHubSelfMaintenance:
     def configured(self) -> bool:
         return bool(self.token)
 
-    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    def _request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None, *, expect_json: bool = True
+    ) -> Any:
         if not self.token:
             raise GitHubSelfMaintenanceError(
                 "GitHub self-maintenance requires FRIDAY_GITHUB_TOKEN or GITHUB_TOKEN."
             )
-        url = self.api_root + path
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(url, data=body, method=method)
+        request = urllib.request.Request(self.api_root + path, data=body, method=method)
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("Authorization", f"Bearer {self.token}")
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
@@ -92,7 +74,7 @@ class GitHubSelfMaintenance:
             request.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read().decode("utf-8")
+                raw = response.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[-2000:]
             raise GitHubSelfMaintenanceError(
@@ -100,26 +82,24 @@ class GitHubSelfMaintenance:
             ) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise GitHubSelfMaintenanceError(f"GitHub API request failed: {exc}") from exc
-        return json.loads(raw) if raw else None
+        if not expect_json:
+            return raw
+        try:
+            return json.loads(raw) if raw else None
+        except json.JSONDecodeError as exc:
+            raise GitHubSelfMaintenanceError(f"GitHub returned invalid JSON for {method} {path}") from exc
 
     def status(self) -> dict[str, Any]:
         repo = self._request("GET", f"/repos/{self.repository}")
-        runs = self._request(
-            "GET",
-            f"/repos/{self.repository}/actions/runs?branch=main&per_page=10",
-        )
-        recent = []
-        for run in runs.get("workflow_runs", []):
-            recent.append(
-                {
-                    "id": run.get("id"),
-                    "name": run.get("name"),
-                    "status": run.get("status"),
-                    "conclusion": run.get("conclusion"),
-                    "head_sha": run.get("head_sha"),
-                    "html_url": run.get("html_url"),
-                }
-            )
+        runs = self._request("GET", f"/repos/{self.repository}/actions/runs?branch=main&per_page=10")
+        recent = [
+            {
+                "id": run.get("id"), "name": run.get("name"),
+                "status": run.get("status"), "conclusion": run.get("conclusion"),
+                "head_sha": run.get("head_sha"), "html_url": run.get("html_url"),
+            }
+            for run in runs.get("workflow_runs", [])
+        ]
         return {
             "repository": self.repository,
             "default_branch": repo.get("default_branch"),
@@ -129,14 +109,9 @@ class GitHubSelfMaintenance:
         }
 
     def latest_failed_run(self) -> dict[str, Any] | None:
-        runs = self._request(
-            "GET",
-            f"/repos/{self.repository}/actions/runs?branch=main&status=failure&per_page=10",
-        )
+        runs = self._request("GET", f"/repos/{self.repository}/actions/runs?branch=main&status=failure&per_page=10")
         failed = [run for run in runs.get("workflow_runs", []) if run.get("conclusion") == "failure"]
-        if not failed:
-            return None
-        return failed[0]
+        return failed[0] if failed else None
 
     def workflow_failure_context(self, run_id: int) -> dict[str, Any]:
         jobs = self._request("GET", f"/repos/{self.repository}/actions/runs/{run_id}/jobs?per_page=100")
@@ -145,26 +120,23 @@ class GitHubSelfMaintenance:
             if job.get("conclusion") != "failure":
                 continue
             job_id = job.get("id")
-            log = ""
             try:
-                log = str(self._request("GET", f"/repos/{self.repository}/actions/jobs/{job_id}/logs"))
+                log = self._request("GET", f"/repos/{self.repository}/actions/jobs/{job_id}/logs", expect_json=False)
             except GitHubSelfMaintenanceError as exc:
                 log = f"Unable to fetch job log: {exc}"
-            failures.append(
-                {
-                    "job_id": job_id,
-                    "name": job.get("name"),
-                    "html_url": job.get("html_url"),
-                    "log": log[-20000:],
-                }
-            )
+            failures.append({
+                "job_id": job_id,
+                "name": job.get("name"),
+                "html_url": job.get("html_url"),
+                "log": str(log)[-20000:],
+            })
         return {"run_id": run_id, "failures": failures}
 
     @staticmethod
     def normalize_path(path: str) -> str:
-        candidate = path.replace("\\", "/").strip().lstrip("/")
+        candidate = str(path).replace("\\", "/").strip().lstrip("/")
         pure = PurePosixPath(candidate)
-        if not candidate or candidate.startswith("../") or ".." in pure.parts:
+        if not candidate or ".." in pure.parts:
             raise GitHubSelfMaintenanceError(f"Path escapes repository root: {path}")
         return str(pure)
 
@@ -189,165 +161,118 @@ class GitHubSelfMaintenance:
         return str(ref["object"]["sha"])
 
     def create_branch(self, branch: str, base_sha: str | None = None) -> str:
-        branch = self.normalize_path(branch)
-        branch = branch.strip("/")
-        if branch in {"main", "master"} or branch.startswith("main/"):
+        branch = self.normalize_path(branch).strip("/")
+        if branch in {"main", "master"} or branch.startswith("main/") or branch.startswith("master/"):
             raise GitHubSelfMaintenanceError("Self-maintenance branches may not target main/master.")
         sha = base_sha or self.main_head()
-        self._request(
-            "POST",
-            f"/repos/{self.repository}/git/refs",
-            {"ref": f"refs/heads/{branch}", "sha": sha},
-        )
+        self._request("POST", f"/repos/{self.repository}/git/refs", {"ref": f"refs/heads/{branch}", "sha": sha})
         return branch
 
     def read_file(self, path: str, ref: str = "main") -> GitHubFile:
         normalized = self.normalize_path(path)
         encoded = urllib.parse.quote(normalized, safe="/")
-        payload = self._request(
-            "GET",
-            f"/repos/{self.repository}/contents/{encoded}?ref={urllib.parse.quote(ref, safe='/:')}",
-        )
+        ref_encoded = urllib.parse.quote(ref, safe="/:.-_")
+        payload = self._request("GET", f"/repos/{self.repository}/contents/{encoded}?ref={ref_encoded}")
         if not isinstance(payload, dict) or payload.get("type") != "file":
             raise GitHubSelfMaintenanceError(f"GitHub path is not a file: {normalized}")
         raw = base64.b64decode(payload["content"].replace("\n", "")).decode("utf-8")
-        return GitHubFile(path=normalized, content=raw, sha=str(payload["sha"]))
+        return GitHubFile(normalized, raw, str(payload["sha"]))
 
     def write_file(self, path: str, content: str, branch: str, message: str) -> dict[str, str]:
         normalized = self.validate_write(path, content)
-        branch = branch.strip("/")
-        if branch in {"main", "master"} or branch.startswith("main/"):
+        branch = self.normalize_path(branch).strip("/")
+        if branch in {"main", "master"} or branch.startswith("main/") or branch.startswith("master/"):
             raise GitHubSelfMaintenanceError("Refusing to write self-maintenance changes directly to main/master.")
-        try:
-            current = self.read_file(normalized, ref=branch)
-            sha = current.sha
-            method = "PUT"
-        except GitHubSelfMaintenanceError as exc:
-            if "not a file" in str(exc).lower() or "404" in str(exc):
-                sha = None
-                method = "PUT"
-            else:
-                raise
         payload: dict[str, Any] = {
             "message": message[:200],
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
             "branch": branch,
         }
-        if sha:
-            payload["sha"] = sha
+        try:
+            payload["sha"] = self.read_file(normalized, ref=branch).sha
+        except GitHubSelfMaintenanceError as exc:
+            if "404" not in str(exc):
+                raise
         encoded = urllib.parse.quote(normalized, safe="/")
         result = self._request("PUT", f"/repos/{self.repository}/contents/{encoded}", payload)
         return {"path": normalized, "commit_sha": str(result["commit"]["sha"]), "blob_sha": str(result["content"]["sha"])}
 
     def open_pr(self, branch: str, title: str, body: str, draft: bool = False) -> dict[str, Any]:
-        branch = branch.strip("/")
+        branch = self.normalize_path(branch).strip("/")
         if branch in {"main", "master"}:
             raise GitHubSelfMaintenanceError("A pull request head must be an isolated branch.")
         return self._request(
-            "POST",
-            f"/repos/{self.repository}/pulls",
-            {
-                "title": title[:256],
-                "body": body[:10000],
-                "head": branch,
-                "base": "main",
-                "draft": bool(draft),
-                "maintainer_can_modify": True,
-            },
+            "POST", f"/repos/{self.repository}/pulls",
+            {"title": title[:256], "body": body[:10000], "head": branch, "base": "main", "draft": bool(draft), "maintainer_can_modify": True},
         )
 
     def repair_latest_failure(self, apply: bool = False, max_files: int = 3) -> dict[str, Any]:
         failure = self.latest_failed_run()
         if failure is None:
             return {"success": True, "changed": False, "message": "No failed main-branch workflow was found."}
-
         context = self.workflow_failure_context(int(failure["id"]))
-        prompt = self._build_repair_prompt(failure, context, max_files=max_files)
         from agent.llm import chat as llm_chat
-
-        response = llm_chat(
+        events = list(llm_chat(
             [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are Friday's repository repair planner. Return ONLY valid JSON with "
-                        "an object containing 'summary' and 'edits'. 'edits' is an array of at most "
-                        f"{max_files} objects, each with path, content, and reason. Provide complete file "
-                        "contents, not diffs. Never modify workflows, secrets, binaries, or unrelated files."
-                    ),
-                },
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": (
+                    "You are Friday's repository repair planner. Return ONLY valid JSON with an object containing "
+                    "'summary' and 'edits'. 'edits' is an array of at most "
+                    f"{max_files} objects, each with path, content, and reason. Provide complete file contents, "
+                    "not diffs. Never modify workflows, secrets, binaries, or unrelated files."
+                )},
+                {"role": "user", "content": self._build_repair_prompt(failure, context, max_files)},
             ],
             provider_name="zen_coder",
-        )
+        ))
+        errors = [str(e.get("error") or e.get("content")) for e in events if isinstance(e, dict) and e.get("type") == "error"]
+        if errors:
+            raise GitHubSelfMaintenanceError(errors[-1])
+        response = "".join(
+            str(event.get("content", ""))
+            for event in events if isinstance(event, dict) and event.get("type") in {"tokens", "done"}
+        ).strip()
         plan = self._parse_repair_plan(response)
         if not apply:
             return {"success": True, "changed": False, "mode": "plan", "failure": failure, "plan": plan}
-
         branch = f"friday/self-repair-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
         self.create_branch(branch, base_sha=str(failure.get("head_sha") or self.main_head()))
-        changed = []
-        for edit in plan["edits"]:
-            result = self.write_file(
-                edit["path"],
-                edit["content"],
-                branch,
-                f"Friday self-repair: {edit['path']}",
-            )
-            changed.append(result)
+        changed = [
+            self.write_file(edit["path"], edit["content"], branch, f"Friday self-repair: {edit['path']}")
+            for edit in plan["edits"]
+        ]
         pr = self.open_pr(
             branch,
             f"fix: Friday self-repair for {failure.get('name', 'failed workflow')}",
-            (
-                "Automated Friday self-repair.\n\n"
-                f"Workflow: {failure.get('name')}\n"
-                f"Run: {failure.get('html_url')}\n\n"
-                f"Reasoning: {plan['summary']}\n\n"
-                "Changes are isolated to a branch and require the normal CI/PR gates before merge."
-            ),
-            draft=False,
+            "Automated Friday self-repair.\n\n"
+            f"Workflow: {failure.get('name')}\nRun: {failure.get('html_url')}\n\n"
+            f"Reasoning: {plan['summary']}\n\n"
+            "Changes are isolated to a branch and require the normal CI/PR gates before merge.",
         )
-        return {
-            "success": True,
-            "changed": True,
-            "branch": branch,
-            "changes": changed,
-            "pr": {"number": pr.get("number"), "url": pr.get("html_url")},
-            "failure": failure,
-            "plan": plan,
-        }
+        return {"success": True, "changed": True, "branch": branch, "changes": changed,
+                "pr": {"number": pr.get("number"), "url": pr.get("html_url")},
+                "failure": failure, "plan": plan}
 
     @staticmethod
     def _build_repair_prompt(failure: dict[str, Any], context: dict[str, Any], max_files: int) -> str:
-        logs = "\n\n".join(
-            f"JOB {item.get('name')}\n{item.get('log', '')}" for item in context.get("failures", [])
-        )[-40000:]
+        logs = "\n\n".join(f"JOB {item.get('name')}\n{item.get('log', '')}" for item in context.get("failures", []))[-40000:]
         paths = []
-        for match in re.findall(r"(?:File|file)[ \t]+[\"']([^\"']+\.py|[^\"']+\.(?:ts|tsx|js|jsx))[\"']", logs):
+        for match in re.findall(r"(?:File|file)[ \t]+[\"']([^\"']+\.(?:py|ts|tsx|js|jsx))[\"']", logs):
             normalized = match.replace("\\", "/").lstrip("./")
             if normalized not in paths and normalized.startswith(_ALLOWED_PREFIXES):
                 paths.append(normalized)
             if len(paths) >= max_files:
                 break
         return (
-            f"Repository: {failure.get('name')}\n"
-            f"Failed run URL: {failure.get('html_url')}\n"
-            f"Head SHA: {failure.get('head_sha')}\n"
-            f"Likely files from the stack trace: {paths}\n\n"
-            "Failure logs:\n"
-            f"{logs}\n\n"
-            "Produce the smallest safe correction. Preserve existing architecture and tests. "
-            "Do not invent files that are not needed."
+            f"Repository workflow: {failure.get('name')}\nFailed run URL: {failure.get('html_url')}\n"
+            f"Head SHA: {failure.get('head_sha')}\nLikely files from stack traces: {paths}\n\n"
+            f"Failure logs:\n{logs}\n\nProduce the smallest safe correction. Preserve existing architecture and tests."
         )
 
-    @staticmethod
-    def _parse_repair_plan(response: Any) -> dict[str, Any]:
-        text = response if isinstance(response, str) else str(response)
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.startswith("json"):
-                text = text[4:].lstrip()
+    @classmethod
+    def _parse_repair_plan(cls, response: str) -> dict[str, Any]:
+        text = str(response).strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -358,12 +283,6 @@ class GitHubSelfMaintenance:
         for edit in parsed["edits"]:
             if not isinstance(edit, dict) or not isinstance(edit.get("path"), str) or not isinstance(edit.get("content"), str):
                 raise GitHubSelfMaintenanceError("Every repair edit must include string path and content.")
-            normalized = GitHubSelfMaintenance.validate_write(edit["path"], edit["content"])
-            edits.append(
-                {
-                    "path": normalized,
-                    "content": edit["content"],
-                    "reason": str(edit.get("reason", ""))[:500],
-                }
-            )
+            normalized = cls.validate_write(edit["path"], edit["content"])
+            edits.append({"path": normalized, "content": edit["content"], "reason": str(edit.get("reason", ""))[:500]})
         return {"summary": str(parsed.get("summary", ""))[:2000], "edits": edits}
