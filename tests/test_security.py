@@ -52,46 +52,61 @@ class TestPermissionManager:
         result = pm._check_command("rm -rf /")
         assert not result["allowed"]
 
-    def test_destructive_command_requires_confirmation(self):
+    def test_destructive_commands_are_hard_blocked(self):
         pm = PermissionManager()
-        result = pm._check_command("rm file.txt")
-        assert result["allowed"]
-        assert result.get("requires_confirmation")
+        for command in ("rm file.txt", "mv a b", "del file.txt", "shutdown /s", "format C:"):
+            result = pm._check_command(command)
+            assert not result["allowed"]
+            assert not result.get("requires_confirmation")
 
     def test_safe_command(self):
         pm = PermissionManager()
         result = pm._check_command("ls -la")
         assert result["allowed"]
-
-    def test_rule_list(self):
-        pm = PermissionManager()
-        pm.add_rule(PermissionRule(tool="test", reason="testing"))
-        rules = pm.get_rules()
-        assert len(rules) >= 1
-
-    def test_destructive_file_path_task_requires_confirmation(self):
-        pm = PermissionManager()
-        result = pm.check_tool("delete_file", {"path": "rm -rf backup"})
-        assert result["allowed"]
-        assert result.get("requires_confirmation")
-
-    def test_safe_operation_no_confirmation(self):
-        pm = PermissionManager()
-        result = pm.check_tool("write_file", {"path": "/tmp/notes.txt", "content": "hi"})
         assert not result.get("requires_confirmation")
 
-    def test_non_interactive_skips_confirmation(self):
+    def test_destructive_file_path_is_hard_blocked(self):
+        pm = PermissionManager()
+        result = pm.check_tool("delete_file", {"path": "rm -rf backup"})
+        assert not result["allowed"]
+        assert not result.get("requires_confirmation")
+
+    def test_safe_operation_is_auto_allowed(self):
+        pm = PermissionManager()
+        result = pm.check_tool("write_file", {"path": "/tmp/notes.txt", "content": "hi"})
+        assert result["allowed"]
+        assert not result.get("requires_confirmation")
+
+    def test_desktop_control_is_auto_allowed(self):
+        pm = PermissionManager()
+        for name in ("open_app", "focus_window", "type_text", "press_key", "click_mouse", "close_app"):
+            result = pm.check_tool(name, {})
+            assert result["allowed"]
+            assert not result.get("requires_confirmation")
+
+    def test_non_interactive_does_not_weaken_hard_blocks(self):
         pm = PermissionManager()
         pm.set_interactive(False)
         result = pm.check_tool("run_command", {"command": "rm file.txt"})
-        assert result["allowed"]
-        assert not result.get("requires_confirmation")
+        assert not result["allowed"]
+
+    def test_paid_or_billing_tools_are_hard_blocked(self):
+        pm = PermissionManager()
+        for name in ("set_billing", "enable_billing", "add_payment_method", "purchase", "buy_credits", "upgrade_plan", "change_plan", "create_paid_account"):
+            result = pm.check_tool(name)
+            assert not result["allowed"]
 
     def test_denied_tool_never_asked_confirmation(self):
         pm = PermissionManager()
         pm.deny_tool("delete_file")
         result = pm.check_tool("delete_file", {"path": "x"})
         assert not result["allowed"]
+
+    def test_rule_list(self):
+        pm = PermissionManager()
+        pm.add_rule(PermissionRule(tool="test", reason="testing"))
+        rules = pm.get_rules()
+        assert len(rules) >= 1
 
 
 class TestApprovalRegistry:
