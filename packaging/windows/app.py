@@ -88,6 +88,14 @@ def start_static_server() -> ThreadingHTTPServer:
     return server
 
 
+async def _server_shutdown_trigger() -> None:
+    # The API server is intentionally hosted on a background thread because
+    # pywebview needs the process main thread. Supplying an explicit trigger
+    # prevents Hypercorn from attempting to install process signal handlers
+    # from that worker thread on Windows.
+    await asyncio.Future()
+
+
 def start_api_server() -> threading.Thread:
     sys.path.insert(0, str(ROOT))
     log("importing desktop.api_server")
@@ -103,7 +111,13 @@ def start_api_server() -> threading.Thread:
         try:
             if sys.platform == "win32":
                 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-            asyncio.run(serve(app, config))
+            asyncio.run(
+                serve(
+                    app,
+                    config,
+                    shutdown_trigger=_server_shutdown_trigger,
+                )
+            )
         except Exception:
             log("API server thread crashed:\n" + traceback.format_exc())
 
@@ -163,11 +177,6 @@ def smoke_test() -> None:
         if "/assets/" not in html:
             raise RuntimeError("Friday UI root page did not contain a production asset reference")
 
-        # Do not launch Hypercorn in a background thread on Windows: Hypercorn
-        # installs signal handlers and Python only permits that in the main thread.
-        # The packaged smoke test only needs to verify that the bundled Quart app
-        # imports and that its health route responds, so use Quart's in-process
-        # test client instead of binding port 8080.
         log("checking API health in-process")
         status, body = asyncio.run(quart_health_check())
         if status != 200:
