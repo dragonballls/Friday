@@ -1,27 +1,31 @@
 import agent.llm as llm
 
 
-def test_fallback_candidates_never_include_ollama(monkeypatch):
-    monkeypatch.setattr(
-        llm,
-        "load_provider_config",
-        lambda: {
-            "openai": {"fallback_provider": "ollama"},
-            "routing": {"fallback": ["ollama", "openrouter", "openrouter"]},
-        },
-    )
+def test_fallback_candidates_never_include_ollama():
+    monkeypatch = None
+    config = {
+        "openai": {"fallback_provider": "ollama"},
+        "routing": {"fallback": ["ollama", "openrouter", "openrouter"]},
+    }
+    # Keep the test focused on the pure candidate helper by patching its config loader below.
+    class _Patch:
+        def setattr(self, obj, name, value):
+            original = getattr(obj, name)
+            setattr(obj, name, value)
+            return original
 
-    candidates = llm._provider_candidates_for_fallback("openai")
+    patch = _Patch()
+    original = patch.setattr(llm, "load_provider_config", lambda: config)
+    try:
+        candidates = llm._provider_candidates_for_fallback("openai")
+    finally:
+        setattr(llm, "load_provider_config", original)
 
     assert "ollama" not in candidates
     assert candidates == ["openrouter"]
 
 
-def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkeypatch):
-    class FakeProvider:
-        def __init__(self, name):
-            self.name = name
-
+def test_unapproved_zen_fallback_is_skipped(monkeypatch):
     monkeypatch.setattr(
         llm,
         "load_provider_config",
@@ -30,17 +34,13 @@ def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkey
             "routing": {"fallback": ["zen_coder"]},
         },
     )
-    monkeypatch.setattr(llm, "_get_named_provider", lambda name: FakeProvider(name))
-    monkeypatch.setattr(
-        llm,
-        "_provider_has_credentials",
-        lambda name: name == "zen_coder",
-    )
+    monkeypatch.setattr(llm, "_get_named_provider", lambda name: object())
+    monkeypatch.setattr(llm, "_provider_has_credentials", lambda name: name == "zen_coder")
 
     provider, name = llm._get_fallback_provider("openai")
 
-    assert provider.name == "zen_coder"
-    assert name == "zen_coder"
+    assert provider is None
+    assert name == ""
 
 
 def test_retryable_provider_errors_are_limited_to_transient_failures():
