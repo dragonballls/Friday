@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import multiprocessing
 import os
 import shutil
@@ -17,9 +16,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen, Request
-
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
 
 API_HOST = "127.0.0.1"
 API_PORT = 8080
@@ -79,7 +75,7 @@ def prepare_self_coding_workspace() -> Path:
     extracted = temp_dir / "extracted"
     try:
         log(f"Preparing self-coding workspace: {workspace}")
-        request = Request(REPO_ZIP_URL, headers={"User-Agent": "Friday/1.0"})
+        request = Request(REPO_ZIP_URL, headers={"User-Agent": "Jarvis/1.0"})
         with urlopen(request, timeout=60) as response:
             archive_path.write_bytes(response.read())
         with zipfile.ZipFile(archive_path) as archive:
@@ -115,7 +111,7 @@ def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
                 return
         except OSError:
             time.sleep(0.2)
-    raise RuntimeError(f"Friday service did not become ready on {host}:{port}")
+    raise RuntimeError(f"Jarvis service did not become ready on {host}:{port}")
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -131,7 +127,7 @@ def start_static_server(port: int = UI_PORT) -> ThreadingHTTPServer:
         return QuietHandler(*args, directory=str(DIST), **kwargs)
 
     server = ThreadingHTTPServer((UI_HOST, port), handler)
-    thread = threading.Thread(target=server.serve_forever, name="friday-static", daemon=True)
+    thread = threading.Thread(target=server.serve_forever, name="jarvis-static", daemon=True)
     thread.start()
     return server
 
@@ -202,8 +198,8 @@ def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
 
 def smoke_test() -> None:
     if not DIST.exists():
-        raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
-    os.environ["FRIDAY_SMOKE_TEST"] = "1"
+        raise RuntimeError(f"Jarvis frontend bundle is missing: {DIST}")
+    os.environ["JARVIS_SMOKE_TEST"] = "1"
     ui_server = start_static_server(port=0)
     smoke_port = int(ui_server.server_address[1])
     log(f"smoke-test UI listening on {UI_HOST}:{smoke_port}")
@@ -211,18 +207,18 @@ def smoke_test() -> None:
         wait_for_port(UI_HOST, smoke_port)
         ui = http_text(f"http://{UI_HOST}:{smoke_port}/")
         if ui is None or ui[0] != 200:
-            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+            raise RuntimeError("Jarvis UI did not return HTTP 200 on the root page")
         html = ui[1]
-        if "<title>Friday</title>" not in html:
-            raise RuntimeError("Friday UI root page did not contain the expected title")
+        if "<title>Jarvis</title>" not in html:
+            raise RuntimeError("Jarvis UI root page did not contain the expected title")
         if "/Friday/assets/" in html:
             raise RuntimeError("Windows UI bundle incorrectly references /Friday/ assets")
         if "/assets/" not in html:
-            raise RuntimeError("Friday UI root page did not contain a production asset reference")
+            raise RuntimeError("Jarvis UI root page did not contain a production asset reference")
         log("smoke-test UI checks passed")
         status, body = asyncio.run(quart_health_check())
         if status != 200:
-            raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
+            raise RuntimeError(f"Jarvis API health endpoint returned HTTP {status}: {body}")
         log("smoke-test API health passed")
     finally:
         ui_server.shutdown()
@@ -241,7 +237,7 @@ def install_startup() -> None:
             0,
             winreg.KEY_SET_VALUE,
         ) as key:
-            winreg.SetValueEx(key, "Friday", 0, winreg.REG_SZ, f'"{exe}" --startup')
+            winreg.SetValueEx(key, "Jarvis", 0, winreg.REG_SZ, f'"{exe}" --startup')
     except OSError:
         pass
 
@@ -259,10 +255,10 @@ def main() -> None:
         return
 
     if not DIST.exists():
-        raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
+        raise SystemExit(f"Jarvis frontend bundle is missing: {DIST}")
 
     workspace = prepare_self_coding_workspace()
-    os.environ["FRIDAY_WORKSPACE"] = str(workspace)
+    os.environ["JARVIS_WORKSPACE"] = str(workspace)
 
     import webview
     install_startup()
@@ -272,7 +268,7 @@ def main() -> None:
         wait_for_port(API_HOST, API_PORT, timeout=30.0)
         wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
         webview.create_window(
-            "Friday",
+            "Jarvis",
             f"http://{UI_HOST}:{UI_PORT}/",
             width=1440,
             height=900,
