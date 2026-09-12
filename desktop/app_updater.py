@@ -1,10 +1,4 @@
-"""Best-effort silent updater for the packaged Windows desktop app.
-
-The updater follows the latest successful Build Friday Desktop artifact on main.
-It only acts when the running sidecar was built from a different commit. The
-installer is downloaded over HTTPS from GitHub Actions and scheduled to run
-silently after the current Friday process exits.
-"""
+"""Best-effort silent updater for the packaged Windows desktop app."""
 from __future__ import annotations
 
 import json
@@ -20,7 +14,7 @@ from pathlib import Path
 import httpx
 
 _REPO = "dragonballls/Friday"
-_WORKFLOW = "build-desktop.yml"
+_RELEASE_TAG = "desktop-latest"
 _API = f"https://api.github.com/repos/{_REPO}"
 
 
@@ -46,41 +40,36 @@ def _write_state(data: dict) -> None:
 
 
 def _get_json(url: str) -> dict:
-    with httpx.Client(timeout=30.0, follow_redirects=True, headers={"Accept": "application/vnd.github+json", "User-Agent": "Friday-Updater/1.0"}) as client:
+    with httpx.Client(
+        timeout=30.0,
+        follow_redirects=True,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "Friday-Updater/1.0"},
+    ) as client:
         response = client.get(url)
         response.raise_for_status()
         return response.json()
 
 
-def _latest_build() -> tuple[str, str] | None:
-    runs = _get_json(f"{_API}/actions/workflows/{_WORKFLOW}/runs?branch=main&status=success&per_page=10")
-    for run in runs.get("workflow_runs", []):
-        if run.get("head_sha"):
-            artifacts = _get_json(f"{_API}/actions/runs/{run['id']}/artifacts?per_page=20")
-            for artifact in artifacts.get("artifacts", []):
-                if str(artifact.get("name", "")).startswith("Friday-Windows-x64-") and not artifact.get("expired", False):
-                    return str(run["head_sha"]), str(artifact["archive_download_url"])
+def _latest_release() -> tuple[str, str] | None:
+    release = _get_json(f"{_API}/releases/tags/{_RELEASE_TAG}")
+    target_sha = str(release.get("target_commitish", "")).strip()
+    for asset in release.get("assets", []):
+        name = str(asset.get("name", ""))
+        if name.lower().endswith("-setup.exe") and asset.get("browser_download_url"):
+            return target_sha, str(asset["browser_download_url"])
     return None
 
 
-def _download_installer(artifact_url: str, target_sha: str) -> Path:
+def _download_installer(url: str, target_sha: str) -> Path:
     update_dir = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "Friday" / "updates" / target_sha
     update_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = update_dir / "Friday-Windows-x64.zip"
-    with httpx.Client(timeout=None, follow_redirects=True, headers={"Accept": "application/octet-stream", "User-Agent": "Friday-Updater/1.0"}) as client:
-        with client.stream("GET", artifact_url) as response:
+    installer = update_dir / "Friday-latest-setup.exe"
+    with httpx.Client(timeout=None, follow_redirects=True, headers={"User-Agent": "Friday-Updater/1.0"}) as client:
+        with client.stream("GET", url) as response:
             response.raise_for_status()
-            with zip_path.open("wb") as handle:
+            with installer.open("wb") as handle:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
-
-    with zipfile.ZipFile(zip_path) as archive:
-        installer_names = [name for name in archive.namelist() if name.lower().endswith("-setup.exe")]
-        if not installer_names:
-            raise RuntimeError("Desktop update artifact did not contain a setup executable")
-        archive.extract(installer_names[0], update_dir)
-        installer = update_dir / installer_names[0]
-
     if not installer.exists() or installer.stat().st_size < 10_000_000:
         raise RuntimeError("Downloaded Friday installer failed validation")
     return installer
@@ -100,7 +89,11 @@ def _schedule_install(installer: Path) -> None:
         "del \"%~f0\"\r\n",
         encoding="utf-8",
     )
-    subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
+    subprocess.Popen(
+        ["cmd.exe", "/c", str(script)],
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        close_fds=True,
+    )
 
 
 def check_for_update() -> None:
@@ -108,20 +101,21 @@ def check_for_update() -> None:
     if not current or current == "dev":
         return
     try:
-        latest = _latest_build()
+        latest = _latest_release()
         if latest is None:
             return
-        target_sha, artifact_url = latest
-        if target_sha == current:
+        target_sha, download_url = latest
+        if not target_sha or target_sha == current:
             return
         state = {}
         try:
             state = json.loads(_state_path().read_text(encoding="utf-8"))
         except Exception:
             pass
-        if state.get("target_sha") == target_sha and Path(state.get("installer", "")).exists():
+        installer_path = Path(state.get("installer", ""))
+        if state.get("target_sha") == target_sha and installer_path.exists():
             return
-        installer = _download_installer(artifact_url, target_sha)
+        installer = _download_installer(download_url, target_sha)
         _write_state({"target_sha": target_sha, "installer": str(installer)})
         _schedule_install(installer)
     except Exception:
