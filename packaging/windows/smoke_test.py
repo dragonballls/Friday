@@ -9,6 +9,19 @@ BUNDLE = ROOT / "build" / "windows" / "Friday"
 EXE = BUNDLE / "Friday.exe"
 UPDATER = BUNDLE / "FridayUpdater.exe"
 VERSION = BUNDLE / "VERSION"
+LOG = BUNDLE / "friday.log"
+
+
+def dump_log() -> None:
+    if not LOG.is_file():
+        print("No packaged Friday log was produced.")
+        return
+    try:
+        print("----- packaged friday.log -----")
+        print(LOG.read_text(encoding="utf-8", errors="replace"))
+        print("----- end packaged friday.log -----")
+    except OSError as exc:
+        print(f"Could not read packaged Friday log: {exc}")
 
 
 def main() -> None:
@@ -26,10 +39,13 @@ def main() -> None:
             returncode = proc.poll()
             if returncode is not None:
                 if returncode != 0:
+                    dump_log()
                     raise SystemExit(f"Friday.exe smoke test exited with code {returncode}")
                 print(f"Friday Windows bundle smoke test passed for version {version}.")
+                dump_log()
                 return
             time.sleep(0.25)
+        dump_log()
         raise SystemExit("Friday.exe smoke test did not complete within 40 seconds")
     finally:
         if proc.poll() is None:
