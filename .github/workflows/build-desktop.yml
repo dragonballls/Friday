@@ -89,82 +89,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Frontend build failed with exit code $LASTEXITCODE" }
           if (-not (Test-Path "dist/index.html")) { throw "Frontend build did not produce dist/index.html" }
 
-      - name: Regenerate valid Windows icon
+      - name: Remove auto-discovered Tauri icon assets
         working-directory: desktop
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          @'
-          from pathlib import Path
-          import math
-          import struct
-
-          icon_path = Path("src-tauri/icons/icon.ico")
-          icon_path.parent.mkdir(parents=True, exist_ok=True)
-
-          def dib_icon(size: int) -> bytes:
-              pixels = bytearray()
-              center = (size - 1) / 2.0
-              radius = size * 0.42
-              inner_radius = size * 0.16
-              for y in range(size - 1, -1, -1):
-                  for x in range(size):
-                      dx = x - center
-                      dy = y - center
-                      d = math.hypot(dx, dy)
-                      if d <= radius:
-                          if d <= inner_radius:
-                              r, g, b = 245, 245, 255
-                          else:
-                              r, g, b = 88, 64, 192
-                          a = 255
-                      else:
-                          r, g, b, a = 12, 14, 20, 255
-                      pixels.extend((b, g, r, a))
-
-              row_bytes = ((size + 31) // 32) * 4
-              and_mask = bytes(row_bytes * size)
-              dib = struct.pack(
-                  "<IiiHHIIIIII",
-                  40,
-                  size,
-                  size * 2,
-                  1,
-                  32,
-                  0,
-                  len(pixels),
-                  0,
-                  0,
-                  0,
-                  0,
-              )
-              return dib + pixels + and_mask
-
-          sizes = [16, 32, 48, 64, 128, 256]
-          images = [dib_icon(size) for size in sizes]
-          header = struct.pack("<HHH", 0, 1, len(images))
-          offset = 6 + 16 * len(images)
-          entries = bytearray()
-          for size, image in zip(sizes, images):
-              width_byte = 0 if size == 256 else size
-              entries.extend(struct.pack(
-                  "<BBBBHHII",
-                  width_byte,
-                  width_byte,
-                  0,
-                  0,
-                  1,
-                  32,
-                  len(image),
-                  offset,
-              ))
-              offset += len(image)
-
-          icon_path.write_bytes(header + entries + b"".join(images))
-          print(f"Wrote deterministic DIB ICO: {icon_path} ({icon_path.stat().st_size} bytes)")
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) { throw "Failed to regenerate icon.ico" }
-          if (-not (Test-Path "src-tauri/icons/icon.ico")) { throw "Regenerated icon.ico is missing" }
+          Remove-Item -Recurse -Force "src-tauri/icons" -ErrorAction SilentlyContinue
+          if (Test-Path "src-tauri/icons") { throw "Tauri icon directory still exists after cleanup" }
+          Write-Host "Tauri icon asset cleanup passed; bundle.icon is explicitly empty in tauri.conf.json."
 
       - name: Preflight Tauri and packaging inputs
         working-directory: desktop
@@ -174,23 +106,8 @@ jobs:
           Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json | Out-Null
           if (-not (Test-Path "dist/index.html")) { throw "Tauri frontendDist is missing: dist/index.html was not produced" }
           if (-not (Test-Path "src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe")) { throw "Friday API sidecar missing" }
-          if (-not (Test-Path "src-tauri/icons/icon.ico")) { throw "Tauri Windows icon was not generated" }
-          $ico = [System.IO.File]::ReadAllBytes((Resolve-Path "src-tauri/icons/icon.ico"))
-          if ($ico.Length -lt 22 -or $ico[0] -ne 0 -or $ico[1] -ne 0 -or $ico[2] -ne 1 -or $ico[3] -ne 0) { throw "Generated icon.ico has an invalid ICO header" }
-          for ($i = 0; $i -le $ico.Length - 8; $i++) {
-            if ($ico[$i] -eq 137 -and $ico[$i+1] -eq 80 -and $ico[$i+2] -eq 78 -and $ico[$i+3] -eq 71 -and $ico[$i+4] -eq 13 -and $ico[$i+5] -eq 10 -and $ico[$i+6] -eq 26 -and $ico[$i+7] -eq 10) {
-              throw "Generated icon.ico unexpectedly contains an embedded PNG image"
-            }
-          }
-          $count = [BitConverter]::ToUInt16($ico, 4)
-          if ($count -lt 1) { throw "Generated icon.ico contains no image entries" }
-          for ($entry = 0; $entry -lt $count; $entry++) {
-            $base = 6 + ($entry * 16)
-            $bytes = [BitConverter]::ToUInt32($ico, $base + 8)
-            $offset = [BitConverter]::ToUInt32($ico, $base + 12)
-            if ($offset -lt 6 + (16 * $count) -or $bytes -lt 40 -or $offset + $bytes -gt $ico.Length) { throw "Generated icon.ico has an out-of-range image entry" }
-          }
-          Write-Host "Preflight passed: frontend output, Tauri config, sidecar, and DIB ICO are valid."
+          if (Test-Path "src-tauri/icons") { throw "Tauri icon directory unexpectedly exists" }
+          Write-Host "Preflight passed: frontend output, Tauri config, sidecar, and no auto-discovered icon assets."
           cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "Tauri cargo check failed with exit code $LASTEXITCODE" }
 
