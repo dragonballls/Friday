@@ -1,11 +1,11 @@
 {
-  "name": "friday-desktop",
+  "name": "jarvis-desktop",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "friday": "python ../scripts/launch.py --ui",
+    "jarvis": "python ../scripts/launch.py --ui",
     "update": "python ../scripts/update.py --build",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
