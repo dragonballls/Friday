@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
-"""Safely update a Friday source checkout from its configured Git remote.
+"""Safely update a Jarvis source checkout from its configured Git remote.
 
-The updater never resets, force-checks out, or overwrites local changes. When a
-clean checkout is on another branch, it safely switches to the requested branch
-so the desktop launcher cannot remain stuck on an old feature branch. The
-original branch and its commits remain intact.
-
-When ``--build`` is requested, the previous commit is retained as a rollback
-point. If dependency installation or the frontend build fails after the
-fast-forward, Friday automatically returns to the known-good commit instead of
-leaving the running installation on a potentially broken update.
+The updater never resets, force-checks out, or overwrites local changes. It
+migrates legacy Friday origins to the canonical Jarvis repository, then applies
+fast-forward updates only. Build failures roll back to the previous commit.
 """
 
 from __future__ import annotations
@@ -23,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "desktop"
+CANONICAL_REMOTE_URL = "https://github.com/dragonballls/Jarvis.git"
 
 
 def run(command: list[str], *, cwd: Path = ROOT) -> int:
@@ -74,18 +69,40 @@ def current_commit() -> str | None:
     return result.stdout.strip() or None
 
 
+def _ensure_jarvis_remote(remote: str) -> int:
+    """Migrate legacy Friday installations to the canonical Jarvis repository."""
+    result = subprocess.run(
+        ["git", "remote", "get-url", remote],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Unable to read git remote '{remote}'.", file=sys.stderr)
+        return 1
+    current_url = result.stdout.strip()
+    normalized = current_url.rstrip("/").lower()
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    if normalized.endswith("/dragonballls/jarvis"):
+        return 0
+    if "friday" in normalized:
+        print(f"Migrating legacy Friday remote '{current_url}' to Jarvis.")
+        return run(["git", "remote", "set-url", remote, CANONICAL_REMOTE_URL])
+    print(f"Git remote '{remote}' is not the canonical Jarvis repository: {current_url}", file=sys.stderr)
+    return 2
+
+
 def _npm_command() -> str | None:
-    """Return an executable npm command that works with Windows .cmd shims."""
     if sys.platform == "win32":
         return shutil.which("npm.cmd") or shutil.which("npm")
     return shutil.which("npm")
 
 
 def _clear_frontend_port() -> None:
-    """Kill only the Windows process tree currently owning Vite's port."""
     if sys.platform != "win32":
         return
-
     try:
         result = subprocess.run(
             ["netstat", "-ano", "-p", "tcp"],
@@ -96,35 +113,21 @@ def _clear_frontend_port() -> None:
         )
     except OSError:
         return
-
     if result.returncode != 0:
         return
-
     pids: set[str] = set()
     for line in result.stdout.splitlines():
         parts = line.split()
         if len(parts) < 5 or parts[0].upper() != "TCP":
             continue
         local_address = parts[1]
-        state = parts[3].upper()
-        pid = parts[4]
-        if state != "LISTENING":
-            continue
-        if local_address.rsplit(":", 1)[-1] == "5173" and pid.isdigit():
-            pids.add(pid)
-
+        if parts[3].upper() == "LISTENING" and local_address.rsplit(":", 1)[-1] == "5173" and parts[4].isdigit():
+            pids.add(parts[4])
     for pid in pids:
-        subprocess.run(
-            ["taskkill", "/PID", pid, "/T", "/F"],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], cwd=ROOT, check=False, capture_output=True, text=True)
 
 
 def _frontend_dependencies_ready() -> bool:
-    """Confirm npm installed the build tools required by the frontend scripts."""
     node_modules = DESKTOP / "node_modules"
     vite_package = node_modules / "vite" / "package.json"
     typescript_package = node_modules / "typescript" / "package.json"
@@ -138,14 +141,12 @@ def _frontend_dependencies_ready() -> bool:
 
 
 def _install_frontend_dependencies(npm: str) -> int:
-    """Install dependencies and recover once from a partial npm tree."""
     _clear_frontend_port()
     result = run([npm, "ci"], cwd=DESKTOP)
     if result != 0:
         return result
     if _frontend_dependencies_ready():
         return 0
-
     print("npm ci completed but the frontend dependency tree is incomplete; retrying from a clean node_modules.", file=sys.stderr)
     _clear_frontend_port()
     node_modules = DESKTOP / "node_modules"
@@ -155,44 +156,42 @@ def _install_frontend_dependencies(npm: str) -> int:
 
 
 def rollback_to(commit: str) -> bool:
-    """Return to a known-good commit without touching user changes."""
     if not working_tree_is_clean():
         print("Rollback refused because the working tree is no longer clean.", file=sys.stderr)
         return False
     if run(["git", "reset", "--hard", commit]) != 0:
-        print(f"CRITICAL: unable to roll back Friday to known-good commit {commit}.", file=sys.stderr)
+        print(f"CRITICAL: unable to roll back Jarvis to known-good commit {commit}.", file=sys.stderr)
         return False
-    print(f"Rolled Friday back to known-good commit {commit}.")
+    print(f"Rolled Jarvis back to known-good commit {commit}.")
     return True
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
-    parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
-    parser.add_argument("--branch", default="main", help="Remote branch (default: main)")
-    parser.add_argument("--build", action="store_true", help="Install frontend dependencies and build after updating")
+    parser = argparse.ArgumentParser(description="Safely update Jarvis from GitHub")
+    parser.add_argument("--remote", default="origin")
+    parser.add_argument("--branch", default="main")
+    parser.add_argument("--build", action="store_true")
     args = parser.parse_args()
 
     if shutil.which("git") is None:
         print("git is required", file=sys.stderr)
         return 1
 
+    migration_result = _ensure_jarvis_remote(args.remote)
+    if migration_result == 1:
+        return 3
+    if migration_result == 2:
+        return 4
+
     branch = current_branch()
     if branch != args.branch:
         if not working_tree_is_clean():
-            print(
-                f"Refusing to switch from '{branch or 'detached HEAD'}' to '{args.branch}' because local changes exist.",
-                file=sys.stderr,
-            )
+            print(f"Refusing to switch from '{branch or 'detached HEAD'}' to '{args.branch}' because local changes exist.", file=sys.stderr)
             return 2
-        print(
-            f"Local checkout is on '{branch or 'detached HEAD'}'; safely switching to '{args.branch}'. "
-            "The original branch and its commits are preserved."
-        )
+        print(f"Local checkout is on '{branch or 'detached HEAD'}'; safely switching to '{args.branch}'.")
         if run(["git", "fetch", "--prune", args.remote, args.branch]) != 0:
             return 3
         if run(["git", "checkout", args.branch]) != 0:
-            print("Unable to switch to the requested branch; leaving the checkout unchanged.", file=sys.stderr)
             return 4
 
     if not working_tree_is_clean():
@@ -213,10 +212,8 @@ def main() -> int:
     if args.build:
         npm = _npm_command()
         if npm is None:
-            print("npm is required for --build; rolling back the update.", file=sys.stderr)
             return 7 if rollback_to(old_commit) else 9
         if not DESKTOP.is_dir():
-            print(f"Desktop directory not found: {DESKTOP}; rolling back the update.", file=sys.stderr)
             return 6 if rollback_to(old_commit) else 9
         if _install_frontend_dependencies(npm) != 0 or not _frontend_dependencies_ready():
             print("Frontend dependency installation failed or remained incomplete; rolling back the update.", file=sys.stderr)
@@ -225,7 +222,7 @@ def main() -> int:
             print("Frontend build failed; rolling back the update.", file=sys.stderr)
             return 8 if rollback_to(old_commit) else 9
 
-    print("Friday is up to date.")
+    print("Jarvis is up to date.")
     return 0
 
 
