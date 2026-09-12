@@ -4,6 +4,7 @@ import asyncio
 import multiprocessing
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -35,8 +36,8 @@ DIST = ROOT / "desktop" / "dist"
 
 def log_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "smoke_test.log"
-    return Path.cwd() / "smoke_test.log"
+        return Path(sys.executable).resolve().parent / "friday.log"
+    return Path.cwd() / "friday.log"
 
 
 def log(message: str) -> None:
@@ -54,8 +55,6 @@ def log(message: str) -> None:
 
 
 def hard_exit(code: int) -> None:
-    # Windowed PyInstaller bootloaders show a blocking error dialog on uncaught
-    # exceptions. Force-exit so CI never waits on a click that will never come.
     os._exit(code)
 
 
@@ -88,42 +87,44 @@ def start_static_server() -> ThreadingHTTPServer:
     return server
 
 
-async def _server_shutdown_trigger() -> None:
-    # The API server is intentionally hosted on a background thread because
-    # pywebview needs the process main thread. Supplying an explicit trigger
-    # prevents Hypercorn from attempting to install process signal handlers
-    # from that worker thread on Windows.
-    await asyncio.Future()
-
-
-def start_api_server() -> threading.Thread:
+async def _api_server() -> None:
     sys.path.insert(0, str(ROOT))
-    log("importing desktop.api_server")
+    log("API process importing desktop.api_server")
     from desktop.api_server import app
-
     config = Config()
     config.bind = [f"{API_HOST}:{API_PORT}"]
     config.accesslog = None
     config.errorlog = None
     config.loglevel = "warning"
+    await serve(app, config)
 
-    def runner() -> None:
-        try:
-            if sys.platform == "win32":
-                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-            asyncio.run(
-                serve(
-                    app,
-                    config,
-                    shutdown_trigger=_server_shutdown_trigger,
-                )
-            )
-        except Exception:
-            log("API server thread crashed:\n" + traceback.format_exc())
 
-    thread = threading.Thread(target=runner, name="friday-api", daemon=True)
-    thread.start()
-    return thread
+def run_api_process() -> None:
+    try:
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(_api_server())
+    except Exception:
+        log("API process crashed:\n" + traceback.format_exc())
+        raise
+
+
+def start_api_server_process() -> subprocess.Popen:
+    exe = Path(sys.executable).resolve()
+    if getattr(sys, "frozen", False):
+        command = [str(exe), "--api-server"]
+    else:
+        command = [sys.executable, str(Path(__file__).resolve()), "--api-server"]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    log("starting dedicated API process")
+    return subprocess.Popen(
+        command,
+        cwd=str(ROOT),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+    )
 
 
 def http_text(url: str) -> tuple[int, str] | None:
@@ -136,9 +137,7 @@ def http_text(url: str) -> tuple[int, str] | None:
 
 async def quart_health_check() -> tuple[int, str]:
     sys.path.insert(0, str(ROOT))
-    log("importing desktop.api_server for in-process health check")
     from desktop.api_server import app
-
     client = app.test_client()
     response = await client.get("/api/v1/health")
     body = await response.get_data(as_text=True)
@@ -149,7 +148,6 @@ def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
     def expire() -> None:
         log(f"smoke-test watchdog expired after {seconds:.0f} seconds")
         hard_exit(2)
-
     timer = threading.Timer(seconds, expire)
     timer.daemon = True
     timer.start()
@@ -158,14 +156,10 @@ def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
 def smoke_test() -> None:
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
-
     os.environ["FRIDAY_SMOKE_TEST"] = "1"
-    log(f"serving UI from {DIST}")
     ui_server = start_static_server()
     try:
-        log("checking UI port")
         wait_for_port(UI_HOST, UI_PORT)
-
         ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
         if ui is None or ui[0] != 200:
             raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
@@ -173,27 +167,22 @@ def smoke_test() -> None:
         if "<title>Friday</title>" not in html:
             raise RuntimeError("Friday UI root page did not contain the expected title")
         if "/Friday/assets/" in html:
-            raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
+            raise RuntimeError("Windows UI bundle incorrectly references /Friday/ assets")
         if "/assets/" not in html:
             raise RuntimeError("Friday UI root page did not contain a production asset reference")
-
-        log("checking API health in-process")
         status, body = asyncio.run(quart_health_check())
         if status != 200:
             raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
-
-        log("Friday Windows bundle smoke test passed: UI HTML/assets and API health are valid.")
     finally:
         ui_server.shutdown()
         ui_server.server_close()
 
 
 def install_startup() -> None:
-    if os.name != "nt" or "--smoke-test" in sys.argv:
+    if os.name != "nt" or "--smoke-test" in sys.argv or "--api-server" in sys.argv:
         return
     try:
         import winreg
-
         exe = Path(sys.executable).resolve()
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -214,27 +203,37 @@ def main() -> None:
         log("smoke-test completed")
         hard_exit(0)
 
+    if "--api-server" in sys.argv:
+        run_api_process()
+        return
+
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
 
     import webview
-
     install_startup()
     start_static_server()
-    start_api_server()
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
-
-    webview.create_window(
-        "Friday",
-        f"http://{UI_HOST}:{UI_PORT}/",
-        width=1440,
-        height=900,
-        min_size=(1050, 700),
-        resizable=True,
-        text_select=True,
-    )
-    webview.start(debug=False)
+    api_process = start_api_server_process()
+    try:
+        wait_for_port(API_HOST, API_PORT, timeout=30.0)
+        wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
+        webview.create_window(
+            "Friday",
+            f"http://{UI_HOST}:{UI_PORT}/",
+            width=1440,
+            height=900,
+            min_size=(1050, 700),
+            resizable=True,
+            text_select=True,
+        )
+        webview.start(debug=False)
+    finally:
+        if api_process.poll() is None:
+            api_process.terminate()
+            try:
+                api_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                api_process.kill()
 
 
 if __name__ == "__main__":
