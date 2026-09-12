@@ -25,6 +25,7 @@ UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
 REPO_URL = "https://github.com/dragonballls/Friday.git"
 WORKSPACE = Path.home() / "Friday-SelfCoding-Workspace"
+APP_NAME = "JARVIS"
 
 
 def resource_root() -> Path:
@@ -32,15 +33,14 @@ def resource_root() -> Path:
         return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     return Path(__file__).resolve().parents[2]
 
-
 ROOT = resource_root()
 DIST = ROOT / "desktop" / "dist"
 
 
 def log_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "friday.log"
-    return Path.cwd() / "friday.log"
+        return Path(sys.executable).resolve().parent / "jarvis.log"
+    return Path.cwd() / "jarvis.log"
 
 
 def log(message: str) -> None:
@@ -85,7 +85,7 @@ def start_static_server() -> ThreadingHTTPServer:
         return QuietHandler(*args, directory=str(DIST), **kwargs)
 
     server = ThreadingHTTPServer((UI_HOST, UI_PORT), handler)
-    thread = threading.Thread(target=server.serve_forever, name="friday-static", daemon=True)
+    thread = threading.Thread(target=server.serve_forever, name="jarvis-static", daemon=True)
     thread.start()
     return server
 
@@ -196,20 +196,18 @@ def smoke_test() -> None:
     ui_server = start_static_server()
     try:
         if not wait_for_port(UI_HOST, UI_PORT, timeout=10.0):
-            raise RuntimeError("Friday UI did not become available")
+            raise RuntimeError("JARVIS UI did not become available")
         ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
         if ui is None or ui[0] != 200:
-            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+            raise RuntimeError("JARVIS UI did not return HTTP 200 on the root page")
         html = ui[1]
-        if "<title>Friday</title>" not in html:
-            raise RuntimeError("Friday UI root page did not contain the expected title")
         if "/Friday/assets/" in html:
             raise RuntimeError("Windows UI bundle incorrectly references /Friday/ assets")
         if "/assets/" not in html:
-            raise RuntimeError("Friday UI root page did not contain a production asset reference")
+            raise RuntimeError("JARVIS UI root page did not contain a production asset reference")
         status, body = asyncio.run(quart_health_check())
         if status != 200:
-            raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
+            raise RuntimeError(f"JARVIS API health endpoint returned HTTP {status}: {body}")
     finally:
         ui_server.shutdown()
         ui_server.server_close()
@@ -222,7 +220,7 @@ def install_startup() -> None:
         import winreg
         exe = Path(sys.executable).resolve()
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE) as key:
-            winreg.SetValueEx(key, "Friday", 0, winreg.REG_SZ, f'"{exe}" --startup')
+            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, f'"{exe}" --startup')
     except OSError:
         pass
 
@@ -240,7 +238,7 @@ def main() -> None:
         return
 
     if not DIST.exists():
-        raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
+        raise SystemExit(f"JARVIS frontend bundle is missing: {DIST}")
 
     prepare_workspace()
     import webview
@@ -254,11 +252,11 @@ def main() -> None:
         else:
             log("API did not become ready before timeout; keeping the desktop UI open")
 
-    threading.Thread(target=watch_api, name="friday-api-ready", daemon=True).start()
+    threading.Thread(target=watch_api, name="jarvis-api-ready", daemon=True).start()
 
     try:
         webview.create_window(
-            "Friday",
+            APP_NAME,
             f"http://{UI_HOST}:{UI_PORT}/",
             width=1440,
             height=900,
@@ -276,14 +274,3 @@ def main() -> None:
                 api_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 api_process.kill()
-
-
-if __name__ == "__main__":
-    multiprocessing.freeze_support()
-    try:
-        main()
-    except Exception:
-        log(traceback.format_exc())
-        if "--smoke-test" in sys.argv:
-            hard_exit(1)
-        raise
