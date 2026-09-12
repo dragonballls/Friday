@@ -1,11 +1,9 @@
 """Packaged Friday API bootstrap.
 
-The Tauri WebView uses the tauri.localhost origin, which is different from the
-Vite development origins accepted by api_server.py. This wrapper adds the
-production desktop CORS headers and starts the persistent autonomous coder in
-the same sidecar process so it does not depend on a separate PowerShell task.
+Keeps the desktop API available even when optional startup services fail.
+The Tauri WebView uses the tauri.localhost origin, so production CORS headers
+are added here. The autonomous coder is started alongside the API process.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -33,28 +31,43 @@ async def _desktop_cors(response):
     return response
 
 
+def _safe_background_start(name: str, target) -> None:
+    try:
+        target()
+    except Exception as exc:
+        logger = getattr(api_server, "warn", None)
+        if callable(logger):
+            logger(f"Optional startup service {name} skipped: {exc}")
+
+
 def _start_autonomous_coder() -> None:
     if os.getenv("FRIDAY_AUTONOMOUS_CODING", "1").strip().lower() in {"0", "false", "no", "off"}:
         return
     try:
         from tools.autonomous_coder import main as autonomous_main
-
         thread = threading.Thread(target=autonomous_main, name="FridayAutonomousCoder", daemon=True)
         thread.start()
     except Exception as exc:
-        api_server.warn(f"Autonomous coder startup skipped: {exc}") if hasattr(api_server, "warn") else None
+        logger = getattr(api_server, "warn", None)
+        if callable(logger):
+            logger(f"Autonomous coder startup skipped: {exc}")
+
+
+def _start_optional_services() -> None:
+    def _embeddings() -> None:
+        from core.memory.embeddings import SentenceEngine
+        SentenceEngine.start_background_load()
+
+    def _hotkey() -> None:
+        from core.hotkey import start_hotkey_listener
+        start_hotkey_listener()
+
+    _safe_background_start("embeddings", _embeddings)
+    if os.environ.get("FRIDAY_HOTKEY", "1").strip().lower() not in {"0", "false", "no", "off"}:
+        _safe_background_start("hotkey", _hotkey)
 
 
 def _run_server() -> None:
-    from core.memory.embeddings import SentenceEngine
-
-    SentenceEngine.start_background_load()
-
-    if os.environ.get("FRIDAY_HOTKEY", "1") not in ("0", "false", "no"):
-        from core.hotkey import start_hotkey_listener
-
-        start_hotkey_listener()
-
     import hypercorn.asyncio
     from hypercorn.config import Config
 
@@ -63,20 +76,34 @@ def _run_server() -> None:
     cfg.bind = [f"{args.host}:{args.port}"]
     cfg.keep_alive_timeout = 300
     cfg.body_timeout = 300
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.create_task(api_server._memory_consolidation_loop())
-    loop.create_task(api_server._proactive_loop())
-    loop.create_task(api_server._push_metrics())
-    loop.create_task(api_server._push_briefing())
-    loop.create_task(api_server._push_nightly_digest())
-    loop.create_task(api_server._push_automations())
-    loop.create_task(api_server._push_vision())
-    loop.create_task(api_server._push_system_info())
-    loop.create_task(api_server._push_memory())
-    loop.create_task(api_server._push_alerts())
-    loop.create_task(api_server._push_screen())
-    loop.create_task(api_server._push_clocks())
+
+    # The API server is the critical service. Optional background services are
+    # started only after the event loop is ready so they cannot block startup.
+    for factory in (
+        api_server._memory_consolidation_loop,
+        api_server._proactive_loop,
+        api_server._push_metrics,
+        api_server._push_briefing,
+        api_server._push_nightly_digest,
+        api_server._push_automations,
+        api_server._push_vision,
+        api_server._push_system_info,
+        api_server._push_memory,
+        api_server._push_alerts,
+        api_server._push_screen,
+        api_server._push_clocks,
+    ):
+        try:
+            loop.create_task(factory())
+        except Exception as exc:
+            logger = getattr(api_server, "warn", None)
+            if callable(logger):
+                logger(f"Optional async service {getattr(factory, '__name__', factory)} skipped: {exc}")
+
+    threading.Thread(target=_start_optional_services, name="FridayOptionalStartup", daemon=True).start()
     loop.run_until_complete(hypercorn.asyncio.serve(api_server.app, cfg))
 
 
