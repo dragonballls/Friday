@@ -85,8 +85,6 @@ jobs:
 
       - name: Build Windows bundle
         shell: pwsh
-        env:
-          FRIDAY_WINDOWS_CONSOLE: "1"
         run: python packaging/windows/build.py
 
       - name: Smoke-test packaged executable
@@ -97,17 +95,17 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $log = "build/windows/Friday/smoke_test.log"
+          $log = "build/windows/Friday-Barebones/friday.log"
           if (Test-Path $log) {
             Get-Content -Raw $log
           } else {
-            Write-Host "No smoke_test.log was written"
+            Write-Host "No packaged Friday log was written"
           }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Friday-Windows
-          path: build/windows/Friday
+          name: Friday-Barebones-Windows
+          path: build/windows/Friday-Barebones
           if-no-files-found: error
           retention-days: 30
