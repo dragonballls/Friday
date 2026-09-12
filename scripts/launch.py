@@ -18,8 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "scripts" / "update.py"
 LOG_DIR = ROOT / "logs"
 LAUNCH_LOG = LOG_DIR / "launcher.log"
-# Polling every second causes needless network traffic and Git process churn.
-# Thirty seconds keeps Friday reasonably fresh while leaving the machine quiet.
 AUTO_UPDATE_INTERVAL = 30
 STARTUP_TASK_NAME = "Friday UI"
 STARTUP_RETRY_DELAY = 5
@@ -112,6 +110,21 @@ def _start_auto_update_monitor(root: str, update_event: threading.Event, stop_ev
     return monitor
 
 
+def _start_self_maintenance_worker():
+    """Start continuous GitHub self-maintenance alongside the desktop UI."""
+    try:
+        from scripts.self_maintenance import start_continuous_self_maintenance
+        worker = start_continuous_self_maintenance()
+        if worker is None:
+            _log("Continuous GitHub self-maintenance is idle: no GitHub token is configured.")
+        else:
+            _log("Continuous GitHub self-maintenance is running.")
+        return worker
+    except Exception as exc:  # noqa: BLE001
+        _log(f"Continuous GitHub self-maintenance could not start; Friday UI remains available: {exc}")
+        return None
+
+
 def _terminate_processes(procs: list[subprocess.Popen]):
     for proc in procs:
         if proc.poll() is None:
@@ -131,7 +144,6 @@ def _terminate_processes(procs: list[subprocess.Popen]):
 
 
 def _clear_frontend_port() -> None:
-    """Compatibility no-op: never kill an existing Friday/Vite server."""
     return
 
 
@@ -147,10 +159,6 @@ def _wait_for_port(host: str, port: int, proc: subprocess.Popen, timeout: float 
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
-        # Check the endpoint before checking the child process. On Windows, a
-        # second Friday launcher can win the race for the fixed Vite port while
-        # this Vite child exits with EADDRINUSE. If the expected endpoint is
-        # already serving, adopt it instead of treating the race as a failure.
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return
@@ -173,7 +181,6 @@ def _start_api_process(desktop: str) -> subprocess.Popen:
 
 
 def _restart_api_process(procs: list[subprocess.Popen], desktop: str) -> None:
-    """Restart only the backend after an update; keep Vite/browser alive for HMR."""
     old_api = procs[0] if procs else None
     if old_api is not None:
         _terminate_processes([old_api])
@@ -213,7 +220,6 @@ def _open_ui_browser():
 
 
 def _recover_dead_processes(procs: list[subprocess.Popen], desktop: str) -> None:
-    """Recover only failed services so one failure cannot take down the other."""
     if len(procs) >= 1 and procs[0].poll() is not None:
         procs[0:1] = [_start_api_process(desktop)]
     if len(procs) >= 2 and procs[1].poll() is not None:
@@ -234,10 +240,10 @@ def _recover_dead_processes(procs: list[subprocess.Popen], desktop: str) -> None
 
 
 def _launch_ui():
-    """Keep the existing browser page alive while source updates arrive through Vite HMR."""
     root = str(ROOT)
     desktop = os.path.join(root, "desktop")
     print_colored("Friday desktop UI starting…", "36")
+    _start_self_maintenance_worker()
     retry_delay = STARTUP_RETRY_DELAY
     browser_opened = False
 
