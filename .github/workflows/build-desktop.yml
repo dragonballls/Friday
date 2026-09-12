@@ -62,7 +62,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Remove-Item -Recurse -Force desktop/src-tauri/binaries -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force desktop/src-tauri/binaries | Out-Null
-          python -m PyInstaller --onefile --name friday-api --distpath desktop/src-tauri/binaries --workpath desktop/.pyinstaller-build --specpath desktop/.pyinstaller-build --collect-submodules agent --collect-submodules core --collect-submodules plugins --collect-submodules tools desktop/api_server.py
+          python -m PyInstaller --onefile --name friday-api --distpath desktop/src-tauri/binaries --workpath desktop/.pyinstaller-build --specpath desktop/.pyinstaller-build --collect-submodules agent --collect-submodules core --collect-submodules plugins --collect-submodules tools desktop/api_server_bootstrap.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
           Move-Item desktop/src-tauri/binaries/friday-api.exe desktop/src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe
 
