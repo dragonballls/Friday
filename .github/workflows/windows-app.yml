@@ -10,6 +10,7 @@ on:
       - "core/**"
       - "agent/**"
       - "providers/**"
+      - "config/**"
       - "integrations/**"
       - "plugins/**"
       - "scripts/**"
