@@ -42,6 +42,7 @@ def jarvis_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: 
         "--collect-submodules", "integrations",
         "--collect-submodules", "plugins",
         "--collect-submodules", "providers",
+        "--collect-submodules", "hypercorn",
         "--hidden-import", "desktop.api_server",
         "--hidden-import", "desktop",
     ]
