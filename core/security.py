@@ -5,28 +5,14 @@ import uuid
 from dataclasses import dataclass
 
 DESTRUCTIVE_PATTERNS: list[str] = [
-    "rm ",
-    "rm -",
-    "mv ",
-    "del ",
-    "shutdown",
-    "format ",
-    "rd ",
-    "rmdir ",
-    "del /",
-    "rm /",
-    "> /dev/",
+    "rm ", "rm -", "mv ", "del ", "shutdown", "format ", "rd ", "rmdir ", "del /", "rm /", "> /dev/",
 ]
 
-_CONTROL_TOOLS: set[str] = {
-    "open_app",
-    "focus_window",
-    "type_text",
-    "press_key",
-    "click_mouse",
-    "close_app",
+_CONTROL_TOOLS: set[str] = {"open_app", "focus_window", "type_text", "press_key", "click_mouse", "close_app"}
+_HARD_BLOCKED_TOOLS: set[str] = {
+    "set_billing", "enable_billing", "add_payment_method", "purchase", "buy_credits",
+    "upgrade_plan", "change_plan", "create_paid_account", "disable_free_only",
 }
-
 
 @dataclass
 class PermissionRule:
@@ -35,14 +21,8 @@ class PermissionRule:
     allow: bool = True
     reason: str = ""
 
-
 class ApprovalRegistry:
-    """Registry for blocking tool-call approvals.
-
-    The executor registers a request, yields it to the consumer, then blocks
-    on `wait()` until the user resolves it via `resolve()`.
-    """
-
+    """Optional manual approval registry retained for explicit hold workflows."""
     def __init__(self):
         self._lock = threading.Lock()
         self._pending: dict[str, dict] = {}
@@ -50,12 +30,7 @@ class ApprovalRegistry:
     def request(self, tool: str, args: dict | None = None) -> str:
         request_id = uuid.uuid4().hex[:12]
         with self._lock:
-            self._pending[request_id] = {
-                "tool": tool,
-                "args": args or {},
-                "event": threading.Event(),
-                "allowed": None,
-            }
+            self._pending[request_id] = {"tool": tool, "args": args or {}, "event": threading.Event(), "allowed": None}
         return request_id
 
     def resolve(self, request_id: str, allowed: bool) -> bool:
@@ -86,7 +61,6 @@ class ApprovalRegistry:
         with self._lock:
             return [{"id": rid, "tool": e["tool"], "args": e["args"]} for rid, e in self._pending.items()]
 
-
 class Sandbox:
     def __init__(self, allowed_dirs: list[str] | None = None):
         self.allowed_dirs = [os.path.realpath(d) for d in (allowed_dirs or [])]
@@ -97,16 +71,11 @@ class Sandbox:
         abs_path = os.path.realpath(path)
         for d in self.allowed_dirs:
             try:
-                common = os.path.commonpath((abs_path, d))
+                if os.path.commonpath((abs_path, d)) == d:
+                    return {"allowed": True}
             except ValueError:
                 continue
-            if common == d:
-                return {"allowed": True}
-        return {
-            "allowed": False,
-            "reason": f"Path '{path}' is outside allowed directories: {self.allowed_dirs}",
-        }
-
+        return {"allowed": False, "reason": f"Path '{path}' is outside allowed directories: {self.allowed_dirs}"}
 
 class RateLimiter:
     def __init__(self, max_calls: int = 30, window_sec: float = 60.0):
@@ -121,11 +90,9 @@ class RateLimiter:
             self._calls = [t for t in self._calls if now - t < self.window_sec]
             if len(self._calls) >= self.max_calls:
                 oldest = self._calls[0] if self._calls else now
-                wait = max(0, self.window_sec - (now - oldest))
-                return {"allowed": False, "retry_after": round(wait, 1)}
+                return {"allowed": False, "retry_after": round(max(0, self.window_sec - (now - oldest)), 1)}
             self._calls.append(now)
             return {"allowed": True, "calls_in_window": len(self._calls), "limit": self.max_calls}
-
 
 class PermissionManager:
     def __init__(self):
@@ -133,16 +100,8 @@ class PermissionManager:
         self._denied_tools: set[str] = set()
         self._allowed_tools: set[str] = set()
         self._command_blacklist: list[str] = [
-            "rm -rf /",
-            "rm -rf /*",
-            ":(){ :|:& };:",
-            "mkfs",
-            "dd if=",
-            "> /dev/sda",
-            "chmod 777 /",
-            "sudo rm",
-            "wget http://",
-            "curl http://",
+            "rm -rf /", "rm -rf /*", ":(){ :|:& };:", "mkfs", "dd if=", "> /dev/sda",
+            "chmod 777 /", "sudo rm", "wget http://", "curl http://",
         ]
         self._interactive_mode = True
 
@@ -160,6 +119,8 @@ class PermissionManager:
     def check_tool(self, name: str, args: dict | None = None) -> dict:
         if name in self._denied_tools:
             return {"allowed": False, "reason": f"Tool '{name}' is denied"}
+        if name in _HARD_BLOCKED_TOOLS:
+            return {"allowed": False, "reason": f"Tool '{name}' is permanently blocked by Jarvis policy"}
         if self._allowed_tools and name not in self._allowed_tools:
             return {"allowed": False, "reason": f"Tool '{name}' is not in the allowed list"}
 
@@ -167,42 +128,31 @@ class PermissionManager:
             if rule.tool and rule.tool != name:
                 continue
             if rule.command_prefix:
-                command = ""
-                if args:
-                    command = str(args.get("command", args.get("cmd", "")))
+                command = str((args or {}).get("command", (args or {}).get("cmd", "")))
                 if not command.lower().startswith(rule.command_prefix.lower()):
                     continue
             if not rule.allow:
-                return {
-                    "allowed": False,
-                    "reason": rule.reason or f"Tool '{name}' is denied by a permission rule",
-                }
+                return {"allowed": False, "reason": rule.reason or f"Tool '{name}' is denied by a permission rule"}
 
         if name == "run_command" and args and "command" in args:
             return self._check_command(args["command"])
 
-        if self._interactive_mode and self._looks_destructive(name, args):
-            return {
-                "allowed": True,
-                "requires_confirmation": True,
-                "reason": f"Tool '{name}' matches a destructive pattern",
-            }
+        if self._looks_hard_blocked(name, args):
+            return {"allowed": False, "reason": "Operation is permanently blocked by Jarvis security policy"}
 
         return {"allowed": True}
 
-    def _looks_destructive(self, name: str, args: dict | None) -> bool:
-        if name in _CONTROL_TOOLS:
+    def _looks_hard_blocked(self, name: str, args: dict | None) -> bool:
+        if name in _HARD_BLOCKED_TOOLS:
             return True
         for key in ("path", "file", "src", "destination", "command", "cmd"):
             if not args or key not in args:
                 continue
             value = str(args[key]).lower()
-            for pattern in self._command_blacklist:
-                if pattern in value:
-                    return True
-            for pattern in ["rm ", "rm -", "mv ", "del ", "rd ", "rmdir ", "format ", "shutdown"]:
-                if value.startswith(pattern) or f" {pattern}" in f" {value}":
-                    return True
+            if any(pattern in value for pattern in self._command_blacklist):
+                return True
+            if any(value.startswith(prefix) or f" {prefix}" in f" {value}" for prefix in DESTRUCTIVE_PATTERNS):
+                return True
         return False
 
     def _check_command(self, command: str) -> dict:
@@ -210,39 +160,29 @@ class PermissionManager:
         for blacklisted in self._command_blacklist:
             if blacklisted in cmd_lower:
                 return {"allowed": False, "reason": f"Command contains blacklisted pattern: '{blacklisted}'"}
-        if self._interactive_mode and any(
-            cmd_lower.startswith(prefix) for prefix in ["rm ", "mv ", "del ", "shutdown", "format ", "rd ", "rmdir "]
-        ):
-            return {"allowed": True, "requires_confirmation": True}
+        if any(cmd_lower.startswith(prefix) for prefix in ["rm ", "mv ", "del ", "shutdown", "format ", "rd ", "rmdir "]):
+            return {"allowed": False, "reason": "Destructive command is permanently blocked; no approval is requested"}
         return {"allowed": True}
 
     def add_rule(self, rule: PermissionRule):
         self._rules.append(rule)
 
     def get_rules(self) -> list[dict]:
-        return [
-            {"tool": r.tool, "command_prefix": r.command_prefix, "allow": r.allow, "reason": r.reason}
-            for r in self._rules
-        ]
-
+        return [{"tool": r.tool, "command_prefix": r.command_prefix, "allow": r.allow, "reason": r.reason} for r in self._rules]
 
 _sandbox = Sandbox()
 _rate_limiter = RateLimiter()
 _permissions = PermissionManager()
 _approvals = ApprovalRegistry()
 
-
 def get_sandbox() -> Sandbox:
     return _sandbox
-
 
 def get_rate_limiter() -> RateLimiter:
     return _rate_limiter
 
-
 def get_permission_manager() -> PermissionManager:
     return _permissions
-
 
 def get_approval_registry() -> ApprovalRegistry:
     return _approvals
