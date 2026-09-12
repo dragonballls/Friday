@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from core.github_self_maintenance import GitHubSelfMaintenance, GitHubSelfMaintenanceError
@@ -22,15 +20,7 @@ def test_write_rejects_secret_markers():
         GitHubSelfMaintenance.validate_write("core/example.py", "token=ghp_example")
 
 
-def test_workflow_changes_require_explicit_opt_in(monkeypatch):
-    monkeypatch.delenv("FRIDAY_ALLOW_WORKFLOW_EDITS", raising=False)
-    with pytest.raises(GitHubSelfMaintenanceError):
-        GitHubSelfMaintenance.validate_write(".github/workflows/ci.yml", "name: CI")
-
-
-def test_workflow_changes_can_be_explicitly_enabled(monkeypatch):
-    monkeypatch.setenv("FRIDAY_ALLOW_WORKFLOW_EDITS", "1")
-    # Workflow paths remain outside the general source allowlist by design.
+def test_workflow_edits_stay_blocked():
     with pytest.raises(GitHubSelfMaintenanceError):
         GitHubSelfMaintenance.validate_write(".github/workflows/ci.yml", "name: CI")
 
