@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +51,9 @@ def app_pyinstaller_cmd(*, console: bool | None = None) -> list[str]:
         console = console_requested()
     separator = ";" if os.name == "nt" else os.pathsep
     cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         "--clean",
         "--console" if console else "--windowed",
@@ -97,7 +100,9 @@ def main() -> None:
     run(*app_pyinstaller_cmd())
 
     updater_cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         "--clean",
         "--windowed",
