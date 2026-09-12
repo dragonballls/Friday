@@ -1,0 +1,1 @@
+The feature-rich Friday implementation is intentionally not deleted. The barebones branch starts from 053b437 and narrows the default product surface. Existing files/history remain available so capabilities can be recovered selectively later.
