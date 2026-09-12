@@ -34,6 +34,7 @@ def jarvis_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: 
         "--name", name,
         "--onefile" if onefile else "--onedir",
         "--distpath", str(distpath), "--workpath", str(workpath),
+        "--paths", str(ROOT),
         "--add-data", f"{DIST}{separator}desktop/dist",
         "--collect-all", "webview",
         "--collect-submodules", "core",
