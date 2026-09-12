@@ -5,13 +5,12 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUNDLE = ROOT / "build" / "windows" / "Friday"
-SMOKE_BUNDLE = ROOT / "build" / "windows" / "_smoke" / "FridaySmoke"
-EXE = BUNDLE / "Friday.exe"
+BUILD = ROOT / "build" / "windows"
+EXE = BUILD / "Friday-JARVIS-SelfCoding.exe"
+SMOKE_BUNDLE = BUILD / "_smoke"
 SMOKE_EXE = SMOKE_BUNDLE / "FridaySmoke.exe"
-UPDATER = BUNDLE / "FridayUpdater.exe"
-VERSION = BUNDLE / "VERSION"
-LOG = BUNDLE / "friday.log"
+VERSION = BUILD / "VERSION"
+LOG = BUILD / "friday.log"
 
 
 def dump_log() -> None:
@@ -27,15 +26,15 @@ def dump_log() -> None:
 
 
 def main() -> None:
-    for required in (EXE, SMOKE_EXE, UPDATER, VERSION):
+    for required in (EXE, SMOKE_EXE, VERSION):
         if not required.is_file():
-            raise SystemExit(f"Missing Windows bundle file: {required}")
+            raise SystemExit(f"Missing Windows app file: {required}")
     version = VERSION.read_text(encoding="utf-8").strip()
     if not version:
-        raise SystemExit("Windows bundle VERSION file is empty")
+        raise SystemExit("Windows app VERSION file is empty")
 
-    # The smoke binary is built from the exact same app.py with a console
-    # bootloader, so native bootloader/import errors are visible in Actions.
+    # The smoke binary uses a console bootloader so native boot/import failures
+    # are visible in CI while the real user app remains GUI-only.
     proc = subprocess.Popen([str(SMOKE_EXE), "--smoke-test"], cwd=SMOKE_BUNDLE)
     try:
         deadline = time.monotonic() + 40
@@ -45,7 +44,7 @@ def main() -> None:
                 if returncode != 0:
                     dump_log()
                     raise SystemExit(f"FridaySmoke.exe smoke test exited with code {returncode}")
-                print(f"Friday Windows bundle smoke test passed for version {version}.")
+                print(f"Friday single-file Windows app smoke test passed for version {version}.")
                 dump_log()
                 return
             time.sleep(0.25)
