@@ -121,12 +121,12 @@ def smoke_test() -> None:
         if health is None or health[0] != 200:
             raise RuntimeError("Friday API health endpoint did not return HTTP 200")
 
-        print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+        print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.", flush=True)
     finally:
         api_stop.set()
         static_server.shutdown()
         static_server.server_close()
-        print("Friday Windows bundle smoke test services stopped cleanly.")
+        print("Friday Windows bundle smoke test services stopped cleanly.", flush=True)
 
 
 def install_startup() -> None:
@@ -149,8 +149,16 @@ def install_startup() -> None:
 
 def main() -> None:
     if "--smoke-test" in sys.argv:
-        smoke_test()
-        return
+        smoke_ok = False
+        try:
+            smoke_test()
+            smoke_ok = True
+        finally:
+            # PyInstaller's windowed executable can retain imported/background
+            # threads even after all test servers are shut down. Smoke mode is
+            # a one-shot health check, so force deterministic process termination
+            # after cleanup. The parent wrapper observes the real exit status.
+            os._exit(0 if smoke_ok else 1)
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
