@@ -36,6 +36,11 @@ def discover_plugins():
     _scan_community_packages()
     _scan_tools_fallback()
     try:
+        from tools import github
+        _register_functions_from_module(github)
+    except Exception as e:  # noqa: BLE001
+        warn(f"GitHub autonomy tools skipped: {e}")
+    try:
         from core.custom_tools import register_custom_tools
 
         register_custom_tools()
