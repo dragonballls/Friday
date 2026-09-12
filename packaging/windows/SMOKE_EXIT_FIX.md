@@ -1,1 +1,0 @@
-Temporary marker for the packaged smoke-test exit fix.
