@@ -7,6 +7,7 @@ from typing import Any, Callable
 from coding.coding_handoff import CodingHandoff
 from coding.coding_run import CodingRunError
 from coding.repair_loop import BoundedRepairLoop
+from core.live_update_lock import acquire_coding_lock, release_coding_lock
 
 
 class CoderControllerError(CodingRunError):
@@ -78,27 +79,18 @@ class RealCoderController:
             )
 
     @staticmethod
-    def _get_value(
-        result: Any,
-        name: str,
-        default: Any = None,
-    ) -> Any:
+    def _get_value(result: Any, name: str, default: Any = None) -> Any:
         if result is None:
             return default
-
         value = getattr(result, name, None)
-
         if value is not None:
             return value
-
         if isinstance(result, dict):
             return result.get(name, default)
-
         return default
 
     @classmethod
     def _gate_failure(cls, result: Any) -> str | None:
-        """Return a precise completion-gate failure, or None when all gates pass."""
         completed = cls._get_value(result, "completed", False)
         if completed is not True:
             return cls._get_value(result, "error") or "coding execution did not complete"
@@ -124,15 +116,9 @@ class RealCoderController:
 
     @staticmethod
     def _consume_execution_result(result: Any) -> tuple[Any, tuple[dict[str, Any], ...]]:
-        """
-        Accept the existing Agent bridge contract while preserving lifecycle events.
-
-        execute_coder may return a direct result or a generator yielding execution
-        events and returning its final CodingExecutionResult through StopIteration.value.
-        """
+        """Accept the existing Agent bridge contract while preserving lifecycle events."""
         if result is None:
             return None, ()
-
         if hasattr(result, "__next__"):
             iterator = result
             events: list[dict[str, Any]] = []
@@ -143,19 +129,22 @@ class RealCoderController:
                         events.append(event)
             except StopIteration as stop:
                 return stop.value, tuple(events)
-
         return result, ()
 
     def run(self) -> CoderResult:
         """
-        Run the complete bounded coding lifecycle.
+        Run the complete bounded coding lifecycle while holding the live-update lock.
 
-        Every attempt owns its complete transaction boundary:
-            execute -> tests -> review -> final verification
-
-        SafeExecutorAdapter is therefore able to roll back an attempt
-        before BoundedRepairLoop starts the next attempt.
+        This prevents a GitHub update from replacing the running source tree after
+        the coder commits but before its tests/review/final verification finish.
         """
+        acquire_coding_lock()
+        try:
+            return self._run_locked()
+        finally:
+            release_coding_lock()
+
+    def _run_locked(self) -> CoderResult:
         final_events: tuple[dict[str, Any], ...] = ()
 
         def run_attempt(attempt_number: int) -> Any:
@@ -170,13 +159,8 @@ class RealCoderController:
                     )
                 )
                 final_events = events
-
                 if result is None:
-                    return {
-                        "success": False,
-                        "error": "Coding executor returned no execution result.",
-                    }
-
+                    return {"success": False, "error": "Coding executor returned no execution result."}
                 failure = self._gate_failure(result)
                 if failure is not None:
                     return {
@@ -184,34 +168,24 @@ class RealCoderController:
                         "error": f"Coding attempt {attempt_number}: {failure}",
                         "result": result,
                     }
-
                 return {"success": True, "result": result}
-
             except Exception as exc:
                 return {"success": False, "error": str(exc)}
 
         def repair(attempt_number: int, failed_result: Any) -> Any:
             repair_callback = getattr(self, "repair_coder", None)
-
             if repair_callback is None:
                 raise CoderControllerError(
                     "No repair callback is available; coding repair fails closed."
                 )
-
-            return repair_callback(
-                self.handoff,
-                attempt_number,
-                failed_result,
-            )
+            return repair_callback(self.handoff, attempt_number, failed_result)
 
         repair_callback = getattr(self, "repair_coder", None)
-
         loop = BoundedRepairLoop(
             max_attempts=3,
             run_attempt=run_attempt,
             repair=repair if repair_callback is not None else None,
         )
-
         loop_result = loop.run()
 
         if not loop_result.success:
@@ -219,14 +193,10 @@ class RealCoderController:
             raise CoderControllerError(f"Coding completion gate failed: {error}")
 
         execution_result = loop_result.final_result
-
         if isinstance(execution_result, dict):
             execution_result = execution_result.get("result", execution_result)
-
         if execution_result is None:
-            raise CoderControllerError(
-                "Coding repair loop completed without a final result."
-            )
+            raise CoderControllerError("Coding repair loop completed without a final result.")
 
         failure = self._gate_failure(execution_result)
         if failure is not None:
@@ -235,7 +205,6 @@ class RealCoderController:
         transaction_id = self._get_value(execution_result, "transaction_id")
         changed_paths = self._get_value(execution_result, "changed_paths", [])
         changed_paths = tuple(sorted(str(path) for path in (changed_paths or [])))
-
         tests_ok = self._get_value(execution_result, "tests_ok", None)
         review_ok = self._get_value(execution_result, "review_ok", None)
         final_verification_ok = self._get_value(execution_result, "final_verification_ok", None)
