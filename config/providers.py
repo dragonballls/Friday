@@ -5,26 +5,13 @@ from typing import Any
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "providers.toml")
 
 
-# ─── Env var helpers ─────────────────────────────────────────────
 def _load_windows_user_env(key: str) -> str:
-    """Read a user-level environment variable directly on Windows.
-
-    Packaged desktop apps launched from Explorer can start with an older
-    environment block, so a key saved with ``[Environment]::SetEnvironmentVariable``
-    may not be visible to the already-running shell/session. Reading HKCU here
-    makes credentials available to Jarvis without requiring another shell.
-    """
+    """Read a user-level environment variable directly on Windows."""
     if os.name != "nt":
         return ""
     try:
         import winreg
-
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Environment",
-            0,
-            winreg.KEY_READ,
-        ) as registry_key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ) as registry_key:
             value, _ = winreg.QueryValueEx(registry_key, key)
             return str(value).strip()
     except (FileNotFoundError, OSError, TypeError):
@@ -32,7 +19,6 @@ def _load_windows_user_env(key: str) -> str:
 
 
 def _load_dotenv():
-    """Load .env file from project root if present."""
     root = os.path.dirname(os.path.dirname(__file__))
     env_path = os.path.join(root, ".env")
     if not os.path.exists(env_path):
@@ -52,39 +38,27 @@ _load_dotenv()
 
 
 def _resolve_api_key(toml_key: str, env_var: str) -> str:
-    """Resolve a provider key from process env, Windows user env, or toml."""
-    return (
-        os.environ.get(env_var, "")
-        or _load_windows_user_env(env_var)
-        or os.environ.get(toml_key, "")
-    )
+    return os.environ.get(env_var, "") or _load_windows_user_env(env_var) or os.environ.get(toml_key, "")
 
 
 def load_provider_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        cfg: dict[str, Any] = {"default": {"provider": "openai"}}
+        cfg: dict[str, Any] = {"default": {"provider": "openrouter"}}
     else:
         with open(CONFIG_PATH, "rb") as f:
             cfg = tomllib.load(f)
 
-    # Keep the optional Zen coding provider available even when an older local
-    # providers.toml predates this integration. The secret remains environment-only.
-    cfg.setdefault(
-        "zen_coder",
-        {
-            "api_key": "",
-            "base_url": "https://opencode.ai/zen/v1",
-            "model": "mimo-v2.5-free",
-            "fallback_provider": "openrouter",
-            "timeout": 60,
-            "temperature": 0.2,
-            "max_tokens": 8192,
-            "provider_name": "zen_coder",
-        },
-    )
+    cfg.setdefault("zen_coder", {
+        "api_key": "",
+        "base_url": "https://opencode.ai/zen/v1",
+        "model": "mimo-v2.5-free",
+        "fallback_provider": "openrouter",
+        "timeout": 60,
+        "temperature": 0.2,
+        "max_tokens": 8192,
+        "provider_name": "zen_coder",
+    })
 
-    # Override API keys from environment variables. Secrets never need to be
-    # committed to the repository; user-level environment variables are preferred.
     env_map = {
         "openai": ("api_key", "OPENAI_API_KEY"),
         "openrouter": ("api_key", "OPENROUTER_API_KEY"),
@@ -100,12 +74,11 @@ def load_provider_config() -> dict[str, Any]:
 
 
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
-    """Return the configured cloud-first primary provider.
+    """Select a configured cloud provider without producing a false missing-key error.
 
-    Older local configurations may still contain ``default.provider = ollama``
-    even though their routing section already declares a cloud primary. Prefer
-    that routing declaration so upgrades do not silently fall back to a local
-    model. An explicit non-Ollama default remains authoritative.
+    OpenRouter remains preferred when it has a credential. When it is configured
+    as the default but has no key, a configured OpenAI credential is used. This
+    matches the supported OpenAI-compatible provider path used by the packaged app.
     """
     if config is None:
         config = load_provider_config()
@@ -114,17 +87,22 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
     routing = config.get("routing", {})
     primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
 
+    openrouter_key = str(config.get("openrouter", {}).get("api_key", "")).strip()
+    openai_key = str(config.get("openai", {}).get("api_key", "")).strip()
+
+    if openrouter_key:
+        return "openrouter"
+    if openai_key:
+        return "openai"
+
     if default == "ollama":
-        # Ollama is never an automatic fallback/default. If an explicit cloud
-        # routing primary exists, prefer it; otherwise use OpenRouter so a
-        # stopped local Ollama service cannot break the assistant.
         if primary and primary != "ollama":
             return primary
         return "openrouter"
 
-    if primary and primary != "ollama" and (not default or default == "ollama"):
+    if primary and primary != "ollama":
         return primary
-    return default or primary or "openrouter"
+    return default or "openrouter"
 
 
 def get_provider_config(name: str | None = None) -> dict[str, Any]:
