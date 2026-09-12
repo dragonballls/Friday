@@ -94,8 +94,8 @@ def test_desktop_summary_merges_state(monkeypatch):
     assert "size" in summary
 
 
-def test_control_tools_require_confirmation():
+def test_control_tools_are_auto_allowed():
     perm = get_permission_manager()
     for tool in ("open_app", "type_text", "click_mouse", "press_key", "focus_window", "close_app"):
         result = perm.check_tool(tool, {"app": "notepad", "text": "hi", "x": 1, "y": 1, "key": "enter", "title": "x"})
-        assert result.get("requires_confirmation") is True, tool
+        assert result == {"allowed": True}, tool
