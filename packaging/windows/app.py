@@ -15,7 +15,7 @@ import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 API_HOST = "127.0.0.1"
 API_PORT = 8080
@@ -24,6 +24,7 @@ UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
 # Keep the legacy repository URL until the GitHub repository itself is renamed to
 # dragonballls/jarvis; changing it before the rename would break bootstrap.
+REPO_URL = "https://github.com/dragonballls/Friday.git"
 REPO_ZIP_URL = "https://github.com/dragonballls/Friday/archive/refs/heads/main.zip"
 WORKSPACE_NAME = "Jarvis-SelfCoding-Workspace"
 
@@ -66,17 +67,70 @@ def self_coding_workspace() -> Path:
     return Path.home() / WORKSPACE_NAME
 
 
-def prepare_self_coding_workspace() -> Path:
-    workspace = self_coding_workspace()
-    if (workspace / ".git").is_dir() and (workspace / "agent").is_dir():
-        return workspace
+def _git_clone_workspace(workspace: Path) -> bool:
+    git = shutil.which("git.exe") or shutil.which("git")
+    if not git:
+        return False
+    try:
+        subprocess.run(
+            [git, "clone", "--depth", "1", "--branch", "main", REPO_URL, str(workspace)],
+            cwd=workspace.parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        log("Self-coding workspace cloned as a real Git repository")
+        return True
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log(f"Git clone unavailable; using safe archive bootstrap: {exc}")
+        shutil.rmtree(workspace, ignore_errors=True)
+        return False
 
-    workspace.parent.mkdir(parents=True, exist_ok=True)
+
+def _initialize_archive_workspace(workspace: Path) -> None:
+    """Fallback for machines without a usable git clone command.
+
+    The archive is converted into a local Git repository with an internal
+    baseline commit, so the safe verifier still has real Git state to inspect.
+    """
+    git = shutil.which("git.exe") or shutil.which("git")
+    if not git:
+        raise RuntimeError("Git is required for Jarvis self-coding verification.")
+    result = subprocess.run(
+        [git, "init"],
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "git init failed")
+    for args in (
+        [git, "config", "user.name", "Jarvis"],
+        [git, "config", "user.email", "jarvis@localhost"],
+        [git, "add", "-A"],
+        [git, "commit", "-m", "Jarvis bootstrap baseline"],
+    ):
+        result = subprocess.run(
+            args,
+            cwd=workspace,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Git bootstrap command failed")
+    log("Self-coding workspace initialized with a local Git baseline")
+
+
+def _archive_workspace(workspace: Path) -> None:
     temp_dir = Path(tempfile.mkdtemp(prefix="jarvis-bootstrap-"))
     archive_path = temp_dir / "jarvis-main.zip"
     extracted = temp_dir / "extracted"
     try:
-        log(f"Preparing self-coding workspace: {workspace}")
         request = Request(REPO_ZIP_URL, headers={"User-Agent": "Jarvis/1.0"})
         with urlopen(request, timeout=60) as response:
             archive_path.write_bytes(response.read())
@@ -95,14 +149,34 @@ def prepare_self_coding_workspace() -> Path:
         if workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)
         shutil.copytree(source, workspace)
+        _initialize_archive_workspace(workspace)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def prepare_self_coding_workspace() -> Path:
+    workspace = self_coding_workspace()
+    if (workspace / ".git").is_dir() and (workspace / "agent").is_dir():
+        return workspace
+
+    workspace.parent.mkdir(parents=True, exist_ok=True)
+    if workspace.exists():
+        shutil.rmtree(workspace, ignore_errors=True)
+
+    try:
+        log(f"Preparing self-coding workspace: {workspace}")
+        if not _git_clone_workspace(workspace):
+            _archive_workspace(workspace)
+        if not (workspace / ".git").is_dir():
+            raise RuntimeError("Jarvis self-coding workspace is not a Git repository")
+        if not (workspace / "agent").is_dir():
+            raise RuntimeError("Jarvis self-coding workspace is missing the agent package")
         log("Self-coding workspace ready")
         return workspace
     except Exception:
         shutil.rmtree(workspace, ignore_errors=True)
         log("Self-coding workspace preparation failed:\n" + traceback.format_exc())
         raise
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
@@ -137,7 +211,10 @@ def start_static_server(port: int = UI_PORT) -> ThreadingHTTPServer:
 async def _api_server() -> None:
     sys.path.insert(0, str(ROOT))
     log("API process importing desktop.api_server")
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
     from desktop.api_server import app
+
     config = Config()
     config.bind = [f"{API_HOST}:{API_PORT}"]
     config.accesslog = None
@@ -235,7 +312,7 @@ def install_startup() -> None:
         exe = Path(sys.executable).resolve()
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            r"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
             0,
             winreg.KEY_SET_VALUE,
         ) as key:
