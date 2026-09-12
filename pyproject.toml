@@ -44,6 +44,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"core/autonomous_service.py" = ["E731"]
+"tools/autonomous_coder.py" = ["E731"]
+"desktop/api_server_bootstrap.py" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"
