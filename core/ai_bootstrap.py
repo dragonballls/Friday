@@ -12,7 +12,7 @@ from typing import Any
 
 from config.free_ai_policy import enforce_free_provider
 from config.free_provider_registry import get_free_provider_registry
-from config.providers import get_active_provider, get_provider_config, load_provider_config
+from config.providers import get_provider_config, load_provider_config
 
 
 @dataclass(frozen=True)
@@ -59,16 +59,18 @@ def discover_free_providers() -> list[BootstrapProvider]:
 
 def bootstrap_status() -> dict[str, Any]:
     """Return safe first-run state suitable for the minimal Jarvis client."""
+    config = load_provider_config()
     providers = discover_free_providers()
     configured = [item for item in providers if item.configured]
 
     try:
-        active = get_active_provider(load_provider_config())
-    except (AttributeError, KeyError, TypeError, ValueError):
-        active = "openrouter"
+        default = config.get("default", {})
+        active = str(default.get("provider", "")).strip() if isinstance(default, dict) else ""
+    except (AttributeError, TypeError):
+        active = ""
 
-    if not active and configured:
-        active = configured[0].name
+    if not active:
+        active = "openrouter" if providers else (configured[0].name if configured else "")
 
     return {
         "ready": bool(configured),
