@@ -10,6 +10,37 @@ DIST = ROOT / "desktop" / "dist"
 ENTRY = ROOT / "packaging" / "windows" / "app.py"
 
 
+# Jarvis is a cloud-first assistant. These optional local-ML stacks are not
+# required by the packaged chat/self-coding runtime and can make PyInstaller
+# consume several GB of RAM while analyzing the dependency graph.
+OPTIONAL_LOCAL_ML = (
+    "sentence_transformers",
+    "sentence_transformers.*",
+    "torch",
+    "torch.*",
+    "transformers",
+    "transformers.*",
+    "scipy",
+    "scipy.*",
+    "pandas",
+    "pandas.*",
+    "sklearn",
+    "sklearn.*",
+    "tensorflow",
+    "tensorflow.*",
+    "keras",
+    "keras.*",
+    "matplotlib",
+    "matplotlib.*",
+    "nltk",
+    "nltk.*",
+    "IPython",
+    "IPython.*",
+    "sympy",
+    "sympy.*",
+)
+
+
 def run(*args: str) -> None:
     print("+", " ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)
@@ -29,23 +60,33 @@ def current_commit() -> str:
 def jarvis_pyinstaller_args(name: str, windowed: bool, onefile: bool, distpath: Path, workpath: Path) -> list[str]:
     separator = ";"
     args = [
-        "pyinstaller", "--noconfirm", "--clean",
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
         "--windowed" if windowed else "--console",
         "--name", name,
         "--onefile" if onefile else "--onedir",
-        "--distpath", str(distpath), "--workpath", str(workpath),
+        "--distpath", str(distpath),
+        "--workpath", str(workpath),
         "--paths", str(ROOT),
         "--add-data", f"{DIST}{separator}desktop/dist",
+        # pywebview needs its runtime data/backend modules. Its own hook is
+        # preferable to recursively collecting every project package.
         "--collect-all", "webview",
-        "--collect-submodules", "core",
+        # These packages are discovered dynamically at runtime. Project
+        # modules imported normally by Agent/API do not need blanket
+        # collection, avoiding the dependency explosion seen previously.
         "--collect-submodules", "agent",
         "--collect-submodules", "integrations",
         "--collect-submodules", "plugins",
         "--collect-submodules", "providers",
-        "--collect-submodules", "hypercorn",
         "--hidden-import", "desktop.api_server",
         "--hidden-import", "desktop",
     ]
+
+    for module in OPTIONAL_LOCAL_ML:
+        args += ["--exclude-module", module]
+
     prompts = ROOT / "prompts"
     if prompts.exists():
         args += ["--add-data", f"{prompts}{separator}prompts"]
@@ -61,29 +102,23 @@ def main() -> None:
         shutil.rmtree(BUILD)
     BUILD.mkdir(parents=True, exist_ok=True)
 
-    # User-facing build: a single self-contained GUI executable.
-    run(*jarvis_pyinstaller_args(
-        "Jarvis", True, True, BUILD,
-        ROOT / "build" / "pyinstaller-work"
-    ))
-
-    # CI diagnostic build: console bootloader, used only for smoke testing.
-    smoke_dist = BUILD / "_smoke"
-    run(*jarvis_pyinstaller_args(
-        "JarvisSmoke", False, False, smoke_dist,
-        ROOT / "build" / "pyinstaller-work-smoke"
-    ))
-
+    # Build only the user-facing executable. The old second smoke executable
+    # duplicated the entire dependency-analysis pass and could double memory
+    # pressure. The packaged Jarvis executable has its own --smoke-test mode.
     exe = BUILD / "Jarvis.exe"
-    smoke_exe = smoke_dist / "JarvisSmoke" / "JarvisSmoke.exe"
+    run(*jarvis_pyinstaller_args(
+        "Jarvis",
+        True,
+        True,
+        BUILD,
+        ROOT / "build" / "pyinstaller-work",
+    ))
+
     if not exe.is_file():
         raise SystemExit(f"PyInstaller did not create {exe}")
-    if not smoke_exe.is_file():
-        raise SystemExit(f"PyInstaller did not create {smoke_exe}")
 
     (BUILD / "VERSION").write_text(current_commit() + "\n", encoding="utf-8")
     print(f"Windows Jarvis app ready: {exe}")
-    print(f"Windows Jarvis smoke diagnostic ready: {smoke_exe}")
 
 
 if __name__ == "__main__":
