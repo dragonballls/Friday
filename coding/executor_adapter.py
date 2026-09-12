@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +28,7 @@ class CodingExecutionResult:
 
 
 class SafeExecutorAdapter:
-    """Safety wrapper around Friday's existing Executor."""
+    """Safety wrapper around the existing Executor with fail-closed verification."""
 
     def __init__(
         self,
@@ -52,7 +53,7 @@ class SafeExecutorAdapter:
         return self.run.transaction_id
 
     def _run_repository_verification(self) -> dict[str, Any] | None:
-        """Run the complete repository gate for a real Git workspace."""
+        """Run the complete repository verification gate for a real Git workspace."""
         if not (self.workspace / ".git").exists():
             return None
         try:
@@ -75,6 +76,39 @@ class SafeExecutorAdapter:
                 "error": "Final verification returned an invalid result.",
             }
         return result
+
+    def _run_review_gate(self, changed: Iterable[str]) -> tuple[bool, str]:
+        """Perform a real, read-only review gate over the completed working tree."""
+        if not (self.workspace / ".git").exists():
+            return False, "Review requires a Git workspace."
+
+        changed_set = {str(path) for path in changed}
+        expected_set = {str(path) for path in self.run.expected_paths}
+        if not changed_set:
+            return False, "Review found no changed paths."
+        if not changed_set.issubset(expected_set):
+            unexpected = sorted(changed_set - expected_set)
+            return False, "Review found unauthorized changes: " + ", ".join(unexpected)
+
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--check"],
+                cwd=self.workspace,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                shell=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return False, f"Review could not inspect the change: {exc}"
+
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()
+            return False, output[-4000:] or "git diff --check failed."
+
+        return True, "Read-only Git review passed: authorized paths only and diff checks clean."
 
     def execute(
         self,
@@ -130,44 +164,58 @@ class SafeExecutorAdapter:
                 "type": "coding_transaction",
                 "status": "surface_verified",
                 "transaction_id": self.transaction_id,
-                "changed_paths": changed,
+                "changed_paths": sorted(changed),
             }
 
-            implementation_ok = (
-                implementation_check() if implementation_check else bool(changed)
-            )
-            tests_ok = test_check() if test_check else True
-            review_ok = review_check() if review_check else True
-            final_ok = final_verification_check() if final_verification_check else True
+            implementation_ok = bool(implementation_check()) if implementation_check else bool(changed)
 
+            repository_verification = self._run_repository_verification()
+            if repository_verification is None:
+                raise CodingExecutorAdapterError(
+                    "Completion gate failed: repository verification requires a Git workspace."
+                )
+
+            verification_passed = bool(
+                repository_verification.get("success")
+                and repository_verification.get("all_gates_passed")
+            )
+            tests_ok = verification_passed
+            final_ok = verification_passed
+
+            if test_check is not None:
+                tests_ok = bool(tests_ok and test_check())
             if test_fn is not None:
                 tests_ok = bool(tests_ok and test_fn())
+
+            review_ok, review_message = self._run_review_gate(changed)
+            if review_check is not None:
+                review_ok = bool(review_ok and review_check())
             if review_fn is not None:
                 review_ok = bool(review_ok and review_fn())
+
+            if final_verification_check is not None:
+                final_ok = bool(final_ok and final_verification_check())
             if final_verification_fn is not None:
                 final_ok = bool(final_ok and final_verification_fn())
 
-            repository_verification = self._run_repository_verification()
-            if repository_verification is not None:
-                verification_passed = bool(
-                    repository_verification.get("success")
-                    and repository_verification.get("all_gates_passed")
-                )
-                final_ok = bool(final_ok and verification_passed)
-                tests_ok = bool(tests_ok and verification_passed)
-                yield {
-                    "type": "verification",
-                    "content": repository_verification.get(
-                        "message",
-                        repository_verification.get(
-                            "error",
-                            "Repository verification completed.",
-                        ),
+            yield {
+                "type": "verification",
+                "content": repository_verification.get(
+                    "message",
+                    repository_verification.get(
+                        "error",
+                        "Repository verification completed.",
                     ),
-                    "success": verification_passed,
-                    "all_gates_passed": verification_passed,
-                    "gates": repository_verification.get("gates", []),
-                }
+                ),
+                "success": verification_passed,
+                "all_gates_passed": verification_passed,
+                "gates": repository_verification.get("gates", []),
+            }
+            yield {
+                "type": "coding_review",
+                "success": review_ok,
+                "content": review_message,
+            }
 
             if not implementation_ok:
                 raise CodingExecutorAdapterError(
@@ -175,15 +223,15 @@ class SafeExecutorAdapter:
                 )
             if not tests_ok:
                 raise CodingExecutorAdapterError(
-                    "Completion gate failed: tests failed."
+                    "Completion gate failed: real repository tests failed."
                 )
             if not review_ok:
                 raise CodingExecutorAdapterError(
-                    "Completion gate failed: review failed."
+                    "Completion gate failed: real code review failed."
                 )
             if not final_ok:
                 raise CodingExecutorAdapterError(
-                    "Completion gate failed: final verification failed."
+                    "Completion gate failed: real final verification failed."
                 )
 
             self.run.finish(
@@ -198,14 +246,14 @@ class SafeExecutorAdapter:
                 "type": "coding_transaction",
                 "status": "completed",
                 "transaction_id": self.transaction_id,
-                "changed_paths": changed,
+                "changed_paths": sorted(changed),
             }
 
             return CodingExecutionResult(
                 events=events,
                 completed=True,
                 rolled_back=False,
-                changed_paths=changed,
+                changed_paths=sorted(changed),
                 unexpected_changes=[],
                 transaction_id=self.transaction_id,
                 implementation_ok=bool(implementation_ok),
@@ -225,7 +273,7 @@ class SafeExecutorAdapter:
             unexpected: list[str] = []
             if self.run.started:
                 try:
-                    unexpected = list(self.run.unexpected_changes())
+                    unexpected = sorted(self.run.unexpected_changes())
                 except Exception:
                     pass
 
