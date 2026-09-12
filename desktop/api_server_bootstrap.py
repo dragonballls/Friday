@@ -2,7 +2,7 @@
 
 Keeps the desktop API available even when optional startup services fail.
 The Tauri WebView uses the tauri.localhost origin, so production CORS headers
-are added here. The autonomous coder is started alongside the API process.
+are added here. The autonomous coder and updater run alongside the API process.
 """
 from __future__ import annotations
 
@@ -80,8 +80,6 @@ def _run_server() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # The API server is the critical service. Optional background services are
-    # started only after the event loop is ready so they cannot block startup.
     for factory in (
         api_server._memory_consolidation_loop,
         api_server._proactive_loop,
@@ -104,6 +102,14 @@ def _run_server() -> None:
                 logger(f"Optional async service {getattr(factory, '__name__', factory)} skipped: {exc}")
 
     threading.Thread(target=_start_optional_services, name="FridayOptionalStartup", daemon=True).start()
+    try:
+        from app_updater import start_background_check
+        start_background_check()
+    except Exception as exc:
+        logger = getattr(api_server, "warn", None)
+        if callable(logger):
+            logger(f"Automatic updater startup skipped: {exc}")
+
     loop.run_until_complete(hypercorn.asyncio.serve(api_server.app, cfg))
 
 
