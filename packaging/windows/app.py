@@ -87,21 +87,13 @@ def http_text(url: str) -> tuple[int, str] | None:
 
 
 def smoke_test() -> None:
-    """Validate the frozen bundle without starting the full desktop server stack.
-
-    The normal application still starts Hypercorn and the static server. Smoke
-    mode intentionally exercises the packaged frontend and the Quart health
-    endpoint through Quart's in-process test client. This avoids CI hangs caused
-    by background server/event-loop lifetime while still testing the packaged
-    API route and the exact frontend assets shipped in the executable.
-    """
+    """Validate the frozen bundle without starting the full desktop server stack."""
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
 
     static_server = start_static_server()
     try:
         wait_for_port(UI_HOST, UI_PORT)
-
         ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
         if ui is None or ui[0] != 200:
             raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
@@ -118,7 +110,7 @@ def smoke_test() -> None:
 
         async def check_api() -> None:
             client = app.test_client()
-            response = await client.get(f"{API_PREFIX}/health")
+            response = await client.get("/api/v1/health")
             if response.status_code != 200:
                 raise RuntimeError(
                     f"Friday API health endpoint returned HTTP {response.status_code}"
