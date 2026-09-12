@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { streamAutopilot, streamChat, checkHealth } from './core/api'
 
 interface ChatMessage {
