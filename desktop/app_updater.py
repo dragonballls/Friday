@@ -8,7 +8,6 @@ import sys
 import tempfile
 import threading
 import time
-import zipfile
 from pathlib import Path
 
 import httpx
