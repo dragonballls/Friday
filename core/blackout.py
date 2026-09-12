@@ -3,11 +3,11 @@
 When enabled:
 - outbound web/network tools are blocked
 - the frontend can show a privacy seal on the orb
-- AI requests without an explicit provider use the local Ollama provider
+- Friday never switches to a local AI model
 
-Explicit provider selections are preserved. This prevents Friday's cloud
-coding provider from being silently redirected to a stopped local Ollama
-service merely because blackout mode is enabled.
+Cloud AI is the only supported inference path. Blackout therefore no longer
+uses a local-model escape hatch; explicit cloud provider selections remain
+preserved so provider routing stays predictable.
 
 State persists to ``memory_store/blackout.json`` so it survives restarts.
 """
@@ -41,8 +41,6 @@ _NETWORK_TOOLS = {
     "email_send",
     "calendar_create_event",
 }
-
-_LOCAL_PROVIDER = "ollama"
 
 
 def _load() -> bool:
@@ -78,10 +76,9 @@ def set_blackout(enabled: bool) -> dict:
 
 
 def get_blackout_status() -> dict:
-    enabled = is_blackout()
     return {
-        "enabled": enabled,
-        "local_provider": _LOCAL_PROVIDER,
+        "enabled": is_blackout(),
+        "local_provider": None,
         "blocked_tools": sorted(_NETWORK_TOOLS),
     }
 
@@ -91,15 +88,5 @@ def is_tool_blocked(tool: str) -> bool:
 
 
 def resolve_provider(requested: str | None) -> str | None:
-    """Resolve provider selection without silently hijacking explicit requests.
-
-    Blackout remains the default local-inference mode when the caller has not
-    selected a provider. An explicit provider (for example ``zen_coder``) is
-    preserved so autonomous cloud coding cannot accidentally depend on a
-    stopped Ollama service.
-    """
-    if requested is not None:
-        return requested
-    if is_blackout():
-        return _LOCAL_PROVIDER
-    return None
+    """Preserve explicit cloud selections and never route to local inference."""
+    return requested

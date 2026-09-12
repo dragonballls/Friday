@@ -1,0 +1,162 @@
+name: Build Friday Desktop
+
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build-desktop.yml"
+      - "agent/**"
+      - "core/**"
+      - "plugins/**"
+      - "tools/**"
+      - "tests/**"
+      - "requirements.txt"
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build-desktop.yml"
+      - "agent/**"
+      - "core/**"
+      - "plugins/**"
+      - "tools/**"
+      - "tests/**"
+      - "requirements.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python runtime dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+
+      - name: Embed desktop build metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          @"
+          """Build metadata injected by GitHub Actions."""
+          BUILD_SHA = "$env:GITHUB_SHA"
+          BUILD_RUN_ID = "$env:GITHUB_RUN_ID"
+          BUILD_REF = "$env:GITHUB_REF"
+          "@ | Set-Content -Encoding utf8 desktop/build_info.py
+
+      - name: Build Friday API sidecar
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Remove-Item -Recurse -Force desktop/src-tauri/binaries -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force desktop/src-tauri/binaries | Out-Null
+          python -m PyInstaller --onefile --name friday-api --distpath desktop/src-tauri/binaries --workpath desktop/.pyinstaller-build --specpath desktop/.pyinstaller-build --collect-submodules agent --collect-submodules core --collect-submodules plugins --collect-submodules tools desktop/api_server_bootstrap.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+          Move-Item desktop/src-tauri/binaries/friday-api.exe desktop/src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Verify frontend
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed with exit code $LASTEXITCODE" }
+          npm run test
+          if ($LASTEXITCODE -ne 0) { throw "Frontend tests failed with exit code $LASTEXITCODE" }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "Frontend build failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "dist/index.html")) { throw "Frontend build did not produce dist/index.html" }
+
+      - name: Remove auto-discovered Tauri icon assets
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Remove-Item -Recurse -Force "src-tauri/icons" -ErrorAction SilentlyContinue
+          if (Test-Path "src-tauri/icons") { throw "Tauri icon directory still exists after cleanup" }
+          Write-Host "Tauri icon asset cleanup passed; bundle.icon is explicitly empty in tauri.conf.json."
+
+      - name: Preflight Tauri and packaging inputs
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json | Out-Null
+          if (-not (Test-Path "dist/index.html")) { throw "Tauri frontendDist is missing: dist/index.html was not produced" }
+          if (-not (Test-Path "src-tauri/binaries/friday-api-x86_64-pc-windows-msvc.exe")) { throw "Friday API sidecar missing" }
+          if (Test-Path "src-tauri/icons") { throw "Tauri icon directory unexpectedly exists" }
+          Write-Host "Preflight passed: frontend output, Tauri config, sidecar, and no auto-discovered icon assets."
+          cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Tauri cargo check failed with exit code $LASTEXITCODE" }
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: npm install --no-save @tauri-apps/cli@latest
+
+      - name: Build Windows installer
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          npx tauri build --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Tauri Windows installer build failed with exit code $LASTEXITCODE" }
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Friday-Windows-x64-${{ github.sha }}
+          path: |
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish latest desktop release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem "desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "No NSIS installer found for rolling desktop release" }
+          gh release view desktop-latest *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create desktop-latest $installer.FullName --title "Friday Desktop (latest)" --notes "Latest Windows desktop build from main." --prerelease
+          } else {
+            gh release upload desktop-latest $installer.FullName --clobber
+            gh release edit desktop-latest --title "Friday Desktop (latest)" --notes "Latest Windows desktop build from main." --prerelease
+          }

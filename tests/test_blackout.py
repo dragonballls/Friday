@@ -47,9 +47,9 @@ def test_resolve_provider_preserves_explicit_cloud_provider():
     assert blackout.resolve_provider("openrouter") == "openrouter"
 
 
-def test_resolve_provider_defaults_to_local_only_when_unspecified():
+def test_resolve_provider_never_defaults_to_local_model():
     blackout.set_blackout(True)
-    assert blackout.resolve_provider(None) == "ollama"
+    assert blackout.resolve_provider(None) is None
     blackout.set_blackout(False)
     assert blackout.resolve_provider(None) is None
 
@@ -58,5 +58,5 @@ def test_status_shape():
     blackout.set_blackout(True)
     status = blackout.get_blackout_status()
     assert status["enabled"] is True
-    assert status["local_provider"] == "ollama"
+    assert status["local_provider"] is None
     assert "web_fetch" in status["blocked_tools"]

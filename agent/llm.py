@@ -51,13 +51,13 @@ def _is_retryable_provider_error(event: dict) -> bool:
 
 
 def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
-    """Return cloud-first fallback candidates without forcing local inference."""
+    """Return cloud-only fallback candidates."""
     config = load_provider_config()
     primary_config = config.get(primary_name, {})
     configured = str(primary_config.get("fallback_provider", "")).strip()
 
     candidates: list[str] = []
-    if configured and configured != primary_name and configured != "ollama":
+    if configured and configured != primary_name:
         candidates.append(configured)
 
     routing = config.get("routing", {})
@@ -66,26 +66,24 @@ def _provider_candidates_for_fallback(primary_name: str) -> list[str]:
         if isinstance(fallback_list, str):
             fallback_list = [fallback_list]
         if isinstance(fallback_list, list):
-            candidates.extend(
-                str(item).strip()
-                for item in fallback_list
-                if str(item).strip() and str(item).strip() != "ollama"
-            )
+            candidates.extend(str(item).strip() for item in fallback_list if str(item).strip())
 
     seen: set[str] = set()
-    return [
-        name
-        for name in candidates
-        if name and name != primary_name and not (name in seen or seen.add(name))
-    ]
+    result: list[str] = []
+    for name in candidates:
+        if name and name != primary_name and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
 
 
 def _get_fallback_provider(primary_name: str, *, allow_uncredentialed: bool = False):
     for fallback_name in _provider_candidates_for_fallback(primary_name):
         try:
-            # A provider already constructed for this request is authoritative.
             cached = _provider_cache.get(fallback_name)
             if cached is not None:
+                if not allow_uncredentialed and not _provider_has_credentials(fallback_name):
+                    continue
                 return cached, fallback_name
             provider = _get_named_provider(fallback_name)
         except Exception:
@@ -109,15 +107,8 @@ def _primary_failed(events: list[dict]) -> bool:
     return False
 
 
-def _has_partial_output(events: list[dict]) -> bool:
-    """Return True once the primary provider has exposed user-visible text."""
-    return any(event.get("type") == "tokens" and bool(str(event.get("content") or "")) for event in events)
-
-
 def _provider_has_credentials(name: str) -> bool:
     config = get_provider_config(name)
-    if name == "ollama":
-        return True
     return bool(str(config.get("api_key") or "").strip())
 
 
@@ -126,7 +117,7 @@ def chat(
     tools: list[dict] | None = None,
     provider_name: str | None = None,
 ) -> Generator[dict, None, None]:
-    """Stream from a selected provider with safe per-request fallback."""
+    """Stream from a selected cloud provider with safe per-request fallback."""
     provider = _ensure_provider() if provider_name is None else None
     selected_name = provider_name or _provider_name or "unknown"
 
@@ -179,8 +170,7 @@ def chat(
                 primary_events.append(event)
 
                 # Once user-visible output has been delivered, suppress a later
-                # provider error so the stream does not contain a duplicate
-                # terminal/error event and no fallback is started.
+                # provider error so the stream does not contain duplicate terminal output.
                 if partial_output and event.get("type") == "error":
                     continue
             yield event
@@ -190,25 +180,19 @@ def chat(
         if not partial_output:
             yield error_event
 
-    # Never start a duplicate fallback after user-visible output.
     if partial_output or not _primary_failed(primary_events):
         return
 
     fallback, fallback_name = _get_fallback_provider(selected_name)
-
     if fallback is None:
         return
 
     yield {
         "type": "tokens",
-        "content": (f"[{selected_name} unavailable; switching to {fallback_name}…]\n\n"),
+        "content": f"[{selected_name} unavailable; switching to {fallback_name}…]\n\n",
     }
 
     try:
         yield from fallback.chat(messages, tools=tools)
     except Exception as exc:
-        yield {
-            "type": "error",
-            "content": str(exc),
-            "final": True,
-        }
+        yield {"type": "error", "content": str(exc), "final": True}

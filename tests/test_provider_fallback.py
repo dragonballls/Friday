@@ -1,20 +1,20 @@
 import agent.llm as llm
 
 
-def test_fallback_candidates_never_include_ollama(monkeypatch):
+def test_fallback_candidates_are_cloud_only(monkeypatch):
     monkeypatch.setattr(
         llm,
         "load_provider_config",
         lambda: {
-            "openai": {"fallback_provider": "ollama"},
-            "routing": {"fallback": ["ollama", "openrouter", "openrouter"]},
+            "openai": {"fallback_provider": "openrouter"},
+            "routing": {"fallback": ["gemini", "openrouter", "gemini"]},
         },
     )
 
     candidates = llm._provider_candidates_for_fallback("openai")
 
     assert "ollama" not in candidates
-    assert candidates == ["openrouter"]
+    assert candidates == ["openrouter", "gemini"]
 
 
 def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkeypatch):
@@ -26,7 +26,7 @@ def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkey
         llm,
         "load_provider_config",
         lambda: {
-            "openai": {"fallback_provider": "openrouter"},
+            "openai": {"fallback_provider": "gemini"},
             "routing": {"fallback": ["zen_coder"]},
         },
     )
@@ -41,6 +41,27 @@ def test_fallback_provider_skips_unconfigured_remote_then_uses_configured(monkey
 
     assert provider.name == "zen_coder"
     assert name == "zen_coder"
+
+
+def test_cached_fallback_provider_still_requires_credentials(monkeypatch):
+    cached = object()
+    llm._provider_cache.clear()
+    llm._provider_cache["gemini"] = cached
+
+    monkeypatch.setattr(
+        llm,
+        "load_provider_config",
+        lambda: {
+            "openai": {"fallback_provider": "gemini"},
+            "routing": {},
+        },
+    )
+    monkeypatch.setattr(llm, "_provider_has_credentials", lambda name: False)
+
+    provider, name = llm._get_fallback_provider("openai")
+
+    assert provider is None
+    assert name is None
 
 
 def test_retryable_provider_errors_are_limited_to_transient_failures():
