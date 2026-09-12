@@ -40,8 +40,6 @@ def _workspace() -> Path:
     configured = os.getenv("FRIDAY_WORKSPACE", "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
-    # Prefer the traditional checkout when it exists; packaged installs get a
-    # durable per-user workspace that survives app restarts and upgrades.
     checkout = (Path.home() / "Friday").resolve()
     if (checkout / ".git").exists():
         return checkout
@@ -136,6 +134,10 @@ def _compact_context(state: dict) -> str:
     return text[-MAX_CONTEXT_CHARS:]
 
 
+def _coder_provider(messages, tools=None):
+    return llm_chat(messages, tools=tools, provider_name="zen_coder")
+
+
 def run_cycle(root: Path, state: dict) -> bool:
     if not _ensure_workspace(root):
         _log(root, "blocked", reason="persistent workspace could not be initialized")
@@ -150,18 +152,8 @@ def run_cycle(root: Path, state: dict) -> bool:
         warn(f"Autonomous coder blocked; missing safe tools: {missing}")
         return False
 
-    # Headless coding may resolve only the confirmation class used by the
-    # restricted coding toolset. The tool allowlist still excludes destructive
-    # computer-control/network operations.
     get_permission_manager().set_interactive(False)
-
     planner = Planner(llm_chat, tool_definitions=tool_defs)
-    coder_provider = lambda messages, tools=None: llm_chat(
-        messages,
-        tools=tools,
-        provider_name="zen_coder",
-    )
-
     goal = (
         "Work on the Friday repository itself. Make exactly one small, safe, useful code improvement. "
         "First inspect the current source and tests. Create a coding checkpoint. Choose one existing "
@@ -175,7 +167,7 @@ def run_cycle(root: Path, state: dict) -> bool:
 
     auto = Autopilot(
         planner=planner,
-        llm_provider=coder_provider,
+        llm_provider=_coder_provider,
         tool_map=tool_map,
         tool_definitions=tool_defs,
         workspace=str(root),
@@ -238,7 +230,7 @@ def main() -> int:
             try:
                 run_cycle(root, state)
                 state = _load_state(root)
-            except Exception as exc:  # defensive worker boundary
+            except Exception as exc:
                 state["last_error"] = str(exc)[:1200]
                 state["last_cycle_at"] = datetime.now(timezone.utc).isoformat()
                 _save_state(root, state)
