@@ -4,16 +4,14 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080/api/v1'
 ).replace(/\/$/, '')
 
-const AUTH_KEY = 'jarvis_api_secret'
-const LEGACY_AUTH_KEY = 'friday_api_secret'
+const AUTH_KEY = 'friday_api_secret'
 
 function getApiKey(): string {
-  return localStorage.getItem(AUTH_KEY) || localStorage.getItem(LEGACY_AUTH_KEY) || ''
+  return localStorage.getItem(AUTH_KEY) || ''
 }
 
 export function setApiKey(key: string) {
   localStorage.setItem(AUTH_KEY, key)
-  localStorage.removeItem(LEGACY_AUTH_KEY)
 }
 
 function authHeaders(): Record<string, string> {
@@ -143,7 +141,7 @@ export function streamChat(
 }
 
 export function streamAutopilot(
-  body: { goal: string; session_id?: string; workspace?: string },
+  body: { goal: string; session_id?: string },
   onEvent: (event: any) => void,
   onError: (err: any) => void,
   onDone: () => void,
@@ -160,10 +158,10 @@ export async function createSession(language = 'english') { return fetchApi('/se
 export async function deleteSession(sessionId: string) { return fetchApi(`/sessions/${sessionId}`, { method: 'DELETE' }) }
 export async function getOutputDir(sessionId = 'default') { return fetchApi<{ output_dir: string }>(`/output-dir?session_id=${sessionId}`) }
 export async function setOutputDir(path: string, sessionId = 'default') { return fetchApi('/output-dir', { method: 'PUT', body: JSON.stringify({ session_id: sessionId, path }) }) }
-export async function getApprovals() { return fetchApi('/approvals') }
+export async function getApprovals(): Promise<{ approvals: any[] }> { return fetchApi('/approvals') }
 export async function resolveApproval(requestId: string, allowed: boolean) { return fetchApi(`/approvals/${encodeURIComponent(requestId)}`, { method: 'POST', body: JSON.stringify({ allowed }) }) }
 export async function getSystemInfo(): Promise<any> { return fetchApi('/system-info') }
-export async function getNews(): Promise<any> { return fetchApi('/news') }
+export async function getNews(): Promise<{ articles: any[] }> { return fetchApi('/news') }
 export async function getWeather(): Promise<any> { return fetchApi('/weather') }
 export async function getStocks(symbols = 'AAPL,GOOG,MSFT,NVDA,BTC-USD'): Promise<any> { return fetchApi(`/stocks?symbols=${encodeURIComponent(symbols)}`) }
 export async function getGithubTrending(): Promise<any> { return fetchApi('/github-trending') }
@@ -213,17 +211,17 @@ export async function getGoogleAuth(): Promise<any> { return fetchApi('/auth/goo
 export async function getCalendarEvents(): Promise<any> { return fetchApi('/calendar/events') }
 export async function getEmailInbox(): Promise<any> { return fetchApi('/email/inbox') }
 export async function getEmailUnread(): Promise<any> { return fetchApi('/email/unread') }
-export async function getAlerts(): Promise<any> { return fetchApi('/alerts') }
+export async function getAlerts(): Promise<{ alerts: any[]; count: number }> { return fetchApi('/alerts') }
 
-export async function getAutomations(): Promise<any> { return fetchApi('/automations') }
-export async function createAutomation(data: Record<string, any>): Promise<any> { return fetchApi('/automations', { method: 'POST', body: JSON.stringify(data) }) }
+export async function getAutomations(): Promise<{ automations: any[] }> { return fetchApi('/automations') }
+export async function createAutomation(data: { name: string; trigger_type: string; trigger_config: Record<string, any>; action: string; action_params?: Record<string, any> }): Promise<any> { return fetchApi('/automations', { method: 'POST', body: JSON.stringify(data) }) }
 export async function updateAutomation(id: string, data: Record<string, any>): Promise<any> { return fetchApi(`/automations/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
 export async function deleteAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}`, { method: 'DELETE' }) }
 export async function toggleAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}/toggle`, { method: 'POST' }) }
 export async function triggerAutomation(id: string): Promise<any> { return fetchApi(`/automations/${id}/trigger`, { method: 'POST' }) }
 
-export async function analyzeVisionImage(image: string, prompt?: string): Promise<any> { return fetchApi('/vision/analyze', { method: 'POST', body: JSON.stringify({ image, prompt }) }) }
-export async function getVisionScreen(): Promise<any> { return fetchApi('/vision/screen') }
+export async function analyzeVisionImage(image: string, prompt?: string): Promise<{ description: string; text: string | null; timestamp: number }> { return fetchApi('/vision/analyze', { method: 'POST', body: JSON.stringify({ image, prompt }) }) }
+export async function getVisionScreen(): Promise<{ description: string; text: string | null; width: number; height: number; timestamp: number }> { return fetchApi('/vision/screen') }
 
 export type ServerEvent = { type: string; data: any }
 
