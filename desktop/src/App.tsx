@@ -72,6 +72,12 @@ function App() {
   useEffect(() => {
     let cancelled = false
 
+    const scheduleNext = (delay: number) => {
+      if (cancelled) return
+      if (codingTimerRef.current !== null) window.clearTimeout(codingTimerRef.current)
+      codingTimerRef.current = window.setTimeout(runSelfCoding, delay)
+    }
+
     const runSelfCoding = () => {
       if (cancelled) return
 
@@ -93,12 +99,6 @@ function App() {
           scheduleNext(SELF_CODING_RESTART_MS)
         },
       )
-    }
-
-    const scheduleNext = (delay: number) => {
-      if (cancelled) return
-      if (codingTimerRef.current !== null) window.clearTimeout(codingTimerRef.current)
-      codingTimerRef.current = window.setTimeout(runSelfCoding, delay)
     }
 
     const boot = async () => {
@@ -125,6 +125,14 @@ function App() {
 
   return (
     <main className="jarvis-shell">
+      <section className="jarvis-conversation" aria-live="polite" aria-label="Jarvis conversation">
+        {response ? (
+          <div className="jarvis-response">{response}</div>
+        ) : (
+          <div className="jarvis-welcome">{busy ? 'Jarvis is thinking…' : 'How may I assist you?'}</div>
+        )}
+      </section>
+
       <form className="jarvis-bar" onSubmit={sendMessage}>
         <input
           className="jarvis-input"
@@ -138,10 +146,6 @@ function App() {
           spellCheck={false}
         />
       </form>
-
-      <div className="jarvis-sr-only" aria-live="polite">
-        {response}
-      </div>
     </main>
   )
 }
