@@ -4,10 +4,20 @@ from config.providers import get_active_provider, get_provider_config
 from providers.openai_compat import OpenAICompatibleProvider
 from providers.registry import get_provider_class, register_provider
 
-register_provider("openai", OpenAICompatibleProvider)
-register_provider("openrouter", OpenAICompatibleProvider)
-register_provider("openai_compatible", OpenAICompatibleProvider)
-register_provider("zen_coder", OpenAICompatibleProvider)
+for _name in (
+    "openai",
+    "openrouter",
+    "openai_compatible",
+    "zen_coder",
+    "groq",
+    "gemini",
+    "cerebras",
+    "mistral",
+    "github_models",
+    "cloudflare_workers_ai",
+    "nvidia_nim",
+):
+    register_provider(_name, OpenAICompatibleProvider)
 
 
 def get_provider(name: str | None = None):
