@@ -12,9 +12,10 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-import webview
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
+
+# The packaged smoke test does not need the GUI runtime. Keep the import lazy so
+# missing GUI dependencies cannot prevent the health-check path from running.
+API_SHUTDOWN: threading.Event | None = None
 
 
 def resource_root() -> Path:
@@ -60,22 +61,31 @@ def start_static_server() -> ThreadingHTTPServer:
     return server
 
 
-def start_api_server() -> threading.Thread:
+def start_api_server() -> tuple[threading.Thread, threading.Event]:
+    global API_SHUTDOWN
+
     sys.path.insert(0, str(ROOT))
     from desktop.api_server import app
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
 
     config = Config()
     config.bind = [f"{API_HOST}:{API_PORT}"]
     config.accesslog = None
     config.errorlog = None
     config.loglevel = "warning"
+    stop_event = threading.Event()
+    API_SHUTDOWN = stop_event
 
     def runner() -> None:
-        asyncio.run(serve(app, config))
+        async def shutdown_trigger() -> None:
+            await asyncio.to_thread(stop_event.wait)
+
+        asyncio.run(serve(app, config, shutdown_trigger=shutdown_trigger))
 
     thread = threading.Thread(target=runner, name="friday-api", daemon=True)
     thread.start()
-    return thread
+    return thread, stop_event
 
 
 def http_text(url: str) -> tuple[int, str] | None:
@@ -90,27 +100,33 @@ def smoke_test() -> None:
     if not DIST.exists():
         raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
 
-    start_static_server()
-    start_api_server()
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
+    static_server = start_static_server()
+    _api_thread, api_stop = start_api_server()
+    try:
+        wait_for_port(API_HOST, API_PORT)
+        wait_for_port(UI_HOST, UI_PORT)
 
-    ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
-    if ui is None or ui[0] != 200:
-        raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
-    html = ui[1]
-    if "<title>Friday</title>" not in html:
-        raise RuntimeError("Friday UI root page did not contain the expected title")
-    if "/Friday/assets/" in html:
-        raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
-    if "/assets/" not in html:
-        raise RuntimeError("Friday UI root page did not contain a production asset reference")
+        ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
+        if ui is None or ui[0] != 200:
+            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+        html = ui[1]
+        if "<title>Friday</title>" not in html:
+            raise RuntimeError("Friday UI root page did not contain the expected title")
+        if "/Friday/assets/" in html:
+            raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
+        if "/assets/" not in html:
+            raise RuntimeError("Friday UI root page did not contain a production asset reference")
 
-    health = http_text(f"http://{API_HOST}:{API_PORT}/api/v1/health")
-    if health is None or health[0] != 200:
-        raise RuntimeError("Friday API health endpoint did not return HTTP 200")
+        health = http_text(f"http://{API_HOST}:{API_PORT}/api/v1/health")
+        if health is None or health[0] != 200:
+            raise RuntimeError("Friday API health endpoint did not return HTTP 200")
 
-    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+        print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.", flush=True)
+    finally:
+        api_stop.set()
+        static_server.shutdown()
+        static_server.server_close()
+        print("Friday Windows bundle smoke test services stopped cleanly.", flush=True)
 
 
 def install_startup() -> None:
@@ -133,17 +149,27 @@ def install_startup() -> None:
 
 def main() -> None:
     if "--smoke-test" in sys.argv:
-        smoke_test()
-        return
+        smoke_ok = False
+        try:
+            smoke_test()
+            smoke_ok = True
+        finally:
+            # PyInstaller's windowed executable can retain imported/background
+            # threads even after all test servers are shut down. Smoke mode is
+            # a one-shot health check, so force deterministic process termination
+            # after cleanup. The parent wrapper observes the real exit status.
+            os._exit(0 if smoke_ok else 1)
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
 
     install_startup()
     start_static_server()
-    start_api_server()
+    _api_thread, _api_stop = start_api_server()
     wait_for_port(API_HOST, API_PORT)
     wait_for_port(UI_HOST, UI_PORT)
+
+    import webview
 
     webview.create_window(
         "Friday",
