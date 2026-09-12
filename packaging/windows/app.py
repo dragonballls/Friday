@@ -22,8 +22,10 @@ API_PORT = 8080
 UI_HOST = "127.0.0.1"
 UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
+# Keep the legacy repository URL until the GitHub repository itself is renamed to
+# dragonballls/jarvis; changing it before the rename would break bootstrap.
 REPO_ZIP_URL = "https://github.com/dragonballls/Friday/archive/refs/heads/main.zip"
-WORKSPACE_NAME = "Friday-SelfCoding-Workspace"
+WORKSPACE_NAME = "Jarvis-SelfCoding-Workspace"
 
 
 def resource_root() -> Path:
@@ -38,8 +40,8 @@ DIST = ROOT / "desktop" / "dist"
 
 def log_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "friday.log"
-    return Path.cwd() / "friday.log"
+        return Path(sys.executable).resolve().parent / "jarvis.log"
+    return Path.cwd() / "jarvis.log"
 
 
 def log(message: str) -> None:
@@ -70,8 +72,8 @@ def prepare_self_coding_workspace() -> Path:
         return workspace
 
     workspace.parent.mkdir(parents=True, exist_ok=True)
-    temp_dir = Path(tempfile.mkdtemp(prefix="friday-bootstrap-"))
-    archive_path = temp_dir / "friday-main.zip"
+    temp_dir = Path(tempfile.mkdtemp(prefix="jarvis-bootstrap-"))
+    archive_path = temp_dir / "jarvis-main.zip"
     extracted = temp_dir / "extracted"
     try:
         log(f"Preparing self-coding workspace: {workspace}")
@@ -159,7 +161,14 @@ def start_api_server_process() -> subprocess.Popen:
     command = [str(exe), "--api-server"] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve()), "--api-server"]
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     log("starting dedicated API process")
-    return subprocess.Popen(command, cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creationflags)
+    return subprocess.Popen(
+        command,
+        cwd=str(ROOT),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+    )
 
 
 def http_text(url: str) -> tuple[int, str] | None:
@@ -224,7 +233,12 @@ def install_startup() -> None:
     try:
         import winreg
         exe = Path(sys.executable).resolve()
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
             winreg.SetValueEx(key, "Jarvis", 0, winreg.REG_SZ, f'"{exe}" --startup')
     except OSError:
         pass
@@ -237,13 +251,17 @@ def main() -> None:
         smoke_test()
         log("smoke-test completed")
         hard_exit(0)
+
     if "--api-server" in sys.argv:
         run_api_process()
         return
+
     if not DIST.exists():
         raise SystemExit(f"Jarvis frontend bundle is missing: {DIST}")
+
     workspace = prepare_self_coding_workspace()
     os.environ["JARVIS_WORKSPACE"] = str(workspace)
+
     import webview
     install_startup()
     start_static_server()
@@ -251,7 +269,15 @@ def main() -> None:
     try:
         wait_for_port(API_HOST, API_PORT, timeout=30.0)
         wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
-        webview.create_window("Jarvis", f"http://{UI_HOST}:{UI_PORT}/", width=1440, height=900, min_size=(1050, 700), resizable=True, text_select=True)
+        webview.create_window(
+            "Jarvis",
+            f"http://{UI_HOST}:{UI_PORT}/",
+            width=1440,
+            height=900,
+            min_size=(1050, 700),
+            resizable=True,
+            text_select=True,
+        )
         webview.start(debug=False)
     finally:
         if api_process.poll() is None:
