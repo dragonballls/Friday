@@ -110,7 +110,11 @@ def smoke_test() -> None:
     if health is None or health[0] != 200:
         raise RuntimeError("Friday API health endpoint did not return HTTP 200")
 
-    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+    print("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.", flush=True)
+    # The packaged smoke test launches this executable only as a verifier. Some
+    # imported runtime libraries can keep background threads alive after the
+    # checks have passed, so terminate the verifier explicitly and deterministically.
+    os._exit(0)
 
 
 def install_startup() -> None:
