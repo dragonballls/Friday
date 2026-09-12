@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: desktop-build-${{ github.event.pull_request.number || github.ref }}
@@ -134,7 +134,7 @@ jobs:
           npx tauri build --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "Tauri Windows installer build failed with exit code $LASTEXITCODE" }
 
-      - name: Upload Windows installer
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Friday-Windows-x64-${{ github.sha }}
@@ -143,3 +143,20 @@ jobs:
             desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish latest desktop release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem "desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "No NSIS installer found for rolling desktop release" }
+          gh release view desktop-latest *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create desktop-latest $installer.FullName --title "Friday Desktop (latest)" --notes "Latest Windows desktop build from main." --prerelease
+          } else {
+            gh release upload desktop-latest $installer.FullName --clobber
+            gh release edit desktop-latest --title "Friday Desktop (latest)" --notes "Latest Windows desktop build from main." --prerelease
+          }
