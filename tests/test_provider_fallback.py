@@ -1,25 +1,14 @@
 import agent.llm as llm
 
 
-def test_fallback_candidates_never_include_ollama():
-    monkeypatch = None
+def test_fallback_candidates_never_include_ollama(monkeypatch):
     config = {
         "openai": {"fallback_provider": "ollama"},
         "routing": {"fallback": ["ollama", "openrouter", "openrouter"]},
     }
-    # Keep the test focused on the pure candidate helper by patching its config loader below.
-    class _Patch:
-        def setattr(self, obj, name, value):
-            original = getattr(obj, name)
-            setattr(obj, name, value)
-            return original
+    monkeypatch.setattr(llm, "load_provider_config", lambda: config)
 
-    patch = _Patch()
-    original = patch.setattr(llm, "load_provider_config", lambda: config)
-    try:
-        candidates = llm._provider_candidates_for_fallback("openai")
-    finally:
-        setattr(llm, "load_provider_config", original)
+    candidates = llm._provider_candidates_for_fallback("openai")
 
     assert "ollama" not in candidates
     assert candidates == ["openrouter"]
