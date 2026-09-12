@@ -25,6 +25,7 @@ SMOKE_WATCHDOG_SECONDS = 35.0
 REPO_URL = "https://github.com/dragonballls/Jarvis.git"
 REPO_ZIP_URL = "https://github.com/dragonballls/Jarvis/archive/refs/heads/main.zip"
 WORKSPACE_NAME = "Jarvis-SelfCoding-Workspace"
+AUTO_UPDATE_INTERVAL = 30
 
 
 def resource_root() -> Path:
@@ -34,7 +35,22 @@ def resource_root() -> Path:
 
 
 ROOT = resource_root()
-DIST = ROOT / "desktop" / "dist"
+
+
+def active_workspace() -> Path | None:
+    configured = os.environ.get("JARVIS_WORKSPACE", "").strip()
+    if configured:
+        workspace = Path(configured).expanduser()
+        if workspace.is_dir():
+            return workspace
+    return None
+
+
+def dist_root() -> Path:
+    workspace = active_workspace()
+    if workspace is not None and (workspace / "desktop" / "dist" / "index.html").is_file():
+        return workspace / "desktop" / "dist"
+    return ROOT / "desktop" / "dist"
 
 
 def log_path() -> Path:
@@ -189,11 +205,12 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def start_static_server(port: int = UI_PORT) -> ThreadingHTTPServer:
-    if not DIST.is_dir() or not (DIST / "index.html").is_file():
-        raise RuntimeError(f"Frontend bundle missing: {DIST / 'index.html'}")
+    dist = dist_root()
+    if not dist.is_dir() or not (dist / "index.html").is_file():
+        raise RuntimeError(f"Frontend bundle missing: {dist / 'index.html'}")
 
     def handler(*args, **kwargs):
-        return QuietHandler(*args, directory=str(DIST), **kwargs)
+        return QuietHandler(*args, directory=str(dist), **kwargs)
 
     server = ThreadingHTTPServer((UI_HOST, port), handler)
     thread = threading.Thread(target=server.serve_forever, name="jarvis-static", daemon=True)
@@ -202,8 +219,11 @@ def start_static_server(port: int = UI_PORT) -> ThreadingHTTPServer:
 
 
 async def _api_server() -> None:
-    sys.path.insert(0, str(ROOT))
-    log("API process importing desktop.api_server")
+    workspace = active_workspace()
+    if workspace is not None:
+        sys.path.insert(0, str(workspace))
+    sys.path.insert(1, str(ROOT))
+    log(f"API process importing desktop.api_server from {workspace or ROOT}")
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
     from desktop.api_server import app
@@ -233,11 +253,12 @@ def start_api_server_process() -> subprocess.Popen:
     log("starting dedicated API process")
     return subprocess.Popen(
         command,
-        cwd=str(ROOT),
+        cwd=str(active_workspace() or ROOT),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=creationflags,
+        env=os.environ.copy(),
     )
 
 
@@ -250,7 +271,10 @@ def http_text(url: str) -> tuple[int, str] | None:
 
 
 async def quart_health_check() -> tuple[int, str]:
-    sys.path.insert(0, str(ROOT))
+    workspace = active_workspace()
+    if workspace is not None:
+        sys.path.insert(0, str(workspace))
+    sys.path.insert(1, str(ROOT))
     from desktop.api_server import app
     client = app.test_client()
     response = await client.get("/api/v1/health")
@@ -269,8 +293,9 @@ def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
 
 
 def smoke_test() -> None:
-    if not DIST.exists():
-        raise RuntimeError(f"Jarvis frontend bundle is missing: {DIST}")
+    dist = dist_root()
+    if not dist.exists():
+        raise RuntimeError(f"Jarvis frontend bundle is missing: {dist}")
     os.environ["JARVIS_SMOKE_TEST"] = "1"
     ui_server = start_static_server(port=0)
     smoke_port = int(ui_server.server_address[1])
@@ -305,13 +330,106 @@ def install_startup() -> None:
         exe = Path(sys.executable).resolve()
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
-            r"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
             0,
             winreg.KEY_SET_VALUE,
         ) as key:
             winreg.SetValueEx(key, "Jarvis", 0, winreg.REG_SZ, f'"{exe}" --startup')
     except OSError:
         pass
+
+
+def _workspace_is_clean(workspace: Path, git: str) -> bool:
+    result = subprocess.run(
+        [git, "status", "--porcelain", "--untracked-files=all"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    return result.returncode == 0 and not result.stdout.strip()
+
+
+def _restart_after_update() -> None:
+    env = os.environ.copy()
+    env["JARVIS_UPDATED_RESTART"] = "1"
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    try:
+        subprocess.Popen(
+            [str(Path(sys.executable).resolve()), *sys.argv[1:]],
+            cwd=str(active_workspace() or ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+            env=env,
+        )
+        hard_exit(0)
+    except OSError as exc:
+        log(f"Automatic restart after update failed: {exc}")
+
+
+def _auto_update_loop(workspace: Path) -> None:
+    if os.environ.get("JARVIS_SMOKE_TEST") == "1" or os.environ.get("JARVIS_UPDATED_RESTART") == "1":
+        return
+    git = shutil.which("git.exe") or shutil.which("git")
+    if not git:
+        log("Auto-update disabled: Git was not found on PATH.")
+        return
+
+    while True:
+        time.sleep(AUTO_UPDATE_INTERVAL)
+        try:
+            if not _workspace_is_clean(workspace, git):
+                log("Auto-update paused: self-coding workspace has local changes.")
+                continue
+
+            fetch = subprocess.run(
+                [git, "fetch", "origin", "main", "--prune"],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if fetch.returncode != 0:
+                log("Auto-update fetch failed; retaining the current Jarvis version.")
+                continue
+
+            local = subprocess.run(
+                [git, "rev-parse", "HEAD"], cwd=workspace, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            remote = subprocess.run(
+                [git, "rev-parse", "origin/main"], cwd=workspace, capture_output=True, text=True, timeout=15, check=False
+            ).stdout.strip()
+            if not local or not remote or local == remote:
+                continue
+
+            log(f"Auto-update detected main change: {local[:12]} -> {remote[:12]}.")
+            updater = workspace / "scripts" / "update.py"
+            if not updater.is_file():
+                log("Auto-update skipped: updater script is missing from the workspace.")
+                continue
+
+            result = subprocess.run(
+                [sys.executable, str(updater), "--build"],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+                env=os.environ.copy(),
+            )
+            if result.returncode == 0:
+                log("Jarvis source and frontend update completed; restarting onto the updated workspace.")
+                _restart_after_update()
+            else:
+                detail = (result.stderr or result.stdout or "").strip().splitlines()[-1:] 
+                log(f"Auto-update build failed; keeping current version: {detail[0] if detail else 'unknown error'}")
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            log(f"Auto-update loop error; keeping current version: {exc}")
 
 
 def main() -> None:
@@ -326,8 +444,8 @@ def main() -> None:
         run_api_process()
         return
 
-    if not DIST.exists():
-        raise SystemExit(f"Jarvis frontend bundle is missing: {DIST}")
+    if not (ROOT / "desktop" / "dist" / "index.html").exists():
+        raise SystemExit(f"Jarvis frontend bundle is missing: {ROOT / 'desktop' / 'dist' / 'index.html'}")
 
     workspace = prepare_self_coding_workspace()
     os.environ["JARVIS_WORKSPACE"] = str(workspace)
@@ -335,6 +453,7 @@ def main() -> None:
     import webview
     install_startup()
     start_static_server()
+    threading.Thread(target=_auto_update_loop, args=(workspace,), name="jarvis-auto-update", daemon=True).start()
     api_process = start_api_server_process()
     try:
         wait_for_port(API_HOST, API_PORT, timeout=30.0)
