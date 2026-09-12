@@ -33,12 +33,46 @@ input {
   width: 100%;
   min-height: 100vh;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 22px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  padding: 28px;
   background:
     radial-gradient(circle at 50% 100%, rgba(80, 120, 170, 0.08), transparent 38%),
     #05070a;
+}
+
+.jarvis-conversation {
+  width: min(960px, 100%);
+  max-height: min(68vh, 620px);
+  overflow-y: auto;
+  padding: 8px 4px;
+  scrollbar-width: thin;
+}
+
+.jarvis-response,
+.jarvis-welcome {
+  width: fit-content;
+  max-width: 86%;
+  margin-left: auto;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 22px 22px 6px 22px;
+  background: rgba(16, 21, 29, 0.88);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(20px);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  line-height: 1.58;
+}
+
+.jarvis-welcome {
+  margin-right: auto;
+  margin-left: 0;
+  border-radius: 22px 22px 22px 6px;
+  color: rgba(222, 231, 243, 0.72);
 }
 
 .jarvis-bar {
@@ -77,21 +111,21 @@ input {
   opacity: 0.68;
 }
 
-.jarvis-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 @media (max-width: 600px) {
   .jarvis-shell {
-    padding: 12px;
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .jarvis-conversation {
+    max-height: 66vh;
+  }
+
+  .jarvis-response,
+  .jarvis-welcome {
+    max-width: 94%;
+    padding: 15px 16px;
+    font-size: 16px;
   }
 
   .jarvis-input {
