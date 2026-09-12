@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -22,6 +23,8 @@ API_PORT = 8080
 UI_HOST = "127.0.0.1"
 UI_PORT = 5173
 SMOKE_WATCHDOG_SECONDS = 35.0
+REPO_URL = "https://github.com/dragonballls/Friday.git"
+WORKSPACE = Path.home() / "Friday-SelfCoding-Workspace"
 
 
 def resource_root() -> Path:
@@ -123,6 +126,45 @@ def start_api_server_process() -> subprocess.Popen:
     )
 
 
+def prepare_workspace() -> Path:
+    """Ensure the agent has a persistent writable Git workspace outside the packaged application."""
+    WORKSPACE.parent.mkdir(parents=True, exist_ok=True)
+    if (WORKSPACE / ".git").is_dir():
+        os.environ["FRIDAY_WORKSPACE"] = str(WORKSPACE)
+        return WORKSPACE
+
+    if WORKSPACE.exists() and any(WORKSPACE.iterdir()):
+        log(f"Self-coding workspace exists but is not a Git checkout: {WORKSPACE}")
+        os.environ["FRIDAY_WORKSPACE"] = str(WORKSPACE)
+        return WORKSPACE
+
+    if not shutil.which("git"):
+        log("Git is unavailable; self-coding will fall back to the packaged working directory")
+        return WORKSPACE
+
+    log(f"Preparing self-coding workspace: {WORKSPACE}")
+    try:
+        result = subprocess.run(
+            ["git", "clone", REPO_URL, str(WORKSPACE)],
+            cwd=str(WORKSPACE.parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=300,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        if result.returncode != 0:
+            log(f"Self-coding workspace clone failed: {result.stderr.strip()}")
+            return WORKSPACE
+        os.environ["FRIDAY_WORKSPACE"] = str(WORKSPACE)
+        log("Self-coding workspace ready")
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"Self-coding workspace preparation failed: {exc}")
+    return WORKSPACE
+
+
 def http_text(url: str) -> tuple[int, str] | None:
     try:
         with urlopen(url, timeout=3) as response:
@@ -200,15 +242,14 @@ def main() -> None:
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
 
+    prepare_workspace()
     import webview
     install_startup()
     ui_server = start_static_server()
     api_process = start_api_server_process()
-    api_ready = threading.Event()
 
     def watch_api() -> None:
         if wait_for_port(API_HOST, API_PORT, timeout=30.0):
-            api_ready.set()
             log("API ready")
         else:
             log("API did not become ready before timeout; keeping the desktop UI open")
@@ -216,8 +257,6 @@ def main() -> None:
     threading.Thread(target=watch_api, name="friday-api-ready", daemon=True).start()
 
     try:
-        # Open the real desktop window immediately. The UI can start and display
-        # its own online/offline state while the hidden coding engine initializes.
         webview.create_window(
             "Friday",
             f"http://{UI_HOST}:{UI_PORT}/",
