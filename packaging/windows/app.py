@@ -120,6 +120,17 @@ def http_text(url: str) -> tuple[int, str] | None:
         return None
 
 
+async def quart_health_check() -> tuple[int, str]:
+    sys.path.insert(0, str(ROOT))
+    log("importing desktop.api_server for in-process health check")
+    from desktop.api_server import app
+
+    client = app.test_client()
+    response = await client.get("/api/v1/health")
+    body = await response.get_data(as_text=True)
+    return response.status_code, body
+
+
 def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
     def expire() -> None:
         log(f"smoke-test watchdog expired after {seconds:.0f} seconds")
@@ -136,28 +147,36 @@ def smoke_test() -> None:
 
     os.environ["FRIDAY_SMOKE_TEST"] = "1"
     log(f"serving UI from {DIST}")
-    start_static_server()
-    start_api_server()
-    log("waiting for API and UI ports")
-    wait_for_port(API_HOST, API_PORT)
-    wait_for_port(UI_HOST, UI_PORT)
+    ui_server = start_static_server()
+    try:
+        log("checking UI port")
+        wait_for_port(UI_HOST, UI_PORT)
 
-    ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
-    if ui is None or ui[0] != 200:
-        raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
-    html = ui[1]
-    if "<title>Friday</title>" not in html:
-        raise RuntimeError("Friday UI root page did not contain the expected title")
-    if "/Friday/assets/" in html:
-        raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
-    if "/assets/" not in html:
-        raise RuntimeError("Friday UI root page did not contain a production asset reference")
+        ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
+        if ui is None or ui[0] != 200:
+            raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
+        html = ui[1]
+        if "<title>Friday</title>" not in html:
+            raise RuntimeError("Friday UI root page did not contain the expected title")
+        if "/Friday/assets/" in html:
+            raise RuntimeError("Windows UI bundle incorrectly references the GitHub Pages /Friday/ asset base path")
+        if "/assets/" not in html:
+            raise RuntimeError("Friday UI root page did not contain a production asset reference")
 
-    health = http_text(f"http://{API_HOST}:{API_PORT}/api/v1/health")
-    if health is None or health[0] != 200:
-        raise RuntimeError("Friday API health endpoint did not return HTTP 200")
+        # Do not launch Hypercorn in a background thread on Windows: Hypercorn
+        # installs signal handlers and Python only permits that in the main thread.
+        # The packaged smoke test only needs to verify that the bundled Quart app
+        # imports and that its health route responds, so use Quart's in-process
+        # test client instead of binding port 8080.
+        log("checking API health in-process")
+        status, body = asyncio.run(quart_health_check())
+        if status != 200:
+            raise RuntimeError(f"Friday API health endpoint returned HTTP {status}: {body}")
 
-    log("Friday Windows bundle smoke test passed: UI HTML/assets and API health are live.")
+        log("Friday Windows bundle smoke test passed: UI HTML/assets and API health are valid.")
+    finally:
+        ui_server.shutdown()
+        ui_server.server_close()
 
 
 def install_startup() -> None:
