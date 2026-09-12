@@ -2,6 +2,8 @@ import os
 import tomllib
 from typing import Any
 
+from core.credential_store import get_credential, set_credential
+
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "providers.toml")
 
 
@@ -10,9 +12,8 @@ def _load_windows_user_env(key: str) -> str:
     """Read a user-level environment variable directly on Windows.
 
     Packaged desktop apps launched from Explorer can start with an older
-    environment block, so a key saved with ``[Environment]::SetEnvironmentVariable``
-    may not be visible to the already-running shell/session. Reading HKCU here
-    makes credentials available to Jarvis without requiring another shell.
+    environment block, so a key saved with Windows user environment settings
+    may not be visible to the already-running shell/session.
     """
     if os.name != "nt":
         return ""
@@ -52,12 +53,33 @@ _load_dotenv()
 
 
 def _resolve_api_key(toml_key: str, env_var: str) -> str:
-    """Resolve a provider key from process env, Windows user env, or toml."""
-    return (
-        os.environ.get(env_var, "")
-        or _load_windows_user_env(env_var)
-        or os.environ.get(toml_key, "")
-    )
+    """Resolve a key without requiring a shell, then migrate it to secure storage.
+
+    Priority is: current process environment, encrypted Jarvis credential store,
+    Windows user environment, and legacy TOML/env configuration. When a key is
+    discovered outside the encrypted store, it is copied there automatically.
+    """
+    value = os.environ.get(env_var, "").strip()
+    if value:
+        try:
+            set_credential(env_var, value)
+        except OSError:
+            pass
+        return value
+
+    value = get_credential(env_var).strip()
+    if value:
+        return value
+
+    value = _load_windows_user_env(env_var)
+    if value:
+        try:
+            set_credential(env_var, value)
+        except OSError:
+            pass
+        return value
+
+    return os.environ.get(toml_key, "").strip()
 
 
 def load_provider_config() -> dict[str, Any]:
@@ -68,7 +90,7 @@ def load_provider_config() -> dict[str, Any]:
             cfg = tomllib.load(f)
 
     # Keep the optional Zen coding provider available even when an older local
-    # providers.toml predates this integration. The secret remains environment-only.
+    # providers.toml predates this integration. The secret remains external.
     cfg.setdefault(
         "zen_coder",
         {
@@ -83,8 +105,7 @@ def load_provider_config() -> dict[str, Any]:
         },
     )
 
-    # Override API keys from environment variables. Secrets never need to be
-    # committed to the repository; user-level environment variables are preferred.
+    # Provider keys are resolved at runtime. Secrets are never committed to GitHub.
     env_map = {
         "openai": ("api_key", "OPENAI_API_KEY"),
         "openrouter": ("api_key", "OPENROUTER_API_KEY"),
@@ -115,9 +136,6 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
     primary = str(routing.get("primary", "")).strip() if isinstance(routing, dict) else ""
 
     if default == "ollama":
-        # Ollama is never an automatic fallback/default. If an explicit cloud
-        # routing primary exists, prefer it; otherwise use OpenRouter so a
-        # stopped local Ollama service cannot break the assistant.
         if primary and primary != "ollama":
             return primary
         return "openrouter"
