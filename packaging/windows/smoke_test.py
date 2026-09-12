@@ -25,17 +25,8 @@ def dump_log() -> None:
         print(f"Could not read packaged Jarvis log: {exc}")
 
 
-def main() -> None:
-    for required in (EXE, SMOKE_EXE, VERSION):
-        if not required.is_file():
-            raise SystemExit(f"Missing Windows Jarvis file: {required}")
-    version = VERSION.read_text(encoding="utf-8").strip()
-    if not version:
-        raise SystemExit("Windows Jarvis VERSION file is empty")
-
-    # The smoke binary uses a console bootloader so native boot/import failures
-    # are visible in CI while the real user app remains GUI-only.
-    proc = subprocess.Popen([str(SMOKE_EXE), "--smoke-test"], cwd=SMOKE_BUNDLE)
+def run_smoke(executable: Path, label: str) -> None:
+    proc = subprocess.Popen([str(executable), "--smoke-test"], cwd=executable.parent)
     try:
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
@@ -43,13 +34,12 @@ def main() -> None:
             if returncode is not None:
                 if returncode != 0:
                     dump_log()
-                    raise SystemExit(f"JarvisSmoke.exe smoke test exited with code {returncode}")
-                print(f"Jarvis single-file Windows app smoke test passed for version {version}.")
-                dump_log()
+                    raise SystemExit(f"{label} smoke test exited with code {returncode}")
+                print(f"{label} smoke test passed.")
                 return
             time.sleep(0.25)
         dump_log()
-        raise SystemExit("JarvisSmoke.exe smoke test did not complete within 40 seconds")
+        raise SystemExit(f"{label} smoke test did not complete within 40 seconds")
     finally:
         if proc.poll() is None:
             proc.terminate()
@@ -57,6 +47,25 @@ def main() -> None:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+
+def main() -> None:
+    for required in (EXE, SMOKE_EXE, VERSION):
+        if not required.is_file():
+            raise SystemExit(f"Missing Windows Jarvis file: {required}")
+
+    version = VERSION.read_text(encoding="utf-8").strip()
+    if not version:
+        raise SystemExit("Windows Jarvis VERSION file is empty")
+
+    # Validate the actual user-facing single-file executable first.
+    run_smoke(EXE, "Jarvis single-file")
+
+    # Also keep the console/onedir diagnostic available for native boot failures.
+    run_smoke(SMOKE_EXE, "Jarvis diagnostic")
+
+    print(f"Jarvis Windows packaging smoke tests passed for version {version}.")
+    dump_log()
 
 
 if __name__ == "__main__":
