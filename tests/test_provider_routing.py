@@ -10,13 +10,23 @@ def test_legacy_ollama_default_prefers_cloud_routing_primary():
     assert get_active_provider(config) == "openai"
 
 
-def test_explicit_remote_default_remains_authoritative():
+def test_explicit_remote_default_remains_authoritative_without_keys():
     config = {
         "default": {"provider": "openrouter"},
         "routing": {"primary": "openai"},
     }
 
     assert get_active_provider(config) == "openrouter"
+
+
+def test_credentialed_cloud_provider_overrides_uncredentialed_remote_default():
+    config = {
+        "default": {"provider": "openrouter"},
+        "routing": {"primary": "openai"},
+        "openai": {"api_key": "test-key"},
+    }
+
+    assert get_active_provider(config) == "openai"
 
 
 def test_missing_default_uses_routing_primary():

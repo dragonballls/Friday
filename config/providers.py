@@ -74,11 +74,11 @@ def load_provider_config() -> dict[str, Any]:
 
 
 def get_active_provider(config: dict[str, Any] | None = None) -> str:
-    """Select a configured cloud provider without producing a false missing-key error.
+    """Select a configured cloud provider without producing false credential errors.
 
-    OpenRouter remains preferred when it has a credential. When it is configured
-    as the default but has no key, a configured OpenAI credential is used. This
-    matches the supported OpenAI-compatible provider path used by the packaged app.
+    An explicit remote default stays authoritative when it has a key. If that
+    default lacks a credential, another supported cloud provider with a credential
+    is selected instead so packaged builds can use the user's configured cloud key.
     """
     if config is None:
         config = load_provider_config()
@@ -89,19 +89,29 @@ def get_active_provider(config: dict[str, Any] | None = None) -> str:
 
     openrouter_key = str(config.get("openrouter", {}).get("api_key", "")).strip()
     openai_key = str(config.get("openai", {}).get("api_key", "")).strip()
+    cloud_keys = {"openrouter": bool(openrouter_key), "openai": bool(openai_key)}
 
-    if openrouter_key:
-        return "openrouter"
-    if openai_key:
-        return "openai"
+    if default in cloud_keys:
+        if cloud_keys[default]:
+            return default
+        for provider in ("openrouter", "openai"):
+            if cloud_keys[provider]:
+                return provider
+        return default
 
     if default == "ollama":
         if primary and primary != "ollama":
             return primary
+        for provider in ("openrouter", "openai"):
+            if cloud_keys[provider]:
+                return provider
         return "openrouter"
 
     if primary and primary != "ollama":
         return primary
+    for provider in ("openrouter", "openai"):
+        if cloud_keys[provider]:
+            return provider
     return default or "openrouter"
 
 
