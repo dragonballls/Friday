@@ -62,13 +62,38 @@ def _resolve_api_key(toml_key: str, env_var: str) -> str:
 
 def load_provider_config() -> dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        cfg: dict[str, Any] = {"default": {"provider": "openai"}}
+        cfg: dict[str, Any] = {"default": {"provider": "openrouter"}}
     else:
         with open(CONFIG_PATH, "rb") as f:
             cfg = tomllib.load(f)
 
-    # Keep the optional Zen coding provider available even when an older local
-    # providers.toml predates this integration. The secret remains environment-only.
+    # Ensure packaged builds have complete cloud-provider sections even when the
+    # optional local providers.toml is absent. Environment credentials are then
+    # applied to real provider configs instead of being discarded.
+    cfg.setdefault(
+        "openai",
+        {
+            "api_key": "",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-4o-mini",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "provider_name": "openai",
+        },
+    )
+    cfg.setdefault(
+        "openrouter",
+        {
+            "api_key": "",
+            "base_url": "https://openrouter.ai/api/v1",
+            "model": "openrouter/free",
+            "fallback_model": "meta-llama/llama-3.2-3b-instruct:free",
+            "timeout": 30,
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "provider_name": "openrouter",
+        },
+    )
     cfg.setdefault(
         "zen_coder",
         {
