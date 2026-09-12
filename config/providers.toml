@@ -1,0 +1,96 @@
+[default]
+provider = "openrouter"
+
+[routing]
+primary = "openrouter"
+fallback = ["groq", "gemini", "cerebras", "mistral", "github_models", "cloudflare_workers_ai", "nvidia_nim"]
+
+[openrouter]
+api_key = ""
+base_url = "https://openrouter.ai/api/v1"
+model = "openrouter/free"
+fallback_model = ""
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "openrouter"
+
+[groq]
+api_key = ""
+base_url = "https://api.groq.com/openai/v1"
+model = "openai/gpt-oss-120b"
+fallback_model = "openai/gpt-oss-20b"
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "groq"
+
+[gemini]
+api_key = ""
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+model = "gemini-2.5-flash"
+fallback_model = "gemini-2.5-flash-lite"
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "gemini"
+
+[cerebras]
+api_key = ""
+base_url = "https://api.cerebras.ai/v1"
+model = "llama-3.3-70b"
+fallback_model = ""
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "cerebras"
+
+[mistral]
+api_key = ""
+base_url = "https://api.mistral.ai/v1"
+model = "mistral-small-latest"
+fallback_model = ""
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "mistral"
+
+[github_models]
+api_key = ""
+base_url = "https://models.inference.ai.azure.com"
+model = "openai/gpt-4o-mini"
+fallback_model = "meta-llama-3.1-70b-instruct"
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "github_models"
+
+[cloudflare_workers_ai]
+api_key = ""
+base_url = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+model = "@cf/meta/llama-3.1-8b-instruct"
+fallback_model = ""
+timeout = 60
+temperature = 0.2
+max_tokens = 4096
+provider_name = "cloudflare_workers_ai"
+
+[nvidia_nim]
+api_key = ""
+base_url = "https://integrate.api.nvidia.com/v1"
+model = "meta/llama-3.1-8b-instruct"
+fallback_model = ""
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "nvidia_nim"
+
+[zen_coder]
+api_key = ""
+base_url = "https://opencode.ai/zen/v1"
+model = "mimo-v2.5-free"
+fallback_provider = "openrouter"
+timeout = 60
+temperature = 0.2
+max_tokens = 8192
+provider_name = "zen_coder"
