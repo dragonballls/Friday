@@ -6,13 +6,38 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "providers.toml")
 
 
 # ─── Env var helpers ─────────────────────────────────────────────
+def _load_windows_user_env(key: str) -> str:
+    """Read a user-level environment variable directly on Windows.
+
+    Packaged desktop apps launched from Explorer can start with an older
+    environment block, so a key saved with ``[Environment]::SetEnvironmentVariable``
+    may not be visible to the already-running shell/session. Reading HKCU here
+    makes credentials available to Jarvis without requiring another shell.
+    """
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Environment",
+            0,
+            winreg.KEY_READ,
+        ) as registry_key:
+            value, _ = winreg.QueryValueEx(registry_key, key)
+            return str(value).strip()
+    except (FileNotFoundError, OSError, TypeError):
+        return ""
+
+
 def _load_dotenv():
     """Load .env file from project root if present."""
     root = os.path.dirname(os.path.dirname(__file__))
     env_path = os.path.join(root, ".env")
     if not os.path.exists(env_path):
         return
-    with open(env_path) as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -27,8 +52,12 @@ _load_dotenv()
 
 
 def _resolve_api_key(toml_key: str, env_var: str) -> str:
-    """Resolve an API key: env var takes precedence, fall back to toml value."""
-    return os.environ.get(env_var, "") or os.environ.get(toml_key, "")
+    """Resolve a provider key from process env, Windows user env, or toml."""
+    return (
+        os.environ.get(env_var, "")
+        or _load_windows_user_env(env_var)
+        or os.environ.get(toml_key, "")
+    )
 
 
 def load_provider_config() -> dict[str, Any]:
