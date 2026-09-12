@@ -12,10 +12,7 @@ as currently free-only by configuration/discovery.
 
 from __future__ import annotations
 
-import os
 from typing import Any
-
-FREE_ONLY_ENV = "JARVIS_FREE_ONLY"
 
 # OpenRouter currently exposes a dedicated zero-price free-model router. The
 # model is still subject to the provider's current limits and availability.
@@ -27,34 +24,29 @@ KNOWN_FREE_ROUTES: dict[str, dict[str, str]] = {
 
 
 def free_only_enabled() -> bool:
-    """Return whether Jarvis is operating under its mandatory free-only mode."""
-    value = os.environ.get(FREE_ONLY_ENV, "1").strip().lower()
-    return value not in {"0", "false", "no", "off"}
+    """Return True permanently; Jarvis must never enable paid inference."""
+    return True
 
 
 def provider_is_free_only(name: str, config: dict[str, Any]) -> bool:
     """Return True only when a provider is explicitly safe for free-only use."""
-    if not free_only_enabled():
-        return True
-
     if bool(config.get("free_only", False)):
         return True
 
-    # The OpenRouter free router is a special case because the route itself is
-    # explicitly priced at zero. Force its model below before use.
-    return name in KNOWN_FREE_ROUTES and str(config.get("model", "")).strip() == KNOWN_FREE_ROUTES[name]["model"]
+    return (
+        name in KNOWN_FREE_ROUTES
+        and str(config.get("model", "")).strip() == KNOWN_FREE_ROUTES[name]["model"]
+    )
 
 
 def enforce_free_provider(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of provider config constrained to a free-only route.
+    """Return provider config constrained to a free-only route.
 
     Raises ValueError instead of silently allowing a potentially billable
     endpoint. No billing, subscription, credit purchase, or limit bypass is
     ever attempted here.
     """
     safe = dict(config)
-    if not free_only_enabled():
-        return safe
 
     route = KNOWN_FREE_ROUTES.get(name)
     if route and name == "openrouter":
@@ -72,5 +64,5 @@ def enforce_free_provider(name: str, config: dict[str, Any]) -> dict[str, Any]:
 
 
 def free_provider_catalog() -> dict[str, dict[str, str]]:
-    """Return the currently built-in free route catalog for discovery/UI code."""
+    """Return the current built-in free route catalog for discovery code."""
     return {name: dict(route) for name, route in KNOWN_FREE_ROUTES.items()}
