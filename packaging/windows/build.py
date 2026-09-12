@@ -17,6 +17,11 @@ HIDDEN_IMPORTS = (
     "quart_cors",
     "hypercorn",
     "hypercorn.asyncio",
+    "google.auth",
+    "google.auth.transport.requests",
+    "google.oauth2.credentials",
+    "google_auth_oauthlib.flow",
+    "googleapiclient.discovery",
 )
 
 
