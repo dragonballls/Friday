@@ -29,7 +29,7 @@ def test_unapproved_zen_fallback_is_skipped(monkeypatch):
     provider, name = llm._get_fallback_provider("openai")
 
     assert provider is None
-    assert name == ""
+    assert name is None
 
 
 def test_retryable_provider_errors_are_limited_to_transient_failures():
