@@ -19,6 +19,7 @@ on:
   push:
     branches:
       - main
+      - barebones-self-coding
     paths:
       - "desktop/**"
       - "core/**"
