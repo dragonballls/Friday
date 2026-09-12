@@ -79,7 +79,7 @@ jobs:
       - name: Upload single-file Windows app
         uses: actions/upload-artifact@v4
         with:
-          name: Friday-JARVIS-SelfCoding-Windows
-          path: build/windows/Friday-JARVIS-SelfCoding.exe
+          name: Jarvis-Windows
+          path: build/windows/Jarvis.exe
           if-no-files-found: error
           retention-days: 30
