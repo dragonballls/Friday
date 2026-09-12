@@ -1,0 +1,1 @@
+"""Friday desktop Python package."""

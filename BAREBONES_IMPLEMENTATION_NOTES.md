@@ -1,0 +1,1 @@
+Implementation boundary: retain and reuse proven backend/agent functionality; simplify the frontend and default startup surface rather than deleting the underlying agent. The minimum shipped app needs text/voice request entry, durable self-coding execution, and live verifiable activity.

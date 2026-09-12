@@ -2,9 +2,24 @@ name: Windows App
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "core/**"
+      - "agent/**"
+      - "providers/**"
+      - "integrations/**"
+      - "plugins/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - "packaging/windows/**"
+      - ".github/workflows/windows-app.yml"
   push:
     branches:
       - main
+      - barebones-self-coding
     paths:
       - "desktop/**"
       - "core/**"
@@ -76,10 +91,21 @@ jobs:
         shell: pwsh
         run: python packaging/windows/smoke_test.py
 
+      - name: Show packaged smoke-test log
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "build/windows/Friday-Barebones/friday.log"
+          if (Test-Path $log) {
+            Get-Content -Raw $log
+          } else {
+            Write-Host "No packaged Friday log was written"
+          }
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Friday-Windows
-          path: build/windows/Friday
+          name: Friday-Barebones-Windows
+          path: build/windows/Friday-Barebones
           if-no-files-found: error
           retention-days: 30

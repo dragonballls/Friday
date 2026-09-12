@@ -1,0 +1,1 @@
+Start here for the redesign: the branch is based on the last packaged-runtime fix and intentionally leaves the original application intact. The next code changes should replace only the default frontend shell and connect it directly to the existing coding-agent task/event APIs.

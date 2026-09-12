@@ -1,0 +1,1 @@
+Checkpoint created from packaged-runtime fix 053b437. No files from the existing feature-rich implementation have been deleted on this branch yet. UI simplification follows after runtime/API inspection.
