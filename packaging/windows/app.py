@@ -58,20 +58,20 @@ def hard_exit(code: int) -> None:
     os._exit(code)
 
 
-def wait_for_port(host: str, port: int, timeout: float = 20.0) -> None:
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, _format: str, *_args) -> None:
+        return
+
+
+def wait_for_port(host: str, port: int, timeout: float = 20.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with socket.create_connection((host, port), timeout=0.5):
-                return
+                return True
         except OSError:
             time.sleep(0.2)
-    raise RuntimeError(f"Friday service did not become ready on {host}:{port}")
-
-
-class QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self, _format: str, *_args) -> None:
-        return
+    return False
 
 
 def start_static_server() -> ThreadingHTTPServer:
@@ -111,12 +111,8 @@ def run_api_process() -> None:
 
 def start_api_server_process() -> subprocess.Popen:
     exe = Path(sys.executable).resolve()
-    if getattr(sys, "frozen", False):
-        command = [str(exe), "--api-server"]
-    else:
-        command = [sys.executable, str(Path(__file__).resolve()), "--api-server"]
+    command = [str(exe), "--api-server"] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).resolve()), "--api-server"]
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-    log("starting dedicated API process")
     return subprocess.Popen(
         command,
         cwd=str(ROOT),
@@ -154,12 +150,11 @@ def arm_smoke_watchdog(seconds: float = SMOKE_WATCHDOG_SECONDS) -> None:
 
 
 def smoke_test() -> None:
-    if not DIST.exists():
-        raise RuntimeError(f"Friday frontend bundle is missing: {DIST}")
     os.environ["FRIDAY_SMOKE_TEST"] = "1"
     ui_server = start_static_server()
     try:
-        wait_for_port(UI_HOST, UI_PORT)
+        if not wait_for_port(UI_HOST, UI_PORT, timeout=10.0):
+            raise RuntimeError("Friday UI did not become available")
         ui = http_text(f"http://{UI_HOST}:{UI_PORT}/")
         if ui is None or ui[0] != 200:
             raise RuntimeError("Friday UI did not return HTTP 200 on the root page")
@@ -184,12 +179,7 @@ def install_startup() -> None:
     try:
         import winreg
         exe = Path(sys.executable).resolve()
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_SET_VALUE,
-        ) as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE) as key:
             winreg.SetValueEx(key, "Friday", 0, winreg.REG_SZ, f'"{exe}" --startup')
     except OSError:
         pass
@@ -212,11 +202,22 @@ def main() -> None:
 
     import webview
     install_startup()
-    start_static_server()
+    ui_server = start_static_server()
     api_process = start_api_server_process()
+    api_ready = threading.Event()
+
+    def watch_api() -> None:
+        if wait_for_port(API_HOST, API_PORT, timeout=30.0):
+            api_ready.set()
+            log("API ready")
+        else:
+            log("API did not become ready before timeout; keeping the desktop UI open")
+
+    threading.Thread(target=watch_api, name="friday-api-ready", daemon=True).start()
+
     try:
-        wait_for_port(API_HOST, API_PORT, timeout=30.0)
-        wait_for_port(UI_HOST, UI_PORT, timeout=10.0)
+        # Open the real desktop window immediately. The UI can start and display
+        # its own online/offline state while the hidden coding engine initializes.
         webview.create_window(
             "Friday",
             f"http://{UI_HOST}:{UI_PORT}/",
@@ -228,6 +229,8 @@ def main() -> None:
         )
         webview.start(debug=False)
     finally:
+        ui_server.shutdown()
+        ui_server.server_close()
         if api_process.poll() is None:
             api_process.terminate()
             try:
