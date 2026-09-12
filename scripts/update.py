@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Safely update a Friday source checkout from its configured Git remote.
 
-The updater never resets, force-checks out, or overwrites local changes. When a
-clean checkout is on another branch, it safely switches to the requested branch
-so the desktop launcher cannot remain stuck on an old feature branch. The
-original branch and its commits remain intact.
+The updater never resets, force-checks out, or overwrites local changes. A
+candidate update is validated in an isolated Git worktree before the live
+checkout is changed. This is important for the background updater: a clean
+checkout must not be treated as proof that a new commit is safe to run.
 
-When ``--build`` is requested, the previous commit is retained as a rollback
-point. If dependency installation or the frontend build fails after the
-fast-forward, Friday automatically returns to the known-good commit instead of
-leaving the running installation on a potentially broken update.
+The isolated validation runs the frontend dependency install, TypeScript/Vite
+build, frontend tests, and a Python syntax check. Only when those checks pass,
+and the live checkout is still unchanged and clean, is the candidate fast-
+forwarded onto the live branch.
+
+This means an update can fail validation without changing the running coding
+checkout at all. ``--build`` is retained for compatibility with existing
+launch commands; validation is now always performed before an update is
+activated.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -74,6 +80,19 @@ def current_commit() -> str | None:
     return result.stdout.strip() or None
 
 
+def remote_commit(remote: str, branch: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", f"{remote}/{branch}"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def _npm_command() -> str | None:
     """Return an executable npm command that works with Windows .cmd shims."""
     if sys.platform == "win32":
@@ -81,96 +100,87 @@ def _npm_command() -> str | None:
     return shutil.which("npm")
 
 
-def _clear_frontend_port() -> None:
-    """Kill only the Windows process tree currently owning Vite's port."""
-    if sys.platform != "win32":
-        return
+def _cleanup_worktree(path: Path) -> None:
+    """Remove an isolated validation worktree without touching ROOT."""
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(path)],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "worktree", "prune"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
 
+
+def _validate_candidate(commit: str) -> bool:
+    """Build and test a candidate in an isolated worktree."""
+    npm = _npm_command()
+    if npm is None:
+        print("npm is required to validate a Friday update; candidate rejected.", file=sys.stderr)
+        return False
+    if not DESKTOP.is_dir():
+        print(f"Desktop directory not found: {DESKTOP}; candidate rejected.", file=sys.stderr)
+        return False
+
+    temp_path = Path(tempfile.mkdtemp(prefix="friday-update-", dir=tempfile.gettempdir()))
+    worktree_added = False
     try:
-        result = subprocess.run(
-            ["netstat", "-ano", "-p", "tcp"],
+        print(f"Validating candidate {commit[:12]} in isolated worktree {temp_path}.")
+        add = subprocess.run(
+            ["git", "worktree", "add", "--detach", str(temp_path), commit],
             cwd=ROOT,
             check=False,
             capture_output=True,
             text=True,
         )
-    except OSError:
-        return
+        if add.returncode != 0:
+            print(add.stderr.strip() or "Unable to create isolated validation worktree.", file=sys.stderr)
+            return False
+        worktree_added = True
 
-    if result.returncode != 0:
-        return
+        staged_desktop = temp_path / "desktop"
+        if run([npm, "ci"], cwd=staged_desktop) != 0:
+            print("Candidate rejected: npm ci failed in the isolated worktree.", file=sys.stderr)
+            return False
 
-    pids: set[str] = set()
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 5 or parts[0].upper() != "TCP":
-            continue
-        local_address = parts[1]
-        state = parts[3].upper()
-        pid = parts[4]
-        if state != "LISTENING":
-            continue
-        if local_address.rsplit(":", 1)[-1] == "5173" and pid.isdigit():
-            pids.add(pid)
+        if run([npm, "run", "build"], cwd=staged_desktop) != 0:
+            print("Candidate rejected: frontend build failed in the isolated worktree.", file=sys.stderr)
+            return False
 
-    for pid in pids:
-        subprocess.run(
-            ["taskkill", "/PID", pid, "/T", "/F"],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        if run([npm, "run", "test", "--", "--runInBand"], cwd=staged_desktop) != 0:
+            print("Candidate rejected: frontend tests failed in the isolated worktree.", file=sys.stderr)
+            return False
 
+        if run([sys.executable, "-m", "compileall", "-q", "desktop", "scripts"], cwd=temp_path) != 0:
+            print("Candidate rejected: Python syntax validation failed in the isolated worktree.", file=sys.stderr)
+            return False
 
-def _frontend_dependencies_ready() -> bool:
-    """Confirm npm installed the build tools required by the frontend scripts."""
-    node_modules = DESKTOP / "node_modules"
-    vite_package = node_modules / "vite" / "package.json"
-    typescript_package = node_modules / "typescript" / "package.json"
-    if sys.platform == "win32":
-        vite_bin = node_modules / ".bin" / "vite.cmd"
-        tsc_bin = node_modules / ".bin" / "tsc.cmd"
-    else:
-        vite_bin = node_modules / ".bin" / "vite"
-        tsc_bin = node_modules / ".bin" / "tsc"
-    return all(path.is_file() for path in (vite_package, typescript_package, vite_bin, tsc_bin))
-
-
-def _install_frontend_dependencies(npm: str) -> int:
-    """Install dependencies and recover once from a partial npm tree."""
-    _clear_frontend_port()
-    result = run([npm, "ci"], cwd=DESKTOP)
-    if result != 0:
-        return result
-    if _frontend_dependencies_ready():
-        return 0
-
-    print("npm ci completed but the frontend dependency tree is incomplete; retrying from a clean node_modules.", file=sys.stderr)
-    _clear_frontend_port()
-    node_modules = DESKTOP / "node_modules"
-    if node_modules.exists():
-        shutil.rmtree(node_modules, ignore_errors=False)
-    return run([npm, "ci"], cwd=DESKTOP)
-
-
-def rollback_to(commit: str) -> bool:
-    """Return to a known-good commit without touching user changes."""
-    if not working_tree_is_clean():
-        print("Rollback refused because the working tree is no longer clean.", file=sys.stderr)
-        return False
-    if run(["git", "reset", "--hard", commit]) != 0:
-        print(f"CRITICAL: unable to roll back Friday to known-good commit {commit}.", file=sys.stderr)
-        return False
-    print(f"Rolled Friday back to known-good commit {commit}.")
-    return True
+        print("Candidate validation passed.")
+        return True
+    finally:
+        if worktree_added:
+            _cleanup_worktree(temp_path)
+        elif temp_path.exists():
+            shutil.rmtree(temp_path, ignore_errors=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely update Friday from GitHub")
     parser.add_argument("--remote", default="origin", help="Git remote (default: origin)")
     parser.add_argument("--branch", default="main", help="Remote branch (default: main)")
-    parser.add_argument("--build", action="store_true", help="Install frontend dependencies and build after updating")
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="Compatibility flag; candidate validation is always performed before activation",
+    )
     args = parser.parse_args()
 
     if shutil.which("git") is None:
@@ -201,31 +211,40 @@ def main() -> int:
         return 3
 
     old_commit = current_commit()
-    if old_commit is None:
-        print("Unable to determine the current commit; refusing to update.", file=sys.stderr)
-        return 4
-
     remote_ref = f"{args.remote}/{args.branch}"
-    if run(["git", "merge", "--ff-only", remote_ref]) != 0:
-        print("Update is not a fast-forward; no local history was rewritten.", file=sys.stderr)
+    candidate_commit = remote_commit(args.remote, args.branch)
+    if old_commit is None or candidate_commit is None:
+        print("Unable to determine current or remote commit; refusing to update.", file=sys.stderr)
         return 4
 
-    if args.build:
-        npm = _npm_command()
-        if npm is None:
-            print("npm is required for --build; rolling back the update.", file=sys.stderr)
-            return 7 if rollback_to(old_commit) else 9
-        if not DESKTOP.is_dir():
-            print(f"Desktop directory not found: {DESKTOP}; rolling back the update.", file=sys.stderr)
-            return 6 if rollback_to(old_commit) else 9
-        if _install_frontend_dependencies(npm) != 0 or not _frontend_dependencies_ready():
-            print("Frontend dependency installation failed or remained incomplete; rolling back the update.", file=sys.stderr)
-            return 7 if rollback_to(old_commit) else 9
-        if run([npm, "run", "build"], cwd=DESKTOP) != 0:
-            print("Frontend build failed; rolling back the update.", file=sys.stderr)
-            return 8 if rollback_to(old_commit) else 9
+    if old_commit == candidate_commit:
+        print("Friday is up to date.")
+        return 0
 
-    print("Friday is up to date.")
+    print(f"Update candidate detected: {old_commit[:12]} -> {candidate_commit[:12]}.")
+
+    if not _validate_candidate(candidate_commit):
+        print("Friday update left unapplied; the current checkout was not changed.", file=sys.stderr)
+        return 7
+
+    # A coding agent or user may have committed something while validation was
+    # running. Never fast-forward a stale snapshot over a newly changed main.
+    if not working_tree_is_clean():
+        print("Live checkout changed during validation; refusing to activate candidate.", file=sys.stderr)
+        return 2
+    current_after_validation = current_commit()
+    if current_after_validation != old_commit:
+        print(
+            "Live checkout moved during validation; refusing to activate the stale candidate.",
+            file=sys.stderr,
+        )
+        return 4
+
+    if run(["git", "merge", "--ff-only", remote_ref]) != 0:
+        print("Update is no longer a fast-forward; no local history was rewritten.", file=sys.stderr)
+        return 4
+
+    print("Validated Friday update activated safely.")
     return 0
 
 
