@@ -56,6 +56,17 @@ jobs:
       - name: Install Python runtime dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
 
+      - name: Embed desktop build metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          @"
+          """Build metadata injected by GitHub Actions."""
+          BUILD_SHA = "$env:GITHUB_SHA"
+          BUILD_RUN_ID = "$env:GITHUB_RUN_ID"
+          BUILD_REF = "$env:GITHUB_REF"
+          "@ | Set-Content -Encoding utf8 desktop/build_info.py
+
       - name: Build Friday API sidecar
         shell: pwsh
         run: |
