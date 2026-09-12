@@ -10,6 +10,10 @@ When ``--build`` is requested, the previous commit is retained as a rollback
 point. If dependency installation or the frontend build fails after the
 fast-forward, Friday automatically returns to the known-good commit instead of
 leaving the running installation on a potentially broken update.
+
+A live coding transaction owns a cross-process lock for its entire lifecycle.
+The updater fails closed while that lock is active, then the normal monitor can
+retry after coding has finished and released the lock.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from core.live_update_lock import coding_update_locked
 
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "desktop"
@@ -177,6 +182,10 @@ def main() -> int:
         print("git is required", file=sys.stderr)
         return 1
 
+    if coding_update_locked():
+        print("Refusing live update: a Jarvis coding transaction is still active; retry after its checkpoint completes.", file=sys.stderr)
+        return 5
+
     branch = current_branch()
     if branch != args.branch:
         if not working_tree_is_clean():
@@ -195,10 +204,17 @@ def main() -> int:
             print("Unable to switch to the requested branch; leaving the checkout unchanged.", file=sys.stderr)
             return 4
 
+    if coding_update_locked():
+        print("Refusing live update: coding became active during update preparation; retry later.", file=sys.stderr)
+        return 5
     if not working_tree_is_clean():
         return 2
     if run(["git", "fetch", "--prune", args.remote, args.branch]) != 0:
         return 3
+
+    if coding_update_locked():
+        print("Refusing live update: coding became active before merge; retry later.", file=sys.stderr)
+        return 5
 
     old_commit = current_commit()
     if old_commit is None:

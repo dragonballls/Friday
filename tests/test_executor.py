@@ -2,7 +2,7 @@ import json
 
 from core.executor import Executor
 from core.planner import Task
-from core.security import get_approval_registry, get_permission_manager
+from core.security import get_permission_manager
 
 
 def _make_llm(*event_lists):
@@ -41,12 +41,9 @@ def test_execute_task_no_tool_calls():
 
 def test_execute_task_with_tool_call():
     task = Task(id="t2", description="test tool")
-    tool_map = {
-        "greet": lambda name: {"result": f"Hello, {name}!"},
-    }
+    tool_map = {"greet": lambda name: {"result": f"Hello, {name}!"}}
 
     llm = _make_llm(
-        # First call: returns a tool call
         [
             {"type": "tokens", "content": "Let me greet"},
             {
@@ -57,7 +54,6 @@ def test_execute_task_with_tool_call():
                 ],
             },
         ],
-        # Second call: returns final response
         [
             {"type": "tokens", "content": "Done"},
             {"type": "done", "content": "Done greeting", "tool_calls": None},
@@ -147,7 +143,6 @@ def test_execute_task_max_iterations():
     task = Task(id="t6", description="infinite loop")
     tool_map = {"ping": lambda: {"result": "pong"}}
 
-    # Always returns a tool call — will hit max iterations
     llm = _make_llm(
         [
             {
@@ -231,9 +226,10 @@ def test_react_loop_catches_exception():
     assert task.status == "failed"
 
 
-def test_execute_task_confirmation_denied():
+def test_execute_task_destructive_delete_is_hard_blocked():
     task = Task(id="t11", description="destructive")
-    tool_map = {"delete_file": lambda path: {"result": "deleted"}}
+    called = []
+    tool_map = {"delete_file": lambda path: called.append(path) or {"result": "deleted"}}
 
     llm = _make_llm(
         [
@@ -253,27 +249,21 @@ def test_execute_task_confirmation_denied():
         ],
         [{"type": "done", "content": "Final", "tool_calls": None}],
     )
-    # Enable interactive mode so destructive tools require confirmation
+
     get_permission_manager().set_interactive(True)
     ex = Executor(llm, tool_map)
+    results = list(ex.execute_task(task, [], [], max_iterations=5))
 
-    results = []
-    gen = ex.execute_task(task, [], [], max_iterations=5)
-    for event in gen:
-        results.append(event)
-        if event["type"] == "requires_confirmation":
-            get_approval_registry().resolve(event["request_id"], False)
-
-    confirm_events = [r for r in results if r["type"] == "requires_confirmation"]
-    assert len(confirm_events) == 1
-    assert confirm_events[0]["tool"] == "delete_file"
+    assert not [r for r in results if r["type"] == "requires_confirmation"]
+    assert called == []
     tool_result = [r for r in results if r["type"] == "tool_result"][0]
-    assert "cancelled by user" in tool_result["tools"][0]["result"]
+    assert "blocked" in tool_result["tools"][0]["result"].lower()
 
 
-def test_execute_task_confirmation_approved():
-    task = Task(id="t11", description="destructive approved")
-    tool_map = {"delete_file": lambda path: {"result": f"deleted {path}"}}
+def test_execute_task_destructive_delete_never_becomes_approvable():
+    task = Task(id="t12", description="destructive approved")
+    called = []
+    tool_map = {"delete_file": lambda path: called.append(path) or {"result": f"deleted {path}"}}
 
     llm = _make_llm(
         [
@@ -296,23 +286,16 @@ def test_execute_task_confirmation_approved():
 
     get_permission_manager().set_interactive(True)
     ex = Executor(llm, tool_map)
+    results = list(ex.execute_task(task, [], [], max_iterations=5))
 
-    results = []
-    gen = ex.execute_task(task, [], [], max_iterations=5)
-    for event in gen:
-        results.append(event)
-        if event["type"] == "requires_confirmation":
-            get_approval_registry().resolve(event["request_id"], True)
-
-    confirm_events = [r for r in results if r["type"] == "requires_confirmation"]
-    assert len(confirm_events) == 1
+    assert not [r for r in results if r["type"] == "requires_confirmation"]
+    assert called == []
     tool_result = [r for r in results if r["type"] == "tool_result"][0]
-    assert "deleted rm -rf backup" in tool_result["tools"][0]["result"]
-    assert task.status == "completed"
+    assert "blocked" in tool_result["tools"][0]["result"].lower()
 
 
 def test_execute_task_denied_tool_blocked():
-    task = Task(id="t12", description="denied tool")
+    task = Task(id="t13", description="denied tool")
     tool_map = {"delete_file": lambda path: {"result": "deleted"}}
 
     llm = _make_llm(

@@ -1,16 +1,16 @@
 from config.providers import get_active_provider
 
 
-def test_legacy_ollama_default_prefers_cloud_routing_primary():
+def test_legacy_ollama_default_is_forced_to_free_route():
     config = {
         "default": {"provider": "ollama"},
         "routing": {"primary": "openai"},
     }
 
-    assert get_active_provider(config) == "openai"
+    assert get_active_provider(config) == "openrouter"
 
 
-def test_explicit_remote_default_remains_authoritative():
+def test_explicit_remote_default_is_forced_to_free_route():
     config = {
         "default": {"provider": "openrouter"},
         "routing": {"primary": "openai"},
@@ -19,7 +19,7 @@ def test_explicit_remote_default_remains_authoritative():
     assert get_active_provider(config) == "openrouter"
 
 
-def test_missing_default_uses_routing_primary():
+def test_missing_default_is_forced_to_free_route():
     config = {"routing": {"primary": "openai"}}
 
-    assert get_active_provider(config) == "openai"
+    assert get_active_provider(config) == "openrouter"

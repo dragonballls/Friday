@@ -93,7 +93,7 @@ class Agent:
         self._executor = Executor(llm_chat, tool_map)
         self._coding_executor = Executor(
             lambda messages, tools=None: llm_chat(
-                messages, tools=tools, provider_name="zen_coder"
+                messages, tools=tools, provider_name="openrouter"
             ),
             tool_map,
         )
