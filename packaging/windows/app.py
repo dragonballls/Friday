@@ -134,7 +134,11 @@ def install_startup() -> None:
 def main() -> None:
     if "--smoke-test" in sys.argv:
         smoke_test()
-        return
+        # Smoke-test mode must terminate even if imported application modules
+        # created non-daemon background resources. The packaged application is
+        # only being validated here; normal startup is unaffected.
+        print("Friday Windows bundle smoke test completed.", flush=True)
+        os._exit(0)
 
     if not DIST.exists():
         raise SystemExit(f"Friday frontend bundle is missing: {DIST}")
