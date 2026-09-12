@@ -1,15 +1,7 @@
-"""Blackout mode (P5) — one-toggle network/privacy restriction.
+"""Privacy/network restriction mode.
 
-When enabled:
-- outbound web/network tools are blocked
-- the frontend can show a privacy seal on the orb
-- AI requests without an explicit provider use the local Ollama provider
-
-Explicit provider selections are preserved. This prevents Friday's cloud
-coding provider from being silently redirected to a stopped local Ollama
-service merely because blackout mode is enabled.
-
-State persists to ``memory_store/blackout.json`` so it survives restarts.
+Blackout blocks outbound tools, but Friday remains cloud-provider-only: it never
+switches model inference to a local runtime.
 """
 
 import json
@@ -18,31 +10,15 @@ import threading
 
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _STORE_PATH = os.path.join(os.path.join(_APP_DIR, "memory_store"), "blackout.json")
-
 _lock = threading.Lock()
 _enabled: bool | None = None
 
 _NETWORK_TOOLS = {
-    "web_fetch",
-    "browse_search",
-    "browse_get_page_text",
-    "browse_click",
-    "browse_navigate",
-    "browse_screenshot",
-    "fetch_news",
-    "fetch_weather",
-    "fetch_stocks",
-    "fetch_crypto",
-    "fetch_github_trending",
-    "fetch_cve",
-    "fetch_space",
-    "fetch_earthquakes",
-    "fetch_world_clock",
-    "email_send",
-    "calendar_create_event",
+    "web_fetch", "browse_search", "browse_get_page_text", "browse_click", "browse_navigate",
+    "browse_screenshot", "fetch_news", "fetch_weather", "fetch_stocks", "fetch_crypto",
+    "fetch_github_trending", "fetch_cve", "fetch_space", "fetch_earthquakes", "fetch_world_clock",
+    "email_send", "calendar_create_event",
 }
-
-_LOCAL_PROVIDER = "ollama"
 
 
 def _load() -> bool:
@@ -78,12 +54,7 @@ def set_blackout(enabled: bool) -> dict:
 
 
 def get_blackout_status() -> dict:
-    enabled = is_blackout()
-    return {
-        "enabled": enabled,
-        "local_provider": _LOCAL_PROVIDER,
-        "blocked_tools": sorted(_NETWORK_TOOLS),
-    }
+    return {"enabled": is_blackout(), "local_provider": None, "blocked_tools": sorted(_NETWORK_TOOLS)}
 
 
 def is_tool_blocked(tool: str) -> bool:
@@ -91,15 +62,7 @@ def is_tool_blocked(tool: str) -> bool:
 
 
 def resolve_provider(requested: str | None) -> str | None:
-    """Resolve provider selection without silently hijacking explicit requests.
-
-    Blackout remains the default local-inference mode when the caller has not
-    selected a provider. An explicit provider (for example ``zen_coder``) is
-    preserved so autonomous cloud coding cannot accidentally depend on a
-    stopped Ollama service.
-    """
-    if requested is not None:
-        return requested
-    if is_blackout():
-        return _LOCAL_PROVIDER
-    return None
+    """Preserve explicit cloud providers and never force a local model."""
+    if requested == "ollama":
+        raise ValueError("Friday is cloud-only; local Ollama inference is disabled")
+    return requested
