@@ -1,4 +1,4 @@
-"""Minimal local API for Friday: conversation and self-coding only."""
+"""Minimal local API for Jarvis: conversation and self-coding only."""
 
 import argparse
 import asyncio
@@ -77,7 +77,7 @@ async def reject_non_core_api():
         f"{API_PREFIX}/health",
     }
     if request.path.startswith(API_PREFIX) and request.path not in allowed:
-        return jsonify({"error": "Disabled in minimal Friday mode"}), 404
+        return jsonify({"error": "Disabled in minimal Jarvis mode"}), 404
     return None
 
 
@@ -137,7 +137,7 @@ async def autopilot():
     if not goal:
         return jsonify({"error": "goal is required"}), 422
 
-    workspace = data.get("workspace") or os.getenv("FRIDAY_WORKSPACE")
+    workspace = data.get("workspace") or os.getenv("JARVIS_WORKSPACE") or os.getenv("FRIDAY_WORKSPACE")
     workspace_error = validate_workspace(workspace)
     if workspace_error:
         return jsonify({"error": workspace_error}), 422
@@ -183,7 +183,7 @@ async def autopilot():
 
 @app.route(f"{API_PREFIX}/health")
 async def health():
-    return jsonify({"status": "ok", "mode": "minimal", "features": ["conversation", "self_coding"]})
+    return jsonify({"status": "ok", "mode": "minimal", "features": ["conversation", "self_coding"], "name": "Jarvis"})
 
 
 if __name__ == "__main__":
