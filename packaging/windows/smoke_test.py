@@ -6,21 +6,18 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUNDLE = ROOT / "build" / "windows" / "Friday"
-EXE = BUNDLE / "Friday.exe"
-UPDATER = BUNDLE / "FridayUpdater.exe"
+BUNDLE = ROOT / "build" / "windows" / "Friday-Barebones"
+EXE = BUNDLE / "Friday-Barebones.exe"
 VERSION = BUNDLE / "VERSION"
-LOG = BUNDLE / "smoke_test.log"
 TIMEOUT_SECONDS = 45
 
 
 def dump_log() -> None:
-    if not LOG.is_file():
-        print(f"No packaged smoke-test log was written at {LOG}", flush=True)
-        return
-    print("----- Friday.exe smoke_test.log -----", flush=True)
-    print(LOG.read_text(encoding="utf-8", errors="replace"), end="", flush=True)
-    print("----- end smoke_test.log -----", flush=True)
+    log = BUNDLE / "friday.log"
+    if log.is_file():
+        print("----- packaged Friday log -----", flush=True)
+        print(log.read_text(encoding="utf-8", errors="replace"), end="", flush=True)
+        print("----- end packaged Friday log -----", flush=True)
 
 
 def terminate(proc: subprocess.Popen[bytes]) -> None:
@@ -41,19 +38,20 @@ def terminate(proc: subprocess.Popen[bytes]) -> None:
 
 
 def main() -> None:
-    for required in (EXE, UPDATER, VERSION):
+    for required in (EXE, VERSION):
         if not required.is_file():
             raise SystemExit(f"Missing Windows bundle file: {required}")
     version = VERSION.read_text(encoding="utf-8").strip()
     if not version:
         raise SystemExit("Windows bundle VERSION file is empty")
-    if LOG.exists():
-        LOG.unlink()
 
     proc = subprocess.Popen(
         [str(EXE), "--smoke-test"],
         cwd=str(EXE.parent),
         stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
     )
     try:
         deadline = time.monotonic() + TIMEOUT_SECONDS
@@ -62,12 +60,12 @@ def main() -> None:
             if returncode is not None:
                 dump_log()
                 if returncode != 0:
-                    raise SystemExit(f"Friday.exe smoke test exited with code {returncode}")
-                print(f"Friday Windows bundle smoke test passed for version {version}.", flush=True)
+                    raise SystemExit(f"Friday-Barebones.exe smoke test exited with code {returncode}")
+                print(f"Friday barebones Windows bundle smoke test passed for version {version}.", flush=True)
                 return
             time.sleep(0.25)
         dump_log()
-        raise SystemExit(f"Friday.exe smoke test did not complete within {TIMEOUT_SECONDS} seconds")
+        raise SystemExit(f"Friday-Barebones.exe smoke test did not complete within {TIMEOUT_SECONDS} seconds")
     finally:
         terminate(proc)
 
