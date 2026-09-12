@@ -3,6 +3,8 @@ import { checkHealth, streamAutopilot } from './core/barebonesApi'
 import { useVoiceInput } from './hooks/useVoiceInput'
 
 type Activity = { time: string; type: string; text: string }
+const DEFAULT_GOAL = 'Improve Friday toward a JARVIS-class AI assistant. Inspect the workspace, identify the highest-value safe improvement, implement it, verify it, and leave the workspace working.'
+
 type SavedTask = { goal: string; status: 'running' | 'stopped'; savedAt: number; activity: Activity[] }
 const TASK_KEY = 'friday:active-task:v1'
 
@@ -33,13 +35,14 @@ function loadSavedTask(): SavedTask | null {
 }
 
 export default function App() {
-  const [goal, setGoal] = useState('')
+  const [goal, setGoal] = useState(DEFAULT_GOAL)
   const [activity, setActivity] = useState<Activity[]>([])
   const [running, setRunning] = useState(false)
   const [apiOnline, setApiOnline] = useState(false)
   const [error, setError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const autoStartedRef = useRef(false)
   const resumeAttemptedRef = useRef(false)
   const {
     isSupported,
@@ -90,33 +93,26 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!goal.trim()) return
-    const saved = loadSavedTask()
-    if (!saved) return
-    try {
-      window.localStorage.setItem(TASK_KEY, JSON.stringify({ ...saved, goal, activity }))
-    } catch {
-      // Local persistence is best-effort; the running agent remains authoritative.
-    }
-  }, [goal, activity])
-
-  useEffect(() => {
-    if (!apiOnline || running || resumeAttemptedRef.current) return
-    const saved = loadSavedTask()
-    if (!saved || saved.status !== 'running') return
-    resumeAttemptedRef.current = true
-    const text = saved.goal.trim()
-    if (!text) return
-
-    setRunning(true)
+  const startRun = (text: string, source: string) => {
+    if (!text.trim() || running || !apiOnline) return
     setError('')
-    setActivity(previous => [...previous, { time: stamp(), type: 'RESUME', text: 'Resuming unfinished coding work after startup…' }].slice(-500))
+    const initial = [...activity, { time: stamp(), type: source, text }].slice(-500)
+    setActivity(initial)
+    try {
+      window.localStorage.setItem(TASK_KEY, JSON.stringify({ goal: text, status: 'running', savedAt: Date.now(), activity: initial }))
+    } catch { /* best effort */ }
+    setRunning(true)
     abortRef.current = streamAutopilot(
       text,
       event => {
         const item = { time: stamp(), type: String(event?.type || 'EVENT').toUpperCase(), text: textFromEvent(event) }
-        setActivity(previous => [...previous, item].slice(-500))
+        setActivity(previous => {
+          const next = [...previous, item].slice(-500)
+          try {
+            window.localStorage.setItem(TASK_KEY, JSON.stringify({ goal: text, status: 'running', savedAt: Date.now(), activity: next }))
+          } catch { /* best effort */ }
+          return next
+        })
       },
       (requestError: any) => {
         const message = requestError?.message || 'Coding run failed.'
@@ -131,59 +127,36 @@ export default function App() {
         try { window.localStorage.removeItem(TASK_KEY) } catch { /* best effort */ }
       },
     )
+  }
+
+  useEffect(() => {
+    if (!apiOnline || running || autoStartedRef.current) return
+    const saved = loadSavedTask()
+    if (saved && saved.status === 'running' && saved.goal.trim()) {
+      resumeAttemptedRef.current = true
+      autoStartedRef.current = true
+      startRun(saved.goal.trim(), 'RESUME')
+      return
+    }
+    autoStartedRef.current = true
+    startRun(DEFAULT_GOAL, 'AUTO')
   }, [apiOnline, running])
 
   useEffect(() => {
     return () => abortRef.current?.abort()
   }, [])
 
-  const persist = (nextStatus: 'running' | 'stopped', nextActivity: Activity[] = activity) => {
-    try {
-      window.localStorage.setItem(TASK_KEY, JSON.stringify({ goal: goal.trim(), status: nextStatus, savedAt: Date.now(), activity: nextActivity.slice(-500) }))
-    } catch {
-      // Keep the application usable when browser storage is unavailable.
-    }
-  }
-
-  const add = (type: string, text: string) => {
-    setActivity(previous => [...previous, { time: stamp(), type, text }].slice(-500))
-  }
-
   const start = () => {
-    const text = goal.trim()
-    if (!text || running || !apiOnline) return
-
-    setError('')
-    persist('running')
-    setRunning(true)
-    add('REQUEST', text)
-    add('AGENT', 'Starting a real coding run…')
-
-    abortRef.current = streamAutopilot(
-      text,
-      event => add(String(event?.type || 'EVENT').toUpperCase(), textFromEvent(event)),
-      (requestError: any) => {
-        const message = requestError?.message || 'Coding run failed.'
-        setError(message)
-        add('ERROR', message)
-        setRunning(false)
-        persist('running')
-      },
-      () => {
-        setRunning(false)
-        add('STATUS', 'Coding run ended. The activity feed is the runtime record.')
-        abortRef.current = null
-        try { window.localStorage.removeItem(TASK_KEY) } catch { /* best effort */ }
-      },
-    )
+    startRun(goal.trim(), 'REQUEST')
   }
 
   const stop = () => {
     abortRef.current?.abort()
     abortRef.current = null
     setRunning(false)
-    add('STOP', 'Stopped by user. The task remains saved for manual resume.')
-    persist('stopped')
+    const next = [...activity, { time: stamp(), type: 'STOP', text: 'Stopped by user. The task remains saved for manual resume.' }].slice(-500)
+    setActivity(next)
+    try { window.localStorage.setItem(TASK_KEY, JSON.stringify({ goal: goal.trim(), status: 'stopped', savedAt: Date.now(), activity: next })) } catch { /* best effort */ }
   }
 
   const toggleVoice = () => {
@@ -243,7 +216,7 @@ export default function App() {
           </div>
           <div className="feed">
             {activity.length === 0 ? (
-              <div className="empty">Nothing running yet.</div>
+              <div className="empty">Waiting for the coding agent…</div>
             ) : (
               activity.map((item, index) => (
                 <div className="event" key={`${item.time}-${index}`}>
@@ -259,7 +232,7 @@ export default function App() {
       </main>
 
       <footer>
-        <span>Friday codes in the configured workspace and reports actual runtime events.</span>
+        <span>Friday automatically starts its coding agent when the backend is ready.</span>
         <button className="copy" onClick={() => navigator.clipboard?.writeText(activityText)} disabled={!activity.length}>
           Copy activity
         </button>
