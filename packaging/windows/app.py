@@ -233,7 +233,7 @@ async def _api_server() -> None:
     config.accesslog = None
     config.errorlog = None
     config.loglevel = "warning"
-    await serve(app, config)
+    await serve(app, config, shutdown_trigger=lambda: asyncio.Future())
 
 
 def run_api_server_thread() -> threading.Thread:
