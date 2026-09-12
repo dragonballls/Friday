@@ -11,7 +11,7 @@ function textFromEvent(ev: any): string {
   if (typeof ev?.description === 'string') return ev.description
   if (typeof ev?.task?.description === 'string') return ev.task.description
   if (Array.isArray(ev?.tools)) return `Tools: ${ev.tools.map((t: any) => t.name || t.tool || 'tool').join(', ')}`
-  return JSON.stringify(ev)
+  return String(JSON.stringify(ev) ?? ev)
 }
 
 function stamp() {
